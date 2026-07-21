@@ -31,17 +31,29 @@ Source task: `coding-tasks/bossyk-sandbox/phase0-walking-skeleton.md` (Obsidian 
    cancellation scenario, useful as a live-agent reference task.
 4. **Live agent LLM provider/model**: Fireworks' OpenAI-compatible endpoint
    (`https://api.fireworks.ai/inference/v1`), via `langchain_openai.ChatOpenAI`
-   pointed at that `base_url` — no separate SDK dependency. Model:
-   `accounts/fireworks/models/firefunction-v2` (purpose-built for
-   OpenAI-style function calling; good fit for the airline domain's ~14
-   tools). Env var convention matches `auditk-constellaration-experiment`'s
-   `.env`: `FIREWORKS_API_KEY` (required) + `FIREWORKS_MODEL` (optional
-   override). `auditk`'s own `FireworksJudge` uses the same base URL but a
-   different model (`gpt-oss-120b`, a reasoning model tuned for judging, not
-   tool-calling) — not reused here since the live agent's job is different.
+   pointed at that `base_url` — no separate SDK dependency. Env var
+   convention matches `auditk-constellaration-experiment`'s `.env`:
+   `FIREWORKS_API_KEY` (required) + `FIREWORKS_MODEL` (optional override).
    `.env` is loaded automatically on import via `tau2.utils`'s
    `load_dotenv()` call (searches upward from cwd) — no extra dependency
    needed. See `.env.example`.
+
+   Model picked in three passes:
+   - `firefunction-v2` (original pick, purpose-built for function calling)
+     — **retired** from Fireworks' serverless catalog (404 on invoke).
+     Confirmed live account access via
+     `GET /v1/models` before retrying.
+   - `deepseek-v4-pro` (matches `auditk-constellaration-experiment`'s
+     known-good pick) — **rejected**: this codebase's judge path also runs
+     on a deepseek model, so using deepseek for the agent-under-test too
+     would violate the same-family self-evaluation independence the
+     project is built against (agent and judge/evaluator must not share a
+     model family).
+   - `accounts/fireworks/models/kimi-k2p6` — **current default**. Different
+     family from the judge path, solid tool-calling, 262k context.
+     `auditk`'s own `FireworksJudge` uses `gpt-oss-120b` (a reasoning model
+     tuned for judging, not tool-calling) at the same base URL — not reused
+     here since the live agent's job is different.
 
 ---
 

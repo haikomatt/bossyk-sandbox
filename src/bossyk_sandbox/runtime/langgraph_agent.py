@@ -24,8 +24,14 @@ from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel
 # client used elsewhere in this codebase (e.g. no separate SDK) works here
 # too — just point base_url/api_key at Fireworks. Convention matches
 # auditk-constellaration-experiment's .env: FIREWORKS_API_KEY + FIREWORKS_MODEL.
+# firefunction-v2 (the original Phase 0 pick) was retired from Fireworks'
+# serverless catalog. deepseek-v4-pro was tried next but rejected: this
+# codebase's judge path also runs on a deepseek model, and using the same
+# model family for the agent-under-test and its judge/evaluator violates
+# the same-family self-evaluation independence this project is built
+# against. kimi-k2p6 is a different family with solid tool-calling support.
 FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1"
-DEFAULT_FIREWORKS_MODEL = "accounts/fireworks/models/firefunction-v2"
+DEFAULT_FIREWORKS_MODEL = "accounts/fireworks/models/kimi-k2p6"
 
 
 class AgentState(TypedDict):

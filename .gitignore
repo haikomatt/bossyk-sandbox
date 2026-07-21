@@ -9,3 +9,4 @@ uv.lock.tmp
 .env
 *.ed25519
 *.ed25519.pub
+demo_output/
