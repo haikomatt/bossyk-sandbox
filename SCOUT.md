@@ -145,3 +145,83 @@ against these files directly with `jsonschema`, referencing the path.
 - Lint: `ruff format --check . && ruff check .`. Types: `mypy
   --explicit-package-bases` (also set in `[tool.mypy]`). Tests: `pytest
   tests/ -x --no-cov -q`.
+
+---
+
+# Phase 1 Scout Results — multi-instrument agent layer
+
+_Generated: 2026-07-21_
+
+Source task: `coding-tasks/bossyk-sandbox/phase1-multi-instrument.md` (Obsidian vault).
+
+## Step 0 decisions (confirmed with user)
+
+1. **Agent-model discrepancy (flagged, resolved).** The phase doc's context
+   assumes the agent is `deepseek-v4-pro`. Phase 0's actual live agent is
+   `kimi-k2p6` (`.env.example`, README §"Live agent model") — deepseek was
+   *rejected* in Phase 0 for exactly this project's family-exclusion reason.
+   Family exclusion for Phase 1 therefore targets **non-Kimi** judges, not
+   non-DeepSeek.
+
+2. **Judge models**:
+   - **Drift** — auditk's `llm-judge@0.3` scorer (`TwoStageJudgeScorer`:
+     local NLI gate stage 1 + `FireworksJudge` stage 2 for contradiction
+     candidates only). `FireworksJudge` defaults to
+     `accounts/fireworks/models/gpt-oss-120b`
+     (`auditk/src/auditk/analysis/judges/fireworks.py`).
+   - **Policy** — bossyk's `PolicyAwareJudge` used unmodified. It hardcodes
+     `accounts/fireworks/models/deepseek-v4-pro`
+     (`bossyk/src/judge.py:MODEL`) — not parameterized, and left as-is
+     rather than overridden (would require monkeypatching or reimplementing
+     the HTTP call, violating reuse-before-create).
+   - Both are different families from the Kimi agent and from each other —
+     family exclusion holds with **zero code changes to either dependency**.
+
+3. **Drift scorer dependency** — add auditk's `[judge]` extra
+   (`transformers`/`torch`, ~1-2GB; one-time local download of
+   `cross-encoder/nli-deberta-v3-small` for the NLI gate stage). Only needed
+   for the real-judge benchmark run (`RUN_JUDGE_MODEL=1`, `RUN_NLI_MODEL=1`,
+   `FIREWORKS_API_KEY`) — deterministic unit tests inject fake
+   `Judge`/`NLIPredictor` protocol implementations directly (see
+   `auditk.analysis.protocols`), no model download required for CI.
+
+4. **Evidence mapping** — per-step 3-way verdict (drift/policy/outcome)
+   lives under `Step.metadata["bossyk_sandbox_verdict"]`
+   (`{drift: ..., policy: ..., outcome: ...}`), **not** by extending
+   auditk's `DriftReport`/`StepDrift` (that would modify `auditk/src/auditk/
+   schema.py`, which the phase doc explicitly disallows). `Step.metadata` is
+   already a free-form, spec-sanctioned extension bag
+   (`auditk-spec/spec/v0.1/trace.schema.json`); Phase 0's `trace.py` already
+   writes `gate_verdict` there, so this extends an established pattern.
+
+5. **Scenario scope** — fast-path rule set + scenario suite cover
+   `cancel_reservation` (Phase 0, 7 tau2 tasks available) **+**
+   `update_reservation_flights` (13 tau2 tasks available). `book_reservation`
+   and a `send_certificate`-style tool are out of scope for Phase 1 (the
+   latter doesn't exist as a real airline-domain tool in tau2 — it only
+   appears as payment-method text in `nl_assertions`).
+
+6. **`declared_intent` capture** — confirmed via `trace.py:make_step` that
+   Phase 0 never populates `Step.declared_intent` (always `None`). Phase 1
+   threads a per-step intent string from the live LangGraph agent's
+   reasoning (before each tool call) through `ProposedAction` into
+   `make_step`'s `declared_intent` arg; the stub agent gets a scripted
+   intent string per fixture step. Additive to `bossyk-sandbox` code only —
+   no change to any external dependency.
+
+## Reuse inventory — exact import paths (Phase 1 additions)
+
+- Drift: `auditk.analysis.drift.compute_drift(trace, scorer_key="llm-judge@0.3")`;
+  registry `auditk.analysis.scorers.get_scorer`; protocols
+  `auditk.analysis.protocols.{Judge, NLIPredictor, Scorer}`; judge impl
+  `auditk.analysis.judges.fireworks.FireworksJudge`.
+- Policy: `bossyk.policy.{BossykPolicy, load_policy}` +
+  `bossyk.judge.PolicyAwareJudge` (`score_step`/`ascore_step`); policy file
+  `bossyk/data/policies/airline-support-v1.yaml`. Test stubbing: `respx`
+  intercepting `httpx` calls to the Fireworks URL (same technique as
+  `auditk/tests/unit/test_fireworks_judge.py`) — no bossyk code changes
+  needed.
+- tau2: same `tau2.run.get_tasks`/task JSON as Phase 0, filtered to task IDs
+  touching `cancel_reservation` / `update_reservation_flights`; A1 keys
+  hand-authored per scenario (tau2's `evaluation_criteria.nl_assertions`
+  used as a drafting aid, not a drop-in oracle).
