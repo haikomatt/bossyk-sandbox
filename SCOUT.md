@@ -177,10 +177,15 @@ Source task: `coding-tasks/bossyk-sandbox/phase1-multi-instrument.md` (Obsidian 
    - Both are different families from the Kimi agent and from each other —
      family exclusion holds with **zero code changes to either dependency**.
 
-3. **Drift scorer dependency** — add auditk's `[judge]` extra
-   (`transformers`/`torch`, ~1-2GB; one-time local download of
-   `cross-encoder/nli-deberta-v3-small` for the NLI gate stage). Only needed
-   for the real-judge benchmark run (`RUN_JUDGE_MODEL=1`, `RUN_NLI_MODEL=1`,
+3. **Drift scorer dependency** — add auditk's `nli` extra as bossyk-sandbox's
+   own `bench` optional group (`pyproject.toml`: `auditk[nli]`, installed via
+   `uv sync --extra bench`). Correction from the original Step-0 note: auditk
+   has no separate `judge` extra despite the install-hint string in
+   `scorers/__init__.py` — `nli` (`transformers`/`torch`, ~1-2GB; one-time
+   local download of `cross-encoder/nli-deberta-v3-small`) covers both the
+   NLI gate and the judge scorer's dependency needs; `httpx` (for
+   `FireworksJudge`) is already an auditk base dependency. Only needed for
+   the real-judge benchmark run (`RUN_JUDGE_MODEL=1`, `RUN_NLI_MODEL=1`,
    `FIREWORKS_API_KEY`) — deterministic unit tests inject fake
    `Judge`/`NLIPredictor` protocol implementations directly (see
    `auditk.analysis.protocols`), no model download required for CI.

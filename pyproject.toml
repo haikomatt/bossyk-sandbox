@@ -15,6 +15,13 @@ dependencies = [
     "langchain-openai>=1.4.0",
 ]
 
+[project.optional-dependencies]
+# Phase 1's real drift judge (auditk's llm-judge@0.3 scorer) needs auditk's
+# `nli` extra (torch + transformers, local NLI model). Only needed for
+# scripts/benchmark_run.py, not for the deterministic test suite — install
+# with `uv sync --extra bench`.
+bench = ["auditk[nli]"]
+
 [tool.uv.sources]
 auditk = { path = "../auditk", editable = true }
 tau2 = { path = "../tau2-bench", editable = true }

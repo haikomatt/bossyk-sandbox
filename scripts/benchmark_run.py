@@ -6,6 +6,7 @@ gate-vs-ground-truth confusion read (B2 safety-weighted + B3 bind/no-bind).
 Gated on FIREWORKS_API_KEY + RUN_SANDBOX_BENCH=1 (same shape as Phase 0's
 scripts/live_demo.py) -- not part of the test suite, run explicitly:
 
+    uv sync --extra bench   # pulls in auditk[nli] (torch/transformers)
     RUN_SANDBOX_BENCH=1 RUN_JUDGE_MODEL=1 RUN_NLI_MODEL=1 \\
         uv run python scripts/benchmark_run.py
 """
