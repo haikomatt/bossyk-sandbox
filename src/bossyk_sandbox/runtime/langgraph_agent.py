@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from typing import Annotated, Any, TypedDict
 
@@ -11,12 +12,20 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import interrupt
+from pydantic import SecretStr
 from tau2.domains.airline.environment import get_environment
 
 from bossyk_sandbox.evidence.trace import make_step
 from bossyk_sandbox.gate import Gate
 from bossyk_sandbox.instruments.base import ProposedAction, Verdict
 from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel
+
+# Fireworks exposes an OpenAI-compatible endpoint, so the same ChatOpenAI
+# client used elsewhere in this codebase (e.g. no separate SDK) works here
+# too — just point base_url/api_key at Fireworks. Convention matches
+# auditk-constellaration-experiment's .env: FIREWORKS_API_KEY + FIREWORKS_MODEL.
+FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1"
+DEFAULT_FIREWORKS_MODEL = "accounts/fireworks/models/firefunction-v2"
 
 
 class AgentState(TypedDict):
@@ -36,7 +45,11 @@ class AirlineAgentSession:
 
 
 def build_airline_agent_session(
-    *, trace_id: str = "live-airline-session", model_name: str = "gpt-4o-mini"
+    *,
+    trace_id: str = "live-airline-session",
+    model_name: str | None = None,
+    api_key: str | None = None,
+    base_url: str = FIREWORKS_BASE_URL,
 ) -> AirlineAgentSession:
     """Live LangGraph airline agent with in-graph tool-node interception.
 
@@ -46,12 +59,30 @@ def build_airline_agent_session(
     or override the automatic verdict before the tau2 tool actually runs.
     Each scored call is also recorded as a spec-conformant Step in
     `session.steps`, mirroring the stub agent's trace path.
+
+    Defaults to Fireworks' OpenAI-compatible endpoint: `model_name` falls
+    back to $FIREWORKS_MODEL (then `firefunction-v2`), `api_key` falls back
+    to $FIREWORKS_API_KEY. Pass `base_url`/`api_key`/`model_name` explicitly
+    to target a different OpenAI-compatible provider instead.
     """
+    resolved_model = model_name or os.environ.get("FIREWORKS_MODEL", DEFAULT_FIREWORKS_MODEL)
+    resolved_api_key = api_key or os.environ.get("FIREWORKS_API_KEY")
+    if not resolved_api_key:
+        raise RuntimeError(
+            "FIREWORKS_API_KEY is required to run the live airline agent "
+            "(set it in .env, matching auditk-constellaration-experiment's convention)."
+        )
+
     env = get_environment()
     toolkit = env.tools
     tool_schemas = [tool.openai_schema for tool in toolkit.get_tools().values()]
 
-    llm = ChatOpenAI(model=model_name, temperature=0).bind_tools(tool_schemas)
+    llm = ChatOpenAI(
+        model=resolved_model,
+        base_url=base_url,
+        api_key=SecretStr(resolved_api_key),
+        temperature=0,
+    ).bind_tools(tool_schemas)
     gate = Gate(instruments=[RequireLookupBeforeCancel()])
     steps: list[Step] = []
 

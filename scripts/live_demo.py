@@ -3,9 +3,11 @@ user request and show the GATE holding + blocking an unauthorised
 cancel_reservation call before it executes, then emit a Trace and a signed
 EvidencePack that verifies offline.
 
-Requires OPENAI_API_KEY (ChatOpenAI) and network access — not part of the
-deterministic test suite (tests/e2e drives the stub agent instead; see
-SCOUT.md decision #3).
+Requires FIREWORKS_API_KEY (Fireworks' OpenAI-compatible endpoint, via
+ChatOpenAI) and network access — not part of the deterministic test suite
+(tests/e2e drives the stub agent instead; see SCOUT.md decision #3). Copy
+.env.example to .env and fill in FIREWORKS_API_KEY; tau2 loads .env
+automatically on import.
 
 Usage: uv run python scripts/live_demo.py
 """
