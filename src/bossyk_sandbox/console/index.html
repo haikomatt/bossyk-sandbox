@@ -1,0 +1,48 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>bossyk-sandbox console</title></head>
+<body>
+<h1>bossyk-sandbox — Phase 0 console</h1>
+<button id="run">Run stub session</button>
+<div id="held"></div>
+<pre id="log"></pre>
+<script>
+const log = document.getElementById("log");
+const held = document.getElementById("held");
+const ws = new WebSocket(`ws://${location.host}/ws`);
+
+function append(line) {
+  log.textContent += line + "\n";
+}
+
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  if (msg.type === "held") {
+    held.innerHTML = `
+      <p>HELD: ${msg.tool_name}(${JSON.stringify(msg.arguments)}) — auto: ${msg.auto_verdict} (${msg.auto_reason})</p>
+      <button onclick="decide('allow')">Allow</button>
+      <button onclick="decide('block')">Block</button>
+    `;
+  } else if (msg.type === "step") {
+    held.innerHTML = "";
+    append(`${msg.verdict.toUpperCase()} ${msg.tool_name}(${JSON.stringify(msg.arguments)})${msg.overridden ? " [overridden]" : ""}`);
+  } else if (msg.type === "session_complete") {
+    append(`--- session complete: ${msg.step_count} steps ---`);
+  }
+};
+
+async function decide(verdict) {
+  await fetch("/session/decide", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ verdict }),
+  });
+}
+
+document.getElementById("run").onclick = async () => {
+  log.textContent = "";
+  await fetch("/session/run", { method: "POST" });
+};
+</script>
+</body>
+</html>
