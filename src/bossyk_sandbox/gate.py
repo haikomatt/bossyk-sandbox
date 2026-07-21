@@ -1,8 +1,16 @@
 from __future__ import annotations
 
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 
-from bossyk_sandbox.instruments.base import Decision, Instrument, ProposedAction, Verdict
+from bossyk_sandbox.instruments.base import (
+    Decision,
+    Instrument,
+    InstrumentVerdict,
+    ProposedAction,
+    SlowInstrument,
+    Verdict,
+)
 
 
 @dataclass
@@ -38,3 +46,36 @@ class Gate:
         decision = self.score(proposed)
         self.record(proposed)
         return decision
+
+
+@dataclass
+class TwoSpeedGate:
+    """Phase 1's two-speed split: `gate` makes the synchronous allow/block
+    decision (fast path); `slow_instruments` (drift, policy) annotate the
+    same proposed action concurrently, without the gate decision waiting on
+    them. Annotations inform evidence + orthogonality; they never gate."""
+
+    gate: Gate
+    slow_instruments: list[SlowInstrument]
+    _executor: ThreadPoolExecutor = field(
+        default_factory=lambda: ThreadPoolExecutor(
+            max_workers=4, thread_name_prefix="slow-instrument"
+        )
+    )
+
+    def process(self, proposed: ProposedAction) -> tuple[Decision, Future[list[InstrumentVerdict]]]:
+        """Returns the fast decision immediately (already committed to
+        history) plus a Future for the slow instruments' verdicts, submitted
+        against the history snapshot as of just before this action."""
+        history_snapshot = list(self.gate._history)
+        decision = self.gate.evaluate(proposed)
+        verdicts_future = self._executor.submit(self._annotate, proposed, history_snapshot)
+        return decision, verdicts_future
+
+    def _annotate(
+        self, proposed: ProposedAction, history: list[ProposedAction]
+    ) -> list[InstrumentVerdict]:
+        return [instrument.annotate(proposed, history) for instrument in self.slow_instruments]
+
+    def shutdown(self) -> None:
+        self._executor.shutdown(wait=True)
