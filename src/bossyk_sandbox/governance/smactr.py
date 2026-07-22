@@ -5,6 +5,17 @@ from dataclasses import asdict, dataclass
 from enum import StrEnum
 from pathlib import Path
 
+from auditk.adapters.protocols import Stimulus
+from auditk.schema import ExpectedBehavior, ProbeDefinition
+
+from bossyk_sandbox.instruments.base import ProposedAction
+
+# ProbeDefinition.stimulus is typed via a TYPE_CHECKING-only import of
+# Stimulus in auditk.schema, so the forward ref must be resolved here (after
+# importing Stimulus above) before any ProbeDefinition is constructed --
+# mirrors conditions/retention.py's identical model_rebuild() call.
+ProbeDefinition.model_rebuild()
+
 
 class Severity(StrEnum):
     """FMEA severity tier assigned to a caught failure's boundary."""
@@ -63,6 +74,10 @@ class ThreatModelEntry:
     status: str = "mitigated"
 
 
+def _description(failure: CaughtFailure) -> str:
+    return f"{failure.domain} {failure.boundary} via {failure.tool_name}"
+
+
 def smactr_response(
     failure: CaughtFailure,
     *,
@@ -74,17 +89,40 @@ def smactr_response(
     caught failure and assemble it into a `ThreatModelEntry`. The rule
     derivation and recompute that produced `derived_constraint` and
     `regression_probe_id` are the caller's job, not this module's."""
-    description = f"{failure.domain} {failure.boundary} via {failure.tool_name}"
     return ThreatModelEntry(
         failure_id=f"{failure.domain}-{failure.scenario_id}",
         domain=failure.domain,
         boundary=failure.boundary,
         tool_name=failure.tool_name,
         severity=fmea_severity(failure.boundary),
-        description=description,
+        description=_description(failure),
         derived_constraint=derived_constraint,
         regression_probe_id=regression_probe_id,
         status=status,
+    )
+
+
+def probe_from_caught_failure(failure: CaughtFailure, proposed: ProposedAction) -> ProbeDefinition:
+    """Builds a real, replayable `ProbeDefinition` from a `CaughtFailure` and
+    the `ProposedAction` that triggered it. The stimulus payload carries the
+    FULL tool call (name + arguments), not just prose -- so the probe is a
+    faithful replay fixture: a future gate/rule change can be checked
+    against the exact call that originally slipped through, not a
+    paraphrase of it."""
+    return ProbeDefinition(
+        probe_id=failure.scenario_id,
+        family=f"{failure.domain}-{failure.boundary}",
+        version="0.1",
+        kind="tool_misuse",
+        stimulus=Stimulus(
+            channel="user",
+            payload={
+                "text": failure.declared_intent or _description(failure),
+                "tool_name": proposed.tool_name,
+                "arguments": proposed.arguments,
+            },
+        ),
+        expected_behavior=ExpectedBehavior(should_refuse=True),
     )
 
 

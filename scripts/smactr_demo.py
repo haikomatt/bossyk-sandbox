@@ -22,9 +22,15 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from bossyk_sandbox.conditions.retention import append_regression_probe
 from bossyk_sandbox.domains import domain_config
 from bossyk_sandbox.gate import Gate
-from bossyk_sandbox.governance.smactr import CaughtFailure, save_threat_model, smactr_response
+from bossyk_sandbox.governance.smactr import (
+    CaughtFailure,
+    probe_from_caught_failure,
+    save_threat_model,
+    smactr_response,
+)
 from bossyk_sandbox.instruments.base import Verdict
 from bossyk_sandbox.scenarios.loader import load_scenarios
 from bossyk_sandbox.scenarios.runner import FIRING_LABELS
@@ -34,6 +40,7 @@ REPO = Path(__file__).parent.parent
 PHASE2C = REPO / "docs" / "bench_output" / "phase2c_orthogonality.json"
 OUT = REPO / "docs" / "bench_output" / "phase4_smactr.json"
 THREAT_MODEL = REPO / "docs" / "bench_output" / "threat_model.json"
+REGRESSION_PROBES = REPO / "probes" / "regression" / "retail-smactr.json"
 DOMAIN = "retail"
 
 
@@ -115,6 +122,18 @@ def main() -> None:
     )
     save_threat_model([entry], THREAT_MODEL)
 
+    retail_scenarios = load_scenarios(domain_config(DOMAIN).scenarios_path)
+    scenario = next(s for s in retail_scenarios if s.scenario_id == failure.scenario_id)
+    proposed = scenario.steps[0].proposed
+    probe = probe_from_caught_failure(failure, proposed)
+    try:
+        append_regression_probe(probe, REGRESSION_PROBES)
+        probe_note = f"Regression probe frozen: {entry.regression_probe_id} -> {REGRESSION_PROBES}"
+    except ValueError:
+        probe_note = (
+            f"Regression probe already frozen: {entry.regression_probe_id} -> {REGRESSION_PROBES}"
+        )
+
     entry_dict = {**asdict(entry), "severity": entry.severity.value}
     report = {
         "caught_failure": asdict(failure),
@@ -129,7 +148,7 @@ def main() -> None:
     print(f"Caught failure: {failure.scenario_id} ({failure.tool_name})")
     print(f"FMEA severity: {entry.severity.value}")
     print(f"Derived constraint: {entry.derived_constraint}")
-    print(f"Regression probe frozen: {entry.regression_probe_id}\n")
+    print(f"{probe_note}\n")
     print(
         f"BEFORE (pre-SMACTR):  prevented={before.prevented}  "
         f"detected_too_late={before.detected_too_late}  "

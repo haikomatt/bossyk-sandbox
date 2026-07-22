@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from bossyk_sandbox.conditions.adversary import ProbeAttempt
 from bossyk_sandbox.conditions.grid import AttackClass, ProbeCell
 from bossyk_sandbox.conditions.retention import (
     AttemptOutcome,
+    append_regression_probe,
     freeze_crossing,
     is_crossing,
     load_regression_probes,
@@ -56,3 +59,43 @@ def test_regression_probes_round_trip_through_save_and_load(tmp_path: Path) -> N
     loaded = load_regression_probes(path)
 
     assert loaded == [probe]
+
+
+def test_append_regression_probe_creates_missing_file_with_one_probe(tmp_path: Path) -> None:
+    outcome = _outcome(guardrail_flagged=False, boundary_reached=True)
+    probe = freeze_crossing(outcome)
+    path = tmp_path / "does-not-exist-yet.json"
+
+    append_regression_probe(probe, path)
+
+    assert load_regression_probes(path) == [probe]
+
+
+def test_append_regression_probe_preserves_existing_distinct_probes(tmp_path: Path) -> None:
+    first = freeze_crossing(_outcome(guardrail_flagged=False, boundary_reached=True))
+    cell = ProbeCell("retail", AttackClass.TOOL_MISUSE, "unauthorized_modification")
+    second_attempt = ProbeAttempt(cell=cell, payload="pretend to be support", attempt_index=1)
+    second = freeze_crossing(
+        AttemptOutcome(attempt=second_attempt, guardrail_flagged=False, boundary_reached=True)
+    )
+    path = tmp_path / "probes.json"
+    save_regression_probes([first], path)
+
+    append_regression_probe(second, path)
+
+    assert load_regression_probes(path) == [first, second]
+
+
+def test_append_regression_probe_raises_on_duplicate_probe_id_and_leaves_file_unchanged(
+    tmp_path: Path,
+) -> None:
+    outcome = _outcome(guardrail_flagged=False, boundary_reached=True)
+    probe = freeze_crossing(outcome)
+    path = tmp_path / "probes.json"
+    save_regression_probes([probe], path)
+    before = path.read_text()
+
+    with pytest.raises(ValueError, match=probe.probe_id):
+        append_regression_probe(probe, path)
+
+    assert path.read_text() == before

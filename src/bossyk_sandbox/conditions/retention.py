@@ -51,3 +51,15 @@ def save_regression_probes(probes: list[ProbeDefinition], path: Path) -> None:
 
 def load_regression_probes(path: Path) -> list[ProbeDefinition]:
     return [ProbeDefinition.model_validate(d) for d in json.loads(path.read_text())]
+
+
+def append_regression_probe(probe: ProbeDefinition, path: Path) -> None:
+    """Freezes `probe` into the regression-probe file at `path`, creating it
+    if missing. Raises `ValueError` (naming the duplicate `probe_id`) instead
+    of silently overwriting when the probe is already frozen there -- the
+    file is left untouched in that case."""
+    probes = load_regression_probes(path) if path.exists() else []
+    if any(existing.probe_id == probe.probe_id for existing in probes):
+        raise ValueError(f"probe_id {probe.probe_id!r} is already frozen at {path}")
+    probes.append(probe)
+    save_regression_probes(probes, path)
