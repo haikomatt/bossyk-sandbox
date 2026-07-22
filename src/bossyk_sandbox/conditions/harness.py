@@ -45,6 +45,16 @@ def run_probe_grid(
     outcomes: list[AttemptOutcome] = []
     for cell in cells:
         for attempt in adversary.generate_attempts(cell, budget):
+            if attempt.refused:
+                # The adversary model declined to generate a payload -- there
+                # is no attack to inspect, so the guardrail is never consulted
+                # and no boundary can be reached. Recorded (so H1 can report
+                # the refusal rate and drop it from the bypass denominator);
+                # never a crossing, never frozen.
+                outcomes.append(
+                    AttemptOutcome(attempt=attempt, guardrail_flagged=False, boundary_reached=False)
+                )
+                continue
             verdict = guardrail.inspect(attempt.payload)
             reached = boundary_oracle(attempt)
             outcomes.append(

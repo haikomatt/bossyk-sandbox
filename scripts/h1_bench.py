@@ -49,10 +49,7 @@ from bossyk_sandbox.conditions.adversary import (
     StubAdversary,
     budget_for,
 )
-from bossyk_sandbox.conditions.fireworks_adversary import (
-    DEFAULT_FIREWORKS_MODEL,
-    build_fireworks_adversary,
-)
+from bossyk_sandbox.conditions.adversary_registry import ADVERSARY_MODELS, build_adversary
 from bossyk_sandbox.conditions.grid import AttackClass, ProbeCell, boundaries_for, build_grid
 from bossyk_sandbox.conditions.harness import ProbeGridRun, run_probe_grid
 from bossyk_sandbox.conditions.retention import save_regression_probes
@@ -72,11 +69,15 @@ REGRESSION_PROBES_DIR = REPO_ROOT / "probes" / "regression"
 # Domain is selectable (env H1_DOMAIN, default airline) so the H1 benchmark
 # runs cross-domain (SCOUT.md "Phase 2b"). boundaries_for raises KeyError on
 # an unregistered domain -- a clear, early failure. Output + regression-probe
-# paths are per-domain so runs don't clobber each other.
+# paths are per-domain (and per-adversary, see _output_path/_regression_probes_path
+# below) so runs don't clobber each other.
 DOMAIN = os.environ.get("H1_DOMAIN", "airline")
 BOUNDARIES = boundaries_for(DOMAIN)
-OUTPUT_PATH = OUTPUT_DIR / f"phase2b_h1_{DOMAIN}.json"
-REGRESSION_PROBES_PATH = REGRESSION_PROBES_DIR / f"{DOMAIN}.json"
+
+# Real mode uses this registered adversary (conditions/adversary_registry.py)
+# to generate payloads; smoke mode ignores it and always uses the scripted
+# StubAdversary, labelled "stub".
+ADVERSARY = os.environ.get("H1_ADVERSARY", "fireworks-deepseek")
 
 INTENSITY = AdversaryIntensity.AGGRESSIVE
 BUDGET = budget_for(INTENSITY)
@@ -92,6 +93,19 @@ STRENGTHS: list[GuardrailStrength] = [
 # The plan's demo default -- this strength's crossings are what get frozen
 # into the regression-probe set.
 CANONICAL_STRENGTH = GuardrailStrength.LEAKY
+
+
+def _adversary_label(real_mode: bool) -> str:
+    # Smoke mode always uses the scripted StubAdversary regardless of H1_ADVERSARY.
+    return ADVERSARY if real_mode else "stub"
+
+
+def _output_path(label: str) -> Path:
+    return OUTPUT_DIR / f"phase2b_h1_{DOMAIN}_{label}.json"
+
+
+def _regression_probes_path(label: str) -> Path:
+    return REGRESSION_PROBES_DIR / f"{DOMAIN}-{label}.json"
 
 
 @dataclass
@@ -161,9 +175,9 @@ def _smoke_payloads() -> dict[AttackClass, list[str]]:
     }
 
 
-def _build_adversary(real_mode: bool) -> Adversary:
+def _build_adversary(real_mode: bool, adversary_name: str) -> Adversary:
     if real_mode:
-        return build_fireworks_adversary()
+        return build_adversary(adversary_name)
     return StubAdversary(payloads_by_class=_smoke_payloads())
 
 
@@ -191,7 +205,10 @@ def _bypass_result_to_dict(result: BypassRateResult) -> dict[str, Any]:
     return {
         "n_attempts": result.n_attempts,
         "n_bypassed": result.n_bypassed,
+        "n_refused": result.n_refused,
+        "n_scored": result.n_scored,
         "rate": result.rate(),
+        "refusal_rate": result.refusal_rate(),
         "wilson_ci95": [low, high],
     }
 
@@ -223,6 +240,7 @@ def _attempts_to_records(
                     "attempt_index": attempt.attempt_index,
                     "payload": attempt.payload,
                     "metadata": attempt.metadata,
+                    "refused": attempt.refused,
                 }
             )
     return records
@@ -233,13 +251,16 @@ def _build_output(
     attempts_by_cell: dict[ProbeCell, list[ProbeAttempt]],
     runs_by_strength: dict[GuardrailStrength, ProbeGridRun],
     canonical_run: ProbeGridRun,
+    adversary_label: str,
+    adversary_model_id: str,
 ) -> dict[str, Any]:
     return {
         "generated_at": datetime.now(UTC).isoformat(),
         "mode": "real" if real_mode else "smoke",
         "config": {
             "domain": DOMAIN,
-            "adversary_model": DEFAULT_FIREWORKS_MODEL if real_mode else "stub",
+            "adversary": adversary_label,
+            "adversary_model": adversary_model_id if real_mode else "stub",
             "guardrail_backend": "model-backed" if real_mode else "rule-based",
             "intensity": INTENSITY.value,
             "budget": BUDGET,
@@ -267,16 +288,21 @@ def _print_summary(runs_by_strength: dict[GuardrailStrength, ProbeGridRun]) -> N
         low, high = overall.wilson_ci95()
         print(f"\n-- strength={strength.value} --")
         print(
-            f"overall bypass: {overall.n_bypassed}/{overall.n_attempts} = "
+            f"overall bypass: {overall.n_bypassed}/{overall.n_scored} = "
             f"{overall.rate():.3f} [{low:.3f}, {high:.3f}] "
-            f"(crossings={len(run.crossings)})"
+            f"(crossings={len(run.crossings)}, refused={overall.n_refused})"
         )
+        if overall.n_refused > 0:
+            print(
+                f"  refusal rate: {overall.n_refused}/{overall.n_attempts} = "
+                f"{overall.refusal_rate():.3f}"
+            )
         print("  by class:")
         for key in sorted(run.h1_by_class):
             class_result = run.h1_by_class[key]
             class_low, class_high = class_result.wilson_ci95()
             print(
-                f"    {key}: {class_result.n_bypassed}/{class_result.n_attempts} = "
+                f"    {key}: {class_result.n_bypassed}/{class_result.n_scored} = "
                 f"{class_result.rate():.3f} [{class_low:.3f}, {class_high:.3f}]"
             )
         print("  by boundary:")
@@ -284,17 +310,22 @@ def _print_summary(runs_by_strength: dict[GuardrailStrength, ProbeGridRun]) -> N
             boundary_result = run.h1_by_boundary[key]
             boundary_low, boundary_high = boundary_result.wilson_ci95()
             print(
-                f"    {key}: {boundary_result.n_bypassed}/{boundary_result.n_attempts} = "
+                f"    {key}: {boundary_result.n_bypassed}/{boundary_result.n_scored} = "
                 f"{boundary_result.rate():.3f} [{boundary_low:.3f}, {boundary_high:.3f}]"
             )
 
 
 def main() -> None:
     real_mode = _real_mode_requested()
+    label = _adversary_label(real_mode)
+    output_path = _output_path(label)
+    regression_probes_path = _regression_probes_path(label)
+    adversary_model_id = ADVERSARY_MODELS[ADVERSARY].model_id if real_mode else "stub"
+
     mode_label = "REAL (billable Fireworks API + HF model download)" if real_mode else "SMOKE"
     print(f"=== H1 benchmark ({DOMAIN}) -- mode: {mode_label} ===")
     if real_mode:
-        print(f"adversary: FireworksAdversary ({DEFAULT_FIREWORKS_MODEL})")
+        print(f"adversary: FireworksAdversary ({adversary_model_id})")
         print(f"guardrail: ModelBackedGuardrail ({INJECTION_CLASSIFIER_MODEL})")
     else:
         print("adversary: StubAdversary (scripted payloads, no network)")
@@ -306,7 +337,7 @@ def main() -> None:
     print(f"intensity={INTENSITY.value} budget={BUDGET} total_attempts={len(CELLS) * BUDGET}")
     print()
 
-    adversary = _build_adversary(real_mode)
+    adversary = _build_adversary(real_mode, ADVERSARY)
     print("Generating attempts (the expensive step -- happens exactly once)...")
     attempts_by_cell = _generate_all_attempts(adversary, CELLS, BUDGET)
     total_attempts = sum(len(attempts) for attempts in attempts_by_cell.values())
@@ -326,19 +357,21 @@ def main() -> None:
 
     canonical_run = runs_by_strength[CANONICAL_STRENGTH]
     REGRESSION_PROBES_DIR.mkdir(parents=True, exist_ok=True)
-    save_regression_probes(canonical_run.regression_probes, REGRESSION_PROBES_PATH)
+    save_regression_probes(canonical_run.regression_probes, regression_probes_path)
 
-    output = _build_output(real_mode, attempts_by_cell, runs_by_strength, canonical_run)
+    output = _build_output(
+        real_mode, attempts_by_cell, runs_by_strength, canonical_run, label, adversary_model_id
+    )
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    OUTPUT_PATH.write_text(json.dumps(output, indent=2))
+    output_path.write_text(json.dumps(output, indent=2))
 
     print()
     _print_summary(runs_by_strength)
 
-    print(f"\nWrote results to {OUTPUT_PATH}")
+    print(f"\nWrote results to {output_path}")
     print(
         f"Wrote {len(canonical_run.regression_probes)} regression probes "
-        f"(canonical strength={CANONICAL_STRENGTH.value}) to {REGRESSION_PROBES_PATH}"
+        f"(canonical strength={CANONICAL_STRENGTH.value}) to {regression_probes_path}"
     )
 
 
