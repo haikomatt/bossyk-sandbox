@@ -11,6 +11,9 @@ const log = document.getElementById("log");
 const held = document.getElementById("held");
 const ws = new WebSocket(`ws://${location.host}/ws`);
 
+let currentSessionId = null;
+let currentActionId = null;
+
 function append(line) {
   log.textContent += line + "\n";
 }
@@ -18,6 +21,8 @@ function append(line) {
 ws.onmessage = (event) => {
   const msg = JSON.parse(event.data);
   if (msg.type === "held") {
+    currentSessionId = msg.session_id;
+    currentActionId = msg.action_id;
     held.innerHTML = `
       <p>HELD: ${msg.tool_name}(${JSON.stringify(msg.arguments)}) — auto: ${msg.auto_verdict} (${msg.auto_reason})</p>
       <button onclick="decide('allow')">Allow</button>
@@ -28,6 +33,8 @@ ws.onmessage = (event) => {
     append(`${msg.verdict.toUpperCase()} ${msg.tool_name}(${JSON.stringify(msg.arguments)})${msg.overridden ? " [overridden]" : ""}`);
   } else if (msg.type === "session_complete") {
     append(`--- session complete: ${msg.step_count} steps ---`);
+    currentSessionId = null;
+    currentActionId = null;
   }
 };
 
@@ -35,7 +42,7 @@ async function decide(verdict) {
   await fetch("/session/decide", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ verdict }),
+    body: JSON.stringify({ session_id: currentSessionId, action_id: currentActionId, verdict }),
   });
 }
 

@@ -78,7 +78,10 @@ def test_run_scenario_records_multi_instrument_verdicts_on_each_step() -> None:
     assert len(scored_steps) == 2
     for scored in scored_steps:
         verdict_metadata = scored.step.metadata[VERDICT_METADATA_KEY]
-        assert verdict_metadata == {"drift": "faithful", "policy": "instruction_noncompliance"}
+        assert verdict_metadata == {
+            "drift": {"label": "faithful", "detail": ""},
+            "policy": {"label": "instruction_noncompliance", "detail": ""},
+        }
 
 
 # --- Finding 12: evidence metadata must reflect whatever slow instruments

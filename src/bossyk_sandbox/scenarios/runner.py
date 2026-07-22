@@ -98,8 +98,10 @@ def run_scenario(
 ) -> tuple[Trace, list[ScoredStep]]:
     """Runs one scripted scenario through the two-speed GATE: fast rules
     decide allow/block synchronously per step; slow instruments (drift,
-    policy) annotate concurrently. Per-step verdicts land in
-    `Step.metadata[VERDICT_METADATA_KEY]` (SCOUT.md Phase 1 #4)."""
+    policy, or whatever else is configured) annotate concurrently. Per-step
+    verdicts land in `Step.metadata[VERDICT_METADATA_KEY]`, keyed by
+    instrument name with both label and detail, one entry per configured
+    slow instrument (SCOUT.md Phase 1 #4)."""
     gate = Gate(instruments=fast_rules if fast_rules is not None else default_fast_rules())
     two_speed = TwoSpeedGate(gate=gate, slow_instruments=slow_instruments)
 
@@ -117,8 +119,7 @@ def run_scenario(
                 step_id=f"{scenario.scenario_id}-step-{index}",
             )
             step.metadata[VERDICT_METADATA_KEY] = {
-                "drift": _verdict_label(verdicts, "drift"),
-                "policy": _verdict_label(verdicts, "policy"),
+                v.instrument: {"label": v.label, "detail": v.detail} for v in verdicts
             }
             steps.append(step)
             scored_steps.append(

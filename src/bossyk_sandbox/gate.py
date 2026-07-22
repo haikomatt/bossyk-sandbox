@@ -11,6 +11,7 @@ from bossyk_sandbox.instruments.base import (
     SlowInstrument,
     Verdict,
 )
+from bossyk_sandbox.instruments.drift import ERROR_LABEL
 
 
 @dataclass
@@ -53,20 +54,31 @@ class Gate:
 class TwoSpeedGate:
     """Phase 1's two-speed split: `gate` makes the synchronous allow/block
     decision (fast path); `slow_instruments` (drift, policy) annotate the
-    same proposed action concurrently, without the gate decision waiting on
-    them. Annotations inform evidence + orthogonality; they never gate."""
+    same proposed action concurrently -- each submitted to its own worker so
+    they genuinely overlap, without the gate decision waiting on any of them.
+    Annotations inform evidence + orthogonality; they never gate. Each
+    instrument is isolated from the others' hangs/failures: a timeout or
+    exception in one produces an "error" verdict for that instrument alone,
+    the rest still land in the result, in configured order."""
 
     gate: Gate
     slow_instruments: list[SlowInstrument]
-    # Per-INSTRUMENT timeout (None = wait forever, preserving benchmark
-    # behaviour where first-call model loads are slow). Not yet read by
-    # `process`/`_annotate` (Finding 8) -- wired up in the GREEN phase.
+    # Per-instrument timeout (None = wait forever, preserving benchmark
+    # behaviour where first-call model loads are slow). Read by `_gather`:
+    # an instrument that exceeds it contributes an "error" verdict instead
+    # of holding up the others.
     annotation_timeout_s: float | None = None
-    _executor: ThreadPoolExecutor = field(
-        default_factory=lambda: ThreadPoolExecutor(
-            max_workers=4, thread_name_prefix="slow-instrument"
+    _executor: ThreadPoolExecutor = field(init=False)
+
+    def __post_init__(self) -> None:
+        # `_gather` occupies a worker of its own while it waits on the
+        # per-instrument futures, so sizing strictly to `len(slow_instruments)`
+        # can starve it. Scale with the instrument count, floored at the old
+        # fixed default.
+        max_workers = max(4, 2 * (len(self.slow_instruments) + 1))
+        self._executor = ThreadPoolExecutor(
+            max_workers=max_workers, thread_name_prefix="slow-instrument"
         )
-    )
 
     def process(self, proposed: ProposedAction) -> tuple[Decision, Future[list[InstrumentVerdict]]]:
         """Returns the fast decision immediately (already committed to
@@ -81,13 +93,34 @@ class TwoSpeedGate:
         history_snapshot = self.gate.history
         decision = self.gate.score(proposed)
         self.gate.record(proposed)
-        verdicts_future = self._executor.submit(self._annotate, proposed, history_snapshot)
-        return decision, verdicts_future
+        instrument_futures = [
+            self._executor.submit(instrument.annotate, proposed, history_snapshot)
+            for instrument in self.slow_instruments
+        ]
+        return decision, self._executor.submit(self._gather, instrument_futures)
 
-    def _annotate(
-        self, proposed: ProposedAction, history: list[ProposedAction]
-    ) -> list[InstrumentVerdict]:
-        return [instrument.annotate(proposed, history) for instrument in self.slow_instruments]
+    def _gather(self, futures: list[Future[InstrumentVerdict]]) -> list[InstrumentVerdict]:
+        """Collects each instrument's future in configured order, isolating
+        the caller from any single instrument's timeout or exception."""
+        verdicts: list[InstrumentVerdict] = []
+        for instrument, future in zip(self.slow_instruments, futures, strict=True):
+            try:
+                verdicts.append(future.result(timeout=self.annotation_timeout_s))
+            except TimeoutError:
+                verdicts.append(
+                    InstrumentVerdict(
+                        instrument=instrument.name,
+                        label=ERROR_LABEL,
+                        detail=f"annotation timeout ({self.annotation_timeout_s}s) exceeded",
+                    )
+                )
+            except Exception as exc:
+                verdicts.append(
+                    InstrumentVerdict(
+                        instrument=instrument.name, label=ERROR_LABEL, detail=str(exc)
+                    )
+                )
+        return verdicts
 
     def shutdown(self) -> None:
         self._executor.shutdown(wait=True)

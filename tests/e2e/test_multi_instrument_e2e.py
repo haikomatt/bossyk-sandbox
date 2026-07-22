@@ -91,8 +91,8 @@ def test_multi_instrument_scenario_set_end_to_end(tmp_path: Path) -> None:
         # drift + policy directly on each step, outcome via the joined key.
         for scored in scored_steps:
             verdict_metadata = scored.step.metadata[VERDICT_METADATA_KEY]
-            assert verdict_metadata["drift"] is not None
-            assert verdict_metadata["policy"] is not None
+            assert verdict_metadata["drift"]["label"] is not None
+            assert verdict_metadata["policy"]["label"] is not None
             assert lookup.label_for(scenario.scenario_id, scored.step_index) is not None
 
         from auditk.attestation.signer import generate_keypair

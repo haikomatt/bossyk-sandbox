@@ -16,8 +16,9 @@ DEFAULT_KEY_ARG = "reservation_id"
 class RequireLookupBeforeCancel:
     """The single Phase 0 policy rule.
 
-    Blocks `gated_tool` unless an earlier step in the same session called
-    `required_lookup_tool` with the same `key_arg` value.
+    Blocks `gated_tool` unless `key_arg` is a non-empty string and an earlier
+    step in the same session called `required_lookup_tool` with that same
+    `key_arg` value.
     """
 
     gated_tool: str = DEFAULT_GATED_TOOL
@@ -29,6 +30,9 @@ class RequireLookupBeforeCancel:
             return Decision(Verdict.ALLOW, f"{proposed.tool_name} is not gated by this rule")
 
         key_value = proposed.arguments.get(self.key_arg)
+        if not isinstance(key_value, str) or not key_value.strip():
+            return Decision(Verdict.BLOCK, f"{self.gated_tool} requires a non-empty {self.key_arg}")
+
         looked_up = any(
             call.tool_name == self.required_lookup_tool
             and call.arguments.get(self.key_arg) == key_value

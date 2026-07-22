@@ -12,13 +12,10 @@ from bossyk_sandbox.console import app as console_app
 
 @pytest.fixture(autouse=True)
 def _reset_console_globals() -> None:
-    """Console module state is process-global (module-level mutables driving
-    the single in-flight session), so reinstate a clean slate before every
-    test regardless of what a previous test left behind."""
-    console_app._held = None
-    console_app._decision_value = None
-    console_app._decision_event = asyncio.Event()
-    console_app._session_running = False
+    """Console module state is process-global (the `_sessions` registry
+    driving the single in-flight session), so reinstate a clean slate before
+    every test regardless of what a previous test left behind."""
+    console_app._sessions.clear()
 
 
 def _patch_broadcast_and_trace(monkeypatch: pytest.MonkeyPatch) -> list[Step]:
@@ -39,20 +36,21 @@ def _patch_broadcast_and_trace(monkeypatch: pytest.MonkeyPatch) -> list[Step]:
 
 
 async def _wait_until_held(
-    tool_name: str, reservation_id: str, timeout: float = 1.0
-) -> dict[str, Any]:
-    """Poll `console_app._held` until it shows the specific scripted call
-    identified by (tool_name, reservation_id) — distinguishing which of the
-    two `cancel_reservation` calls is currently held, since both share a
-    tool_name but not a reservation_id."""
+    session_id: str, tool_name: str, reservation_id: str, timeout: float = 1.0
+) -> console_app.HeldAction:
+    """Poll `_sessions[session_id].held` until it shows the specific
+    scripted call identified by (tool_name, reservation_id) —
+    distinguishing which of the two `cancel_reservation` calls is currently
+    held, since both share a tool_name but not a reservation_id."""
     loop = asyncio.get_event_loop()
     deadline = loop.time() + timeout
     while True:
-        held = console_app._held
+        session = console_app._sessions.get(session_id)
+        held = session.held if session is not None else None
         if (
             held is not None
-            and held["tool_name"] == tool_name
-            and held["arguments"].get("reservation_id") == reservation_id
+            and held.payload["tool_name"] == tool_name
+            and held.payload["arguments"].get("reservation_id") == reservation_id
         ):
             return held
         if loop.time() > deadline:
@@ -63,19 +61,39 @@ async def _wait_until_held(
 def test_manually_blocked_lookup_does_not_authorise_the_following_cancel(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Finding 6: migrated to the session-scoped start_session/decide API --
+    # the old test drove `_run_stub_session` directly and decided against
+    # the single implicit `_held` slot, both since deleted.
     captured_steps = _patch_broadcast_and_trace(monkeypatch)
 
     async def _drive() -> None:
-        task = asyncio.create_task(console_app._run_stub_session(hold_timeout_s=2.0))
+        start_result = await console_app.start_session(hold_timeout_s=2.0)
+        session_id = start_result["session_id"]
+        task = console_app._sessions[session_id].task
+        assert task is not None
 
-        await _wait_until_held("get_reservation_details", "RES-BENIGN")
-        await console_app.decide({"verdict": "block"})
+        held = await _wait_until_held(session_id, "get_reservation_details", "RES-BENIGN")
+        await console_app.decide(
+            {"session_id": session_id, "action_id": held.action_id, "verdict": "block"}
+        )
 
-        held = await _wait_until_held("cancel_reservation", "RES-BENIGN")
-        await console_app.decide({"verdict": held["auto_verdict"]})
+        held = await _wait_until_held(session_id, "cancel_reservation", "RES-BENIGN")
+        await console_app.decide(
+            {
+                "session_id": session_id,
+                "action_id": held.action_id,
+                "verdict": held.payload["auto_verdict"],
+            }
+        )
 
-        held = await _wait_until_held("cancel_reservation", "RES-UNAUTHORISED")
-        await console_app.decide({"verdict": held["auto_verdict"]})
+        held = await _wait_until_held(session_id, "cancel_reservation", "RES-UNAUTHORISED")
+        await console_app.decide(
+            {
+                "session_id": session_id,
+                "action_id": held.action_id,
+                "verdict": held.payload["auto_verdict"],
+            }
+        )
 
         await task
 
@@ -99,9 +117,17 @@ def test_manually_blocked_lookup_does_not_authorise_the_following_cancel(
 
 
 def test_untouched_session_attests_automatic_verdicts(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Finding 6: migrated to start_session -- the old test drove
+    # `_run_stub_session` directly with no session argument.
     captured_steps = _patch_broadcast_and_trace(monkeypatch)
 
-    asyncio.run(console_app._run_stub_session(hold_timeout_s=0.01))
+    async def _drive() -> None:
+        start_result = await console_app.start_session(hold_timeout_s=0.01)
+        task = console_app._sessions[start_result["session_id"]].task
+        assert task is not None
+        await task
+
+    asyncio.run(_drive())
 
     assert len(captured_steps) == 3
     verdicts = [s.action.payload["gate_verdict"] for s in captured_steps]
@@ -154,14 +180,16 @@ async def _wait_for_held_event(
 
 
 async def _wait_until_any_held(timeout: float = 2.0) -> dict[str, Any]:
-    """Poll `console_app._held` (today's single process-global slot) until
-    something is held, regardless of which scripted call it is."""
+    """Poll `console_app._sessions` (Finding 6: the session-scoped registry
+    that replaced the single process-global `_held` slot) until any session
+    has a held action, regardless of which scripted call it is. Only one
+    session is ever active at a time, so "any" is unambiguous."""
     loop = asyncio.get_event_loop()
     deadline = loop.time() + timeout
     while True:
-        held = console_app._held
+        held = next((s.held for s in console_app._sessions.values() if s.held is not None), None)
         if held is not None:
-            return held
+            return held.payload
         if loop.time() > deadline:
             raise AssertionError("timed out waiting for any held action")
         await asyncio.sleep(0.01)
