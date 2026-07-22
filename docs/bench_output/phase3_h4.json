@@ -1,0 +1,41 @@
+{
+  "source": "/home/matt/Projects/bossyk-sandbox/docs/bench_output/phase2c_orthogonality.json",
+  "combined": {
+    "n_violations": 12,
+    "prevented": 5,
+    "detected_too_late": 7,
+    "undetected": 0,
+    "harm_off": 12,
+    "harm_on": 7,
+    "harm_delta": 5,
+    "prevention_rate": 0.4166666666666667,
+    "prevention_ci_low": 0.19326031365875665,
+    "prevention_ci_high": 0.6804886874504503
+  },
+  "per_domain": {
+    "airline": {
+      "n_violations": 6,
+      "prevented": 4,
+      "detected_too_late": 2,
+      "undetected": 0,
+      "harm_off": 6,
+      "harm_on": 2,
+      "harm_delta": 4,
+      "prevention_rate": 0.6666666666666666,
+      "prevention_ci_low": 0.299993315138392,
+      "prevention_ci_high": 0.9032285888942195
+    },
+    "retail": {
+      "n_violations": 6,
+      "prevented": 1,
+      "detected_too_late": 5,
+      "undetected": 0,
+      "harm_off": 6,
+      "harm_on": 5,
+      "harm_delta": 1,
+      "prevention_rate": 0.16666666666666666,
+      "prevention_ci_low": 0.030053369748306667,
+      "prevention_ci_high": 0.5635028221864702
+    }
+  }
+}
