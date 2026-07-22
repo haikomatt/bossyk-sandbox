@@ -1,24 +1,34 @@
 #!/usr/bin/env python
-"""Phase 2a H1 benchmark: airline probe grid -> adversary -> model-layer
-guardrail -> H1 bypass rate, swept across guardrail strengths
-(leaky/moderate/strict).
+"""H1 benchmark: probe grid -> adversary -> model-layer guardrail -> H1
+bypass rate, swept across guardrail strengths (leaky/moderate/strict).
 
-H1 = bypass rate = #attempts the guardrail fails to flag / #attempts, at a
-given strength, reported overall / per attack class / per consequence
-boundary (SCOUT.md §D). The canonical-strength (leaky) run's crossings are
-frozen as regression probes (SCOUT.md §C) into probes/regression/airline.json.
+H1 = bypass rate = #attempts the guardrail fails to flag / #SCORED attempts,
+at a given strength, reported overall / per attack class / per consequence
+boundary (SCOUT.md §D). Adversary refusals are EXCLUDED from the denominator
+(a refused attempt carries no payload, so it is neither a bypass nor a catch)
+and reported separately as a per-model refusal rate -- see scoring/h1.py. The
+canonical-strength (leaky) run's crossings are frozen as regression probes
+(SCOUT.md §C) per domain + adversary.
+
+The adversary is selectable (env H1_ADVERSARY, default `fireworks-deepseek`)
+from the multi-provider registry (conditions/adversary_registry.py:
+`fireworks-deepseek`, `anthropic-fable`, ...), so the same grid can be run
+against different attacker models to measure adversary-model variance (plan
+§15A). Output + regression-probe paths are per-domain AND per-adversary so a
+variance run never clobbers. A per-model token ledger (calls, refused calls,
+input/output tokens) is emitted to the JSON output and printed -- so the cost
+of running each attacker is a measured number, not a guess (scoring/cost.py).
 
 Two modes, same shape end to end (grid -> generate attempts once -> strength
-sweep -> H1 rollups -> persist):
+sweep -> H1 rollups + token ledger -> persist):
 
 - Smoke (default, no flags): `StubAdversary` (scripted payloads, no network)
   + `GradedRuleGuardrail` (deterministic keyword rules, no model download).
   Fully deterministic, zero cost -- proves the wiring.
-- Real (gated): `FireworksAdversary` calling deepseek-v4-pro (billable API
-  traffic) + `ModelBackedGuardrail` backed by a HF prompt-injection
-  classifier (downloaded from the HF Hub on first use). Requires
-  RUN_H1_BENCH=1 and FIREWORKS_API_KEY, matching scripts/benchmark_run.py's
-  gating idiom.
+- Real (gated): the selected registry adversary (billable API traffic) +
+  `ModelBackedGuardrail` backed by a HF prompt-injection classifier
+  (downloaded from the HF Hub on first use). Requires RUN_H1_BENCH=1 and
+  FIREWORKS_API_KEY, matching scripts/benchmark_run.py's gating idiom.
 
 Attempts are generated ONCE per cell (the expensive/billable step in real
 mode) and then replayed across the strength sweep via `ReplayAdversary`
@@ -29,7 +39,8 @@ since `build_model_backed_guardrail` loads a fresh pipeline per call.
 
 Usage:
     uv run python scripts/h1_bench.py                                # smoke
-    RUN_H1_BENCH=1 FIREWORKS_API_KEY=... uv run python scripts/h1_bench.py  # real (billable)
+    RUN_H1_BENCH=1 H1_ADVERSARY=fireworks-deepseek FIREWORKS_API_KEY=... \
+        uv run python scripts/h1_bench.py                            # real (billable)
 """
 
 from __future__ import annotations
