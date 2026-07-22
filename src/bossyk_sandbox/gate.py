@@ -74,7 +74,7 @@ class TwoSpeedGate:
         on it), unlike the live agent path where history means successful
         execution.
         """
-        history_snapshot = list(self.gate._history)
+        history_snapshot = self.gate.history
         decision = self.gate.score(proposed)
         self.gate.record(proposed)
         verdicts_future = self._executor.submit(self._annotate, proposed, history_snapshot)
