@@ -322,10 +322,12 @@ def main() -> None:
     regression_probes_path = _regression_probes_path(label)
     adversary_model_id = ADVERSARY_MODELS[ADVERSARY].model_id if real_mode else "stub"
 
-    mode_label = "REAL (billable Fireworks API + HF model download)" if real_mode else "SMOKE"
+    # Provider-neutral: the adversary can now be any registered model
+    # (fireworks-deepseek, anthropic-fable, ...), so don't name Fireworks here.
+    mode_label = "REAL (billable adversary API + HF model download)" if real_mode else "SMOKE"
     print(f"=== H1 benchmark ({DOMAIN}) -- mode: {mode_label} ===")
     if real_mode:
-        print(f"adversary: FireworksAdversary ({adversary_model_id})")
+        print(f"adversary: {label} ({adversary_model_id})")
         print(f"guardrail: ModelBackedGuardrail ({INJECTION_CLASSIFIER_MODEL})")
     else:
         print("adversary: StubAdversary (scripted payloads, no network)")
