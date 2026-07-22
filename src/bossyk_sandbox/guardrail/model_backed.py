@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 from bossyk_sandbox.guardrail.guardrail import Guardrail, GuardrailStrength, GuardrailVerdict
 
@@ -49,35 +49,55 @@ class ModelBackedGuardrail:
         )
 
 
+INJECTION_CLASSIFIER_MODEL = "protectai/deberta-v3-base-prompt-injection-v2"
+
+# The attack/positive class label the HF classifier emits, plus a generic
+# LABEL_1 fallback for models that don't name their classes.
+_INJECTION_LABELS = {"INJECTION", "LABEL_1"}
+
+
+def _positive_injection_prob(pipeline_output: Any) -> float:
+    # `pipeline_output` is `Any` because transformers' text-classification
+    # pipeline return shape is version-dependent: with `top_k=None` it is
+    # either `list[dict]` (one dict per class) or `list[list[dict]]` (each
+    # input's class list wrapped once more). Normalise to the flat per-class
+    # list, then read the injection class's score.
+    scores = pipeline_output
+    if scores and isinstance(scores[0], list):
+        scores = scores[0]
+    for score in scores:
+        if str(score["label"]).upper() in _INJECTION_LABELS:
+            return float(score["score"])
+    raise ValueError(f"no injection label in classifier output: {pipeline_output!r}")
+
+
+@dataclass
+class _PipelineInjectionClassifier:
+    """Wraps a transformers text-classification pipeline as an
+    `InjectionClassifier`. `pipeline` is `Any` to keep this module free of a
+    hard typing dependency on `transformers`."""
+
+    pipeline: Any
+
+    def predict(self, content: str) -> float:
+        return _positive_injection_prob(self.pipeline(content))
+
+
+def load_injection_classifier(model: str = INJECTION_CLASSIFIER_MODEL) -> InjectionClassifier:
+    """Real path: load the HF prompt-injection classifier lazily (inside the
+    function, not at module import) so this module and the unit-test suite
+    never require `transformers`/`torch`, mirroring
+    `instruments.drift.build_default_drift_instrument`. The model downloads
+    from the HF Hub on first use; not bundled or fetched in tests. Exposed
+    separately so a caller (e.g. the H1 benchmark sweep) can load the model
+    once and reuse it across several `ModelBackedGuardrail` strengths."""
+    from transformers import pipeline
+
+    classifier_pipeline = pipeline("text-classification", model=model, top_k=None)
+    return _PipelineInjectionClassifier(pipeline=classifier_pipeline)
+
+
 def build_model_backed_guardrail(
     strength: GuardrailStrength = GuardrailStrength.LEAKY,
 ) -> Guardrail:
-    # Real path: a HF prompt-injection/jailbreak text-classification model,
-    # loaded lazily (inside the function, not at module import) so this
-    # module -- and the unit test suite -- never require `transformers`/
-    # `torch` to be installed, mirroring
-    # `instruments.drift.build_default_drift_instrument`'s gated import.
-    # Requires the `transformers` package (and its `torch` backend) to be
-    # installed in the running environment; the model itself is downloaded
-    # from the HF Hub on first use, not bundled or fetched in tests.
-    from transformers import pipeline
-
-    classifier_pipeline = pipeline(
-        "text-classification",
-        model="protectai/deberta-v3-base-prompt-injection-v2",
-        top_k=None,
-    )
-
-    class _PipelineInjectionClassifier:
-        def predict(self, content: str) -> float:
-            # `top_k=None` on a single (non-batched) string input returns a
-            # flat list of {"label", "score"} dicts, one per class -- not a
-            # per-input-wrapped list, since there's only one input here.
-            scores = classifier_pipeline(content)
-            for score in scores:
-                if score["label"].upper() in {"INJECTION", "LABEL_1"}:
-                    probability: float = score["score"]
-                    return probability
-            raise ValueError(f"no INJECTION label in classifier output: {scores!r}")
-
-    return ModelBackedGuardrail(classifier=_PipelineInjectionClassifier(), strength=strength)
+    return ModelBackedGuardrail(classifier=load_injection_classifier(), strength=strength)
