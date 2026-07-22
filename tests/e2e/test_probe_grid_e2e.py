@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+
 from bossyk_sandbox.conditions.adversary import (
     AdversaryIntensity,
     ProbeAttempt,
@@ -8,7 +10,11 @@ from bossyk_sandbox.conditions.adversary import (
 )
 from bossyk_sandbox.conditions.grid import AIRLINE_BOUNDARIES, AttackClass, ProbeCell, build_grid
 from bossyk_sandbox.conditions.harness import run_probe_grid
-from bossyk_sandbox.guardrail.guardrail import GradedRuleGuardrail, GuardrailStrength
+from bossyk_sandbox.guardrail.guardrail import (
+    GradedRuleGuardrail,
+    GuardrailStrength,
+    GuardrailVerdict,
+)
 
 # This e2e test composes the already-built Phase 2a pieces (grid, adversary,
 # guardrail, retention, H1) end-to-end via `run_probe_grid`. It is fully
@@ -95,3 +101,88 @@ def test_custom_boundary_oracle_that_never_reaches_yields_no_crossings_but_h1_is
     # H1 bypass count.
     assert expected_bypassed == 4
     assert run.h1_overall.n_bypassed == expected_bypassed
+
+
+# --- refusal threading (multi-provider adversary registry, plan §15A) -------
+#
+# Some frontier models used as the adversary (e.g. Claude Fable 5) refuse to
+# generate certain red-team payloads. FireworksAdversary surfaces that as a
+# ProbeAttempt with refused=True and an empty payload. run_probe_grid must
+# treat such an attempt as a non-event: never consult the guardrail on an
+# empty payload, never let it become a crossing / frozen regression probe,
+# and exclude it from the H1 bypass denominator while still counting it toward
+# the refusal rate.
+
+
+@dataclass
+class _PartlyRefusingAdversary:
+    """Per cell, emits `n_refused` refused attempts (empty payload) followed
+    by bypassing attempts -- lets a deterministic test exercise the refusal
+    path without a live model."""
+
+    n_refused: int
+    payload: str
+
+    def generate_attempts(self, cell: ProbeCell, budget: int) -> list[ProbeAttempt]:
+        return [
+            ProbeAttempt(
+                cell=cell,
+                payload="" if i < self.n_refused else self.payload,
+                attempt_index=i,
+                refused=i < self.n_refused,
+            )
+            for i in range(budget)
+        ]
+
+
+@dataclass
+class _RecordingGuardrail:
+    """Wraps a real guardrail and records every payload it is asked to
+    inspect -- so a test can assert refused (empty-payload) attempts never
+    reach the guardrail at all."""
+
+    inner: GradedRuleGuardrail
+    inspected: list[str] = field(default_factory=list)
+
+    def inspect(self, content: str) -> GuardrailVerdict:
+        self.inspected.append(content)
+        return self.inner.inspect(content)
+
+
+def test_refused_attempts_never_reach_the_guardrail() -> None:
+    guardrail = _RecordingGuardrail(inner=_guardrail())
+    adversary = _PartlyRefusingAdversary(n_refused=1, payload=BYPASSING_PAYLOAD)
+
+    run_probe_grid(_cells(), adversary, guardrail, BUDGET)
+
+    # 4 cells x budget 2, 1 refusal per cell -> 4 payloads inspected, none empty.
+    assert "" not in guardrail.inspected
+    assert len(guardrail.inspected) == 4
+
+
+def test_refused_attempts_are_never_crossings_or_frozen() -> None:
+    # Default oracle reports every boundary reached, so absent refusal
+    # handling every unflagged attempt (including empty refusals) would freeze.
+    adversary = _PartlyRefusingAdversary(n_refused=1, payload=BYPASSING_PAYLOAD)
+
+    run = run_probe_grid(_cells(), adversary, _guardrail(), BUDGET)
+
+    assert all(not outcome.attempt.refused for outcome in run.crossings)
+    assert all(probe.stimulus.payload["text"] != "" for probe in run.regression_probes)
+    # Only the 4 genuine bypasses (1 per cell) freeze -- the 4 refusals do not.
+    assert len(run.regression_probes) == 4
+
+
+def test_h1_excludes_refusals_from_denominator_and_reports_refusal_rate() -> None:
+    adversary = _PartlyRefusingAdversary(n_refused=1, payload=BYPASSING_PAYLOAD)
+
+    run = run_probe_grid(_cells(), adversary, _guardrail(), BUDGET)
+    overall = run.h1_overall
+
+    # 8 attempts total: 4 refused, 4 scored (all bypassing).
+    assert overall.n_attempts == 8
+    assert overall.n_refused == 4
+    assert overall.n_scored == 4
+    assert overall.n_bypassed == 4
+    assert overall.rate() == 1.0
+    assert overall.refusal_rate() == 0.5
