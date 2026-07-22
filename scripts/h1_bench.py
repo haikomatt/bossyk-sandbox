@@ -53,7 +53,7 @@ from bossyk_sandbox.conditions.fireworks_adversary import (
     DEFAULT_FIREWORKS_MODEL,
     build_fireworks_adversary,
 )
-from bossyk_sandbox.conditions.grid import AIRLINE_BOUNDARIES, AttackClass, ProbeCell, build_grid
+from bossyk_sandbox.conditions.grid import AttackClass, ProbeCell, boundaries_for, build_grid
 from bossyk_sandbox.conditions.harness import ProbeGridRun, run_probe_grid
 from bossyk_sandbox.conditions.retention import save_regression_probes
 from bossyk_sandbox.guardrail.guardrail import GradedRuleGuardrail, Guardrail, GuardrailStrength
@@ -67,14 +67,20 @@ from bossyk_sandbox.scoring.h1 import BypassRateResult
 
 REPO_ROOT = Path(__file__).parent.parent
 OUTPUT_DIR = REPO_ROOT / "docs" / "bench_output"
-OUTPUT_PATH = OUTPUT_DIR / "phase2a_h1.json"
 REGRESSION_PROBES_DIR = REPO_ROOT / "probes" / "regression"
-REGRESSION_PROBES_PATH = REGRESSION_PROBES_DIR / "airline.json"
 
-DOMAIN = "airline"
+# Domain is selectable (env H1_DOMAIN, default airline) so the H1 benchmark
+# runs cross-domain (SCOUT.md "Phase 2b"). boundaries_for raises KeyError on
+# an unregistered domain -- a clear, early failure. Output + regression-probe
+# paths are per-domain so runs don't clobber each other.
+DOMAIN = os.environ.get("H1_DOMAIN", "airline")
+BOUNDARIES = boundaries_for(DOMAIN)
+OUTPUT_PATH = OUTPUT_DIR / f"phase2b_h1_{DOMAIN}.json"
+REGRESSION_PROBES_PATH = REGRESSION_PROBES_DIR / f"{DOMAIN}.json"
+
 INTENSITY = AdversaryIntensity.AGGRESSIVE
 BUDGET = budget_for(INTENSITY)
-CELLS = build_grid(DOMAIN, list(AttackClass), AIRLINE_BOUNDARIES)
+CELLS = build_grid(DOMAIN, list(AttackClass), BOUNDARIES)
 
 # leaky -> moderate -> strict, per SCOUT.md §D (off is not part of the H1
 # sweep -- H1 is about how much a *real* guardrail leaks, not the null case).
@@ -239,7 +245,7 @@ def _build_output(
             "budget": BUDGET,
             "grid": {
                 "attack_classes": [attack_class.value for attack_class in AttackClass],
-                "boundaries": list(AIRLINE_BOUNDARIES),
+                "boundaries": list(BOUNDARIES),
                 "n_cells": len(CELLS),
                 "total_attempts": len(CELLS) * BUDGET,
             },
@@ -286,7 +292,7 @@ def _print_summary(runs_by_strength: dict[GuardrailStrength, ProbeGridRun]) -> N
 def main() -> None:
     real_mode = _real_mode_requested()
     mode_label = "REAL (billable Fireworks API + HF model download)" if real_mode else "SMOKE"
-    print(f"=== Phase 2a H1 benchmark -- mode: {mode_label} ===")
+    print(f"=== H1 benchmark ({DOMAIN}) -- mode: {mode_label} ===")
     if real_mode:
         print(f"adversary: FireworksAdversary ({DEFAULT_FIREWORKS_MODEL})")
         print(f"guardrail: ModelBackedGuardrail ({INJECTION_CLASSIFIER_MODEL})")
@@ -295,7 +301,7 @@ def main() -> None:
         print("guardrail: GradedRuleGuardrail (deterministic keyword rules, no model)")
     print(
         f"grid: domain={DOMAIN} classes={len(list(AttackClass))} "
-        f"boundaries={len(AIRLINE_BOUNDARIES)} cells={len(CELLS)}"
+        f"boundaries={len(BOUNDARIES)} cells={len(CELLS)}"
     )
     print(f"intensity={INTENSITY.value} budget={BUDGET} total_attempts={len(CELLS) * BUDGET}")
     print()

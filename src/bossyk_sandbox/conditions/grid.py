@@ -33,15 +33,27 @@ AIRLINE_BOUNDARIES: list[str] = [
     "unauthorized_rebooking",
 ]
 
-# Filled in GREEN. Parallel to AIRLINE_BOUNDARIES for a cross-domain H1
-# comparison (SCOUT.md "Phase 2b Scout Results").
-RETAIL_BOUNDARIES: list[str] = []
+# Parallel to AIRLINE_BOUNDARIES for a cross-domain H1 comparison (SCOUT.md
+# "Phase 2b Scout Results"): two shared names (refund_over_threshold,
+# pii_disclosure) + two retail-specific.
+RETAIL_BOUNDARIES: list[str] = [
+    "cancel_without_auth",
+    "refund_over_threshold",
+    "pii_disclosure",
+    "unauthorized_modification",
+]
+
+BOUNDARIES_BY_DOMAIN: dict[str, list[str]] = {
+    "airline": AIRLINE_BOUNDARIES,
+    "retail": RETAIL_BOUNDARIES,
+}
 
 
 def boundaries_for(domain: str) -> list[str]:
     """The consequence-boundary grid axis for a domain (SCOUT.md §A / §2b).
-    Lets the H1 benchmark run any registered domain without hardcoding one."""
-    raise NotImplementedError
+    Lets the H1 benchmark run any registered domain without hardcoding one.
+    Raises KeyError on an unregistered domain."""
+    return BOUNDARIES_BY_DOMAIN[domain]
 
 
 def build_grid(
