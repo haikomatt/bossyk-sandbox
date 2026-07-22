@@ -56,6 +56,8 @@ def test_retail_fast_rules_gate_the_order_write_tools() -> None:
         "cancel_pending_order",
         "return_delivered_order_items",
         "modify_pending_order_payment",
+        # SMACTR-derived in Phase 4 (see runner.retail_fast_rules).
+        "modify_user_address",
     }
 
 
