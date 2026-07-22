@@ -31,6 +31,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from bossyk_sandbox.domains import domain_config
+from bossyk_sandbox.instruments.base import Verdict
 from bossyk_sandbox.instruments.drift import ERROR_LABEL as DRIFT_ERROR_LABEL
 from bossyk_sandbox.instruments.drift import build_default_drift_instrument
 from bossyk_sandbox.instruments.outcome_key import OutcomeKeyLookup
@@ -38,6 +39,7 @@ from bossyk_sandbox.instruments.policy import ERROR_LABEL as POLICY_ERROR_LABEL
 from bossyk_sandbox.instruments.policy import build_default_policy_instrument
 from bossyk_sandbox.scenarios.loader import load_scenarios, outcome_keys
 from bossyk_sandbox.scenarios.runner import (
+    FIRING_LABELS,
     ScoredStep,
     run_scenario,
     to_gate_outcomes,
@@ -50,6 +52,7 @@ from bossyk_sandbox.scoring.confusion import (
     b3_bind_headline,
     binary_confusion,
 )
+from bossyk_sandbox.scoring.interrupt import H4Result, InterruptRecord, h4_result
 from bossyk_sandbox.scoring.orthogonality import StepMembership, orthogonality_table
 
 OUTPUT_DIR = Path(__file__).parent.parent / "docs" / "bench_output"
@@ -125,6 +128,57 @@ def _domain_report(
     }
 
 
+def _to_interrupt_records(
+    scored_steps: list[ScoredStep], outcome_lookup: OutcomeKeyLookup
+) -> list[InterruptRecord]:
+    """Joins scored steps against the A1 ground truth to build the H4
+    interrupt-efficacy input (SCOUT.md Phase 3): was each ground-truth
+    violation prevented pre-execution by the gate, caught too late by a
+    slow instrument (drift or policy firing post-hoc), or missed entirely.
+    Mirrors to_membership/to_gate_outcomes in scenarios/runner.py."""
+    records: list[InterruptRecord] = []
+    for scored in scored_steps:
+        is_violation = outcome_lookup.is_violation(scored.scenario_id, scored.step_index)
+        if is_violation is None:
+            continue
+        drift_v = next((v for v in scored.verdicts if v.instrument == "drift"), None)
+        policy_v = next((v for v in scored.verdicts if v.instrument == "policy"), None)
+        slow_detected = (drift_v is not None and drift_v.label in FIRING_LABELS) or (
+            policy_v is not None and policy_v.label in FIRING_LABELS
+        )
+        records.append(
+            InterruptRecord(
+                is_violation=is_violation,
+                gate_blocked=scored.decision.verdict is Verdict.BLOCK,
+                slow_detected=slow_detected,
+            )
+        )
+    return records
+
+
+def _print_h4_read(label: str, result: H4Result) -> None:
+    low, high = result.prevention_ci95()
+    print(f"\n=== {label}: H4 interrupt efficacy ===")
+    print(f"n_violations={result.n_violations}")
+    print(f"prevented={result.prevented}")
+    print(f"detected_too_late={result.detected_too_late}")
+    print(f"undetected={result.undetected}")
+    print(f"harm_off={result.harm_off}")
+    print(f"harm_on={result.harm_on}")
+    print(f"harm_delta={result.harm_delta}")
+    print(f"prevention_rate={result.prevention_rate():.3f} CI=[{low:.3f}, {high:.3f}]")
+
+
+def _h4_report(result: H4Result) -> dict[str, object]:
+    low, high = result.prevention_ci95()
+    return {
+        **asdict(result),
+        "prevention_rate": result.prevention_rate(),
+        "prevention_ci_low": low,
+        "prevention_ci_high": high,
+    }
+
+
 def _per_step_rows(
     scored_steps_by_domain: dict[str, list[ScoredStep]],
     lookups_by_domain: dict[str, OutcomeKeyLookup],
@@ -167,12 +221,15 @@ def _write_report(
     lookups_by_domain: dict[str, OutcomeKeyLookup],
     memberships_by_domain: dict[str, list[StepMembership]],
     gate_outcomes_by_domain: dict[str, list[GateOutcomeRecord]],
+    interrupt_records_by_domain: dict[str, list[InterruptRecord]],
     all_memberships: list[StepMembership],
     all_gate_outcomes: list[GateOutcomeRecord],
+    all_interrupt_records: list[InterruptRecord],
 ) -> Path:
-    """Persists the combined + per-domain 3-way orthogonality tables and
-    confusion reads, plus full per-step judge output tagged with domain --
-    the phase2c cross-domain extension of phase1's single-domain report."""
+    """Persists the combined + per-domain 3-way orthogonality tables,
+    confusion reads, and H4 interrupt-efficacy reads, plus full per-step
+    judge output tagged with domain -- the phase2c cross-domain extension
+    of phase1's single-domain report."""
     report = {
         "generated_at": datetime.now(UTC).isoformat(),
         "combined": _domain_report(all_memberships, all_gate_outcomes),
@@ -181,6 +238,13 @@ def _write_report(
                 memberships_by_domain[domain_name], gate_outcomes_by_domain[domain_name]
             )
             for domain_name in domain_names
+        },
+        "h4": {
+            "combined": _h4_report(h4_result(all_interrupt_records)),
+            "per_domain": {
+                domain_name: _h4_report(h4_result(interrupt_records_by_domain[domain_name]))
+                for domain_name in domain_names
+            },
         },
         "steps": _per_step_rows(scored_steps_by_domain, lookups_by_domain),
     }
@@ -211,6 +275,7 @@ def main() -> None:
     lookups_by_domain: dict[str, OutcomeKeyLookup] = {}
     memberships_by_domain: dict[str, list[StepMembership]] = {}
     gate_outcomes_by_domain: dict[str, list[GateOutcomeRecord]] = {}
+    interrupt_records_by_domain: dict[str, list[InterruptRecord]] = {}
 
     for domain_name in domain_names:
         cfg = domain_config(domain_name)
@@ -231,10 +296,14 @@ def main() -> None:
         lookups_by_domain[domain_name] = lookup
         memberships_by_domain[domain_name] = to_membership(domain_scored_steps, lookup)
         gate_outcomes_by_domain[domain_name] = to_gate_outcomes(domain_scored_steps, lookup)
+        interrupt_records_by_domain[domain_name] = _to_interrupt_records(
+            domain_scored_steps, lookup
+        )
 
     all_scored_steps = [step for steps in scored_steps_by_domain.values() for step in steps]
     all_memberships = [m for ms in memberships_by_domain.values() for m in ms]
     all_gate_outcomes = [g for gs in gate_outcomes_by_domain.values() for g in gs]
+    all_interrupt_records = [r for rs in interrupt_records_by_domain.values() for r in rs]
 
     out_path = _write_report(
         domain_names=domain_names,
@@ -242,8 +311,10 @@ def main() -> None:
         lookups_by_domain=lookups_by_domain,
         memberships_by_domain=memberships_by_domain,
         gate_outcomes_by_domain=gate_outcomes_by_domain,
+        interrupt_records_by_domain=interrupt_records_by_domain,
         all_memberships=all_memberships,
         all_gate_outcomes=all_gate_outcomes,
+        all_interrupt_records=all_interrupt_records,
     )
     print(
         f"Wrote {len(all_scored_steps)} steps across {len(domain_names)} domain(s) to {out_path}\n"
@@ -260,6 +331,10 @@ def main() -> None:
     _print_confusion_read("Combined", binary_confusion(all_gate_outcomes))
     for domain_name in domain_names:
         _print_confusion_read(domain_name, binary_confusion(gate_outcomes_by_domain[domain_name]))
+
+    _print_h4_read("Combined", h4_result(all_interrupt_records))
+    for domain_name in domain_names:
+        _print_h4_read(domain_name, h4_result(interrupt_records_by_domain[domain_name]))
 
 
 if __name__ == "__main__":
