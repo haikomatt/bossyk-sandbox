@@ -9,6 +9,7 @@ from auditk.schema import Action, ActionType, Actor, DriftReport, FlowType, Step
 from bossyk_sandbox.instruments.base import InstrumentVerdict, ProposedAction
 
 UNSCORED_LABEL = "unscored"
+ERROR_LABEL = "error"
 
 
 class DriftScorer(Protocol):
@@ -55,7 +56,14 @@ class DriftInstrument:
             steps=steps,
             source_adapter="bossyk-sandbox-drift@0.1",
         )
-        report = self.scorer.score(trace)
+        try:
+            report = self.scorer.score(trace)
+        except Exception as exc:
+            # The judge stage of llm-judge@0.3 hits the same Fireworks
+            # load-related flakiness bossyk's PolicyAwareJudge shows (see
+            # instruments/policy.py) -- don't let one flaky call kill the
+            # whole benchmark run.
+            return InstrumentVerdict(instrument=self.name, label=ERROR_LABEL, detail=str(exc))
         step_drift = (report.per_step or {}).get(last_step_id)
         if step_drift is None:
             return InstrumentVerdict(

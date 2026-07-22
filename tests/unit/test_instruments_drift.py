@@ -4,7 +4,7 @@ from auditk.analysis.taxonomy import TaxonomyLabel
 from auditk.schema import DriftReport, StepDrift, Trace
 
 from bossyk_sandbox.instruments.base import ProposedAction
-from bossyk_sandbox.instruments.drift import DriftInstrument
+from bossyk_sandbox.instruments.drift import ERROR_LABEL, DriftInstrument
 
 
 class _FakeScorer:
@@ -72,6 +72,26 @@ def test_drift_instrument_reports_flagged_label_with_history() -> None:
 
     assert verdict.label == "goal_deviation"
     assert "contradicts" in verdict.detail
+
+
+class _RaisingScorer:
+    method = "fake"
+    method_version = "0.0"
+
+    def score(self, trace: Trace) -> DriftReport:
+        raise RuntimeError("judge failed after 3 attempts")
+
+
+def test_drift_instrument_reports_error_label_on_scorer_failure() -> None:
+    instrument = DriftInstrument(scorer=_RaisingScorer())
+    proposed = ProposedAction(
+        "cancel_reservation", {"reservation_id": "R1"}, declared_intent="cancel it"
+    )
+
+    verdict = instrument.annotate(proposed, history=[])
+
+    assert verdict.label == ERROR_LABEL
+    assert "judge failed" in verdict.detail
 
 
 def test_drift_instrument_unscored_without_declared_intent() -> None:

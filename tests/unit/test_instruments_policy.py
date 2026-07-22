@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from bossyk_sandbox.instruments.base import ProposedAction
-from bossyk_sandbox.instruments.policy import PolicyInstrument
+from bossyk_sandbox.instruments.policy import ERROR_LABEL, PolicyInstrument
 
 
 @dataclass
@@ -50,6 +50,27 @@ def test_policy_instrument_reports_violation_label() -> None:
     verdict = instrument.annotate(proposed, history=[])
 
     assert verdict.label == "instruction_noncompliance"
+
+
+class _FlakyJudge:
+    """A fake matching bossyk's PolicyAwareJudge failure mode: raises like
+    the real judge does when Fireworks returns malformed JSON after
+    exhausting its own retries."""
+
+    def score_step(
+        self, step_id: str, action_text: str, declared_intent: str | None = None
+    ) -> _FakeStepResult:
+        raise RuntimeError("Judge failed after 3 attempts: Expecting property name...")
+
+
+def test_policy_instrument_reports_error_label_on_judge_failure() -> None:
+    instrument = PolicyInstrument(judge=_FlakyJudge())
+    proposed = ProposedAction("cancel_reservation", {"reservation_id": "R1"})
+
+    verdict = instrument.annotate(proposed, history=[])
+
+    assert verdict.label == ERROR_LABEL
+    assert "Judge failed" in verdict.detail
 
 
 def test_policy_instrument_assigns_unique_step_ids_across_calls() -> None:

@@ -16,13 +16,48 @@ from __future__ import annotations
 import os
 import sys
 
+from bossyk_sandbox.instruments.drift import ERROR_LABEL as DRIFT_ERROR_LABEL
 from bossyk_sandbox.instruments.drift import build_default_drift_instrument
 from bossyk_sandbox.instruments.outcome_key import OutcomeKeyLookup
+from bossyk_sandbox.instruments.policy import ERROR_LABEL as POLICY_ERROR_LABEL
 from bossyk_sandbox.instruments.policy import build_default_policy_instrument
 from bossyk_sandbox.scenarios.loader import load_scenarios, outcome_keys
-from bossyk_sandbox.scenarios.runner import run_scenario, to_gate_outcomes, to_membership
+from bossyk_sandbox.scenarios.runner import (
+    ScoredStep,
+    run_scenario,
+    to_gate_outcomes,
+    to_membership,
+)
 from bossyk_sandbox.scoring.confusion import b2_safety_weighted, b3_bind_headline, binary_confusion
 from bossyk_sandbox.scoring.orthogonality import orthogonality_table
+
+
+def _report_judge_errors(all_scored_steps: list[ScoredStep]) -> None:
+    """Judge calls (real Fireworks traffic) can fail (see
+    instruments/policy.py, instruments/drift.py) -- surface how many steps
+    got an "error" verdict instead of silently folding them into
+    "non-firing", which would understate the true rates."""
+    total = len(all_scored_steps)
+    drift_errors = sum(
+        1
+        for s in all_scored_steps
+        if any(v.instrument == "drift" and v.label == DRIFT_ERROR_LABEL for v in s.verdicts)
+    )
+    policy_errors = sum(
+        1
+        for s in all_scored_steps
+        if any(v.instrument == "policy" and v.label == POLICY_ERROR_LABEL for v in s.verdicts)
+    )
+    print(f"=== Judge error rate (of {total} scored steps) ===")
+    print(
+        f"drift errors: {drift_errors} ({drift_errors / total:.1%})" if total else "drift errors: 0"
+    )
+    print(
+        f"policy errors: {policy_errors} ({policy_errors / total:.1%})"
+        if total
+        else "policy errors: 0"
+    )
+    print()
 
 
 def main() -> None:
@@ -41,12 +76,16 @@ def main() -> None:
 
     all_memberships = []
     all_gate_outcomes = []
+    all_scored_steps: list[ScoredStep] = []
     for scenario in scenarios:
         _, scored_steps = run_scenario(
             scenario, slow_instruments=[drift_instrument, policy_instrument]
         )
+        all_scored_steps.extend(scored_steps)
         all_memberships.extend(to_membership(scored_steps, lookup))
         all_gate_outcomes.extend(to_gate_outcomes(scored_steps, lookup))
+
+    _report_judge_errors(all_scored_steps)
 
     print("=== 3-way orthogonality table (drift / policy / outcome) ===")
     for cell in orthogonality_table(all_memberships):

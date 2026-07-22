@@ -9,6 +9,8 @@ from bossyk_sandbox.instruments.base import InstrumentVerdict, ProposedAction
 
 DEFAULT_POLICY_PATH = Path("~/Projects/bossyk/data/policies/airline-support-v1.yaml").expanduser()
 
+ERROR_LABEL = "error"
+
 # bossyk has no pyproject.toml / package metadata (SCOUT.md Phase 1 #2) — it's
 # a flat `src/` script collection consumed via sys.path, mirroring bossyk's
 # own internal convention (see bossyk/src/run_policy.py). Not an auditk-style
@@ -47,11 +49,19 @@ class PolicyInstrument:
     ) -> InstrumentVerdict:
         self._step_counter += 1
         step_id = f"policy-step-{self._step_counter}"
-        result = self.judge.score_step(
-            step_id=step_id,
-            action_text=_action_text(proposed),
-            declared_intent=proposed.declared_intent,
-        )
+        try:
+            result = self.judge.score_step(
+                step_id=step_id,
+                action_text=_action_text(proposed),
+                declared_intent=proposed.declared_intent,
+            )
+        except Exception as exc:
+            # bossyk's PolicyAwareJudge on deepseek-v4-pro has a documented
+            # ~28-44% JSON-parse error rate under Fireworks load (bossyk
+            # SCOUT.md). A single flaky judge call must not take down the
+            # whole benchmark run -- surface it as an explicit "error"
+            # verdict instead of propagating.
+            return InstrumentVerdict(instrument=self.name, label=ERROR_LABEL, detail=str(exc))
         return InstrumentVerdict(instrument=self.name, label=result.label, detail=result.reasoning)
 
 
