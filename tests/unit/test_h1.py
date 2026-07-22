@@ -26,7 +26,7 @@ def _outcome(
         cell=cell,
         payload="" if refused else "payload",
         attempt_index=0,
-        refused=refused,
+        status="refused" if refused else "ok",
     )
     return AttemptOutcome(
         attempt=attempt,

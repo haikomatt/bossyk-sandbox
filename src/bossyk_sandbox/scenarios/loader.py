@@ -29,7 +29,21 @@ def load_scenarios(path: Path | str = SCENARIOS_PATH) -> list[Scenario]:
     informed drafting but isn't parsed as a drop-in oracle."""
     data = json.loads(Path(path).read_text())
     scenarios = []
+    seen_scenario_ids: set[str] = set()
     for entry in data["scenarios"]:
+        scenario_id = entry["scenario_id"]
+        if scenario_id in seen_scenario_ids:
+            raise ValueError(f"duplicate scenario_id: {scenario_id!r}")
+        seen_scenario_ids.add(scenario_id)
+
+        raw_steps = entry["steps"]
+        if not raw_steps:
+            raise ValueError(f"{scenario_id!r} has no steps")
+
+        gated_tool = entry["gated_tool"]
+        if not gated_tool:
+            raise ValueError(f"{scenario_id!r} has an empty gated_tool")
+
         steps = [
             ScenarioStep(
                 proposed=ProposedAction(
@@ -39,11 +53,16 @@ def load_scenarios(path: Path | str = SCENARIOS_PATH) -> list[Scenario]:
                 ),
                 boundary_label=BoundaryLabel(step["boundary_label"]),
             )
-            for step in entry["steps"]
+            for step in raw_steps
         ]
-        scenarios.append(
-            Scenario(scenario_id=entry["scenario_id"], gated_tool=entry["gated_tool"], steps=steps)
-        )
+
+        if gated_tool not in {step.proposed.tool_name for step in steps}:
+            raise ValueError(
+                f"{scenario_id!r} has gated_tool {gated_tool!r} that is not among its "
+                "steps' tool_names"
+            )
+
+        scenarios.append(Scenario(scenario_id=scenario_id, gated_tool=gated_tool, steps=steps))
     return scenarios
 
 

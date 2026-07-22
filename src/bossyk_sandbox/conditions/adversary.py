@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Literal, Protocol
@@ -81,16 +82,17 @@ class ChatResult:
     refuse red-team generation requests) instead of conflating a refusal
     with an empty or garbage payload.
 
-    `status` (Finding 9) is the RED-phase-added field that will replace the
-    `refused` field as the source of truth in GREEN -- `refused` becomes a
-    read-only property derived from `status == "refused"`. Until then both
-    fields exist and are set independently by callers/tests."""
+    `status` (Finding 9) is the source of truth; `refused` is a read-only
+    property derived from `status == "refused"`."""
 
     text: str
-    refused: bool = False
     status: Literal["ok", "refused", "error"] = "ok"
     detail: str = ""
     usage: TokenUsage = field(default_factory=TokenUsage)
+
+    @property
+    def refused(self) -> bool:
+        return self.status == "refused"
 
 
 @dataclass(frozen=True)
@@ -105,9 +107,12 @@ class ProbeAttempt:
     # real-adversary model call id) -- shape is intentionally not fixed by
     # this contract, mirrors auditk's ProbeDefinition.metadata pattern.
     metadata: dict[str, Any] = field(default_factory=dict)
-    refused: bool = False
     status: Literal["ok", "refused", "error"] = "ok"
     usage: TokenUsage = field(default_factory=TokenUsage)
+
+    @property
+    def refused(self) -> bool:
+        return self.status == "refused"
 
 
 def validate_payload(result: ChatResult) -> ChatResult:
@@ -118,7 +123,9 @@ def validate_payload(result: ChatResult) -> ChatResult:
     downstream. Returns a copy with `status="error"` in that case;
     otherwise returns `result` unchanged, including a `"refused"` result
     with empty text, which is a legitimate (not erroneous) empty payload."""
-    raise NotImplementedError
+    if result.status == "ok" and not result.text.strip():
+        return dataclasses.replace(result, status="error", detail="empty model response")
+    return result
 
 
 class Adversary(Protocol):

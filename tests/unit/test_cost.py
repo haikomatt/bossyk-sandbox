@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from bossyk_sandbox.scoring.cost import build_token_ledger
-
 from bossyk_sandbox.conditions.adversary import ProbeAttempt, TokenUsage
 from bossyk_sandbox.conditions.grid import AttackClass, ProbeCell
+from bossyk_sandbox.scoring.cost import build_token_ledger
 
 # The token ledger answers "what did each adversary model actually cost to
 # run?" (plan §15A) -- it aggregates per-attempt token usage per model id so a
@@ -19,7 +18,7 @@ def _attempt(model: str, *, refused: bool = False, usage: TokenUsage | None = No
         payload="" if refused else "payload",
         attempt_index=0,
         metadata={"model": model},
-        refused=refused,
+        status="refused" if refused else "ok",
         usage=usage if usage is not None else TokenUsage(),
     )
 

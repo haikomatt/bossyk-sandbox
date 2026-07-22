@@ -129,7 +129,7 @@ class _PartlyRefusingAdversary:
                 cell=cell,
                 payload="" if i < self.n_refused else self.payload,
                 attempt_index=i,
-                refused=i < self.n_refused,
+                status="refused" if i < self.n_refused else "ok",
             )
             for i in range(budget)
         ]

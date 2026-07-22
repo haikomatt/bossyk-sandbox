@@ -13,6 +13,7 @@ from bossyk_sandbox.conditions.adversary import (
     ChatResult,
     ProbeAttempt,
     usage_from_langchain,
+    validate_payload,
 )
 from bossyk_sandbox.conditions.grid import ProbeCell
 
@@ -59,14 +60,25 @@ class FireworksAdversary:
         for attempt_index in range(budget):
             user_prompt = _red_team_user_prompt(cell, attempt_index)
             result = self.client.complete(RED_TEAM_SYSTEM_PROMPT, user_prompt)
-            if result.refused:
+            if result.status == "refused":
                 attempts.append(
                     ProbeAttempt(
                         cell=cell,
                         payload="",
                         attempt_index=attempt_index,
                         metadata={"model": self.model, "refused_detail": result.detail},
-                        refused=True,
+                        status="refused",
+                        usage=result.usage,
+                    )
+                )
+            elif result.status == "error":
+                attempts.append(
+                    ProbeAttempt(
+                        cell=cell,
+                        payload="",
+                        attempt_index=attempt_index,
+                        metadata={"model": self.model, "error_detail": result.detail},
+                        status="error",
                         usage=result.usage,
                     )
                 )
@@ -77,7 +89,6 @@ class FireworksAdversary:
                         payload=result.text,
                         attempt_index=attempt_index,
                         metadata={"model": self.model},
-                        refused=False,
                         usage=result.usage,
                     )
                 )
@@ -106,9 +117,16 @@ class FireworksChatClient:
         response = self.llm.invoke(
             [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
         )
-        return ChatResult(
-            text=str(response.content), refused=False, usage=usage_from_langchain(response)
-        )
+        usage = usage_from_langchain(response)
+        content = response.content
+        if not isinstance(content, str):
+            return ChatResult(
+                text="",
+                status="error",
+                detail=f"non-string model response content: {type(content).__name__}",
+                usage=usage,
+            )
+        return validate_payload(ChatResult(text=content, usage=usage))
 
 
 def build_fireworks_adversary(model: str = DEFAULT_FIREWORKS_MODEL) -> Adversary:

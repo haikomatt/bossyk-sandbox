@@ -29,9 +29,13 @@ class OutcomeKeyLookup:
     keys: list[OutcomeKey]
 
     def __post_init__(self) -> None:
-        self._index: dict[tuple[str, int], BoundaryLabel] = {
-            (key.scenario_id, key.step_index): key.boundary_label for key in self.keys
-        }
+        index: dict[tuple[str, int], BoundaryLabel] = {}
+        for key in self.keys:
+            compound = (key.scenario_id, key.step_index)
+            if compound in index:
+                raise ValueError(f"duplicate outcome key: {compound!r}")
+            index[compound] = key.boundary_label
+        self._index = index
 
     def label_for(self, scenario_id: str, step_index: int) -> BoundaryLabel | None:
         return self._index.get((scenario_id, step_index))

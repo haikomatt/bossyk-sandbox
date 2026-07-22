@@ -246,9 +246,11 @@ def _bypass_result_to_dict(result: BypassRateResult) -> dict[str, Any]:
         "n_attempts": result.n_attempts,
         "n_bypassed": result.n_bypassed,
         "n_refused": result.n_refused,
+        "n_error": result.n_error,
         "n_scored": result.n_scored,
         "rate": result.rate(),
         "refusal_rate": result.refusal_rate(),
+        "error_rate": result.error_rate(),
         "wilson_ci95": [low, high],
     }
 
@@ -280,7 +282,10 @@ def _attempts_to_records(
                     "attempt_index": attempt.attempt_index,
                     "payload": attempt.payload,
                     "metadata": attempt.metadata,
+                    # "refused" is kept (computed from the status property)
+                    # for artifact compatibility with prior runs.
                     "refused": attempt.refused,
+                    "status": attempt.status,
                 }
             )
     return records
@@ -332,12 +337,17 @@ def _print_summary(runs_by_strength: dict[GuardrailStrength, ProbeGridRun]) -> N
         print(
             f"overall bypass: {overall.n_bypassed}/{overall.n_scored} = "
             f"{overall.rate():.3f} [{low:.3f}, {high:.3f}] "
-            f"(crossings={len(run.crossings)}, refused={overall.n_refused})"
+            f"(crossings={len(run.crossings)}, refused={overall.n_refused}, "
+            f"error={overall.n_error})"
         )
         if overall.n_refused > 0:
             print(
                 f"  refusal rate: {overall.n_refused}/{overall.n_attempts} = "
                 f"{overall.refusal_rate():.3f}"
+            )
+        if overall.n_error > 0:
+            print(
+                f"  error rate: {overall.n_error}/{overall.n_attempts} = {overall.error_rate():.3f}"
             )
         print("  by class:")
         for key in sorted(run.h1_by_class):

@@ -33,15 +33,15 @@ from pathlib import Path
 from bossyk_sandbox.domains import domain_config
 from bossyk_sandbox.env import load_project_env
 from bossyk_sandbox.instruments.base import Verdict
-from bossyk_sandbox.instruments.drift import ERROR_LABEL as DRIFT_ERROR_LABEL
 from bossyk_sandbox.instruments.drift import build_default_drift_instrument
 from bossyk_sandbox.instruments.outcome_key import OutcomeKeyLookup
-from bossyk_sandbox.instruments.policy import ERROR_LABEL as POLICY_ERROR_LABEL
 from bossyk_sandbox.instruments.policy import build_default_policy_instrument
 from bossyk_sandbox.scenarios.loader import load_scenarios, outcome_keys
 from bossyk_sandbox.scenarios.runner import (
     FIRING_LABELS,
+    InstrumentAvailability,
     ScoredStep,
+    instrument_availability,
     run_scenario,
     to_gate_outcomes,
     to_membership,
@@ -54,7 +54,7 @@ from bossyk_sandbox.scoring.confusion import (
     binary_confusion,
 )
 from bossyk_sandbox.scoring.interrupt import H4Result, InterruptRecord, h4_result
-from bossyk_sandbox.scoring.orthogonality import StepMembership, orthogonality_table
+from bossyk_sandbox.scoring.orthogonality import StepMembership, orthogonality_table, split_complete
 
 OUTPUT_DIR = Path(__file__).parent.parent / "docs" / "bench_output"
 DEFAULT_BENCH_DOMAINS = "airline,retail"
@@ -67,36 +67,39 @@ def _bench_domains() -> list[str]:
     return [name.strip() for name in raw.split(",") if name.strip()]
 
 
+def _judge_availability(all_scored_steps: list[ScoredStep]) -> dict[str, InstrumentAvailability]:
+    """Per-instrument availability (Finding 4) for the drift and policy
+    judges: how many steps were actually scored versus errored, unscored,
+    or never annotated at all."""
+    return {
+        "drift": instrument_availability(all_scored_steps, "drift"),
+        "policy": instrument_availability(all_scored_steps, "policy"),
+    }
+
+
 def _report_judge_errors(all_scored_steps: list[ScoredStep]) -> None:
     """Judge calls (real Fireworks traffic) can fail (see
     instruments/policy.py, instruments/drift.py) -- surface how many steps
     got an "error" verdict instead of silently folding them into
     "non-firing", which would understate the true rates."""
     total = len(all_scored_steps)
-    drift_errors = sum(
-        1
-        for s in all_scored_steps
-        if any(v.instrument == "drift" and v.label == DRIFT_ERROR_LABEL for v in s.verdicts)
-    )
-    policy_errors = sum(
-        1
-        for s in all_scored_steps
-        if any(v.instrument == "policy" and v.label == POLICY_ERROR_LABEL for v in s.verdicts)
-    )
-    print(f"=== Judge error rate (of {total} scored steps) ===")
-    print(
-        f"drift errors: {drift_errors} ({drift_errors / total:.1%})" if total else "drift errors: 0"
-    )
-    print(
-        f"policy errors: {policy_errors} ({policy_errors / total:.1%})"
-        if total
-        else "policy errors: 0"
-    )
+    availability = _judge_availability(all_scored_steps)
+    print(f"=== Judge availability (of {total} scored steps) ===")
+    for instrument_name, avail in availability.items():
+        print(
+            f"{instrument_name}: n_scored={avail.n_scored} n_error={avail.n_error} "
+            f"n_unscored={avail.n_unscored} n_missing={avail.n_missing}"
+        )
     print()
 
 
 def _print_orthogonality_table(memberships: list[StepMembership]) -> None:
-    for cell in orthogonality_table(memberships):
+    complete, incomplete = split_complete(memberships)
+    print(
+        f"(n_membership_complete={len(complete)} "
+        f"n_membership_dropped_unavailable={len(incomplete)})"
+    )
+    for cell in orthogonality_table(complete):
         print(
             f"drift={cell.cell.drift_fires} policy={cell.cell.policy_fires} "
             f"outcome_violation={cell.cell.outcome_violation}: "
@@ -121,8 +124,11 @@ def _domain_report(
     memberships: list[StepMembership], gate_outcomes: list[GateOutcomeRecord]
 ) -> dict[str, object]:
     matrix = binary_confusion(gate_outcomes)
+    complete, incomplete = split_complete(memberships)
     return {
-        "orthogonality_table": [asdict(cell) for cell in orthogonality_table(memberships)],
+        "orthogonality_table": [asdict(cell) for cell in orthogonality_table(complete)],
+        "n_membership_complete": len(complete),
+        "n_membership_dropped_unavailable": len(incomplete),
         "confusion_matrix": asdict(matrix),
         "safety_weighted": asdict(b2_safety_weighted(matrix)),
         "bind_headline": asdict(b3_bind_headline(matrix)),
@@ -144,6 +150,13 @@ def _to_interrupt_records(
             continue
         drift_v = next((v for v in scored.verdicts if v.instrument == "drift"), None)
         policy_v = next((v for v in scored.verdicts if v.instrument == "policy"), None)
+        # An "error"/"unscored" verdict is deliberately treated the same as a
+        # non-firing one here (never in FIRING_LABELS) -- an instrument that
+        # errored cannot be credited with a detection. This can only
+        # understate H4's detected_too_late/prevention read (conservative),
+        # never overstate it; instrument availability (Finding 4) is
+        # reported separately via `instrument_availability` so an outage is
+        # visible on its own, not laundered into this join.
         slow_detected = (drift_v is not None and drift_v.label in FIRING_LABELS) or (
             policy_v is not None and policy_v.label in FIRING_LABELS
         )
@@ -231,6 +244,7 @@ def _write_report(
     confusion reads, and H4 interrupt-efficacy reads, plus full per-step
     judge output tagged with domain -- the phase2c cross-domain extension
     of phase1's single-domain report."""
+    all_scored_steps = [step for steps in scored_steps_by_domain.values() for step in steps]
     report = {
         "generated_at": datetime.now(UTC).isoformat(),
         "combined": _domain_report(all_memberships, all_gate_outcomes),
@@ -244,6 +258,21 @@ def _write_report(
             "combined": _h4_report(h4_result(all_interrupt_records)),
             "per_domain": {
                 domain_name: _h4_report(h4_result(interrupt_records_by_domain[domain_name]))
+                for domain_name in domain_names
+            },
+        },
+        "availability": {
+            "combined": {
+                instrument: asdict(avail)
+                for instrument, avail in _judge_availability(all_scored_steps).items()
+            },
+            "per_domain": {
+                domain_name: {
+                    instrument: asdict(avail)
+                    for instrument, avail in _judge_availability(
+                        scored_steps_by_domain[domain_name]
+                    ).items()
+                }
                 for domain_name in domain_names
             },
         },

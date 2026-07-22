@@ -12,6 +12,7 @@ from bossyk_sandbox.conditions.adversary import (
     ChatResult,
     usage_from_anthropic,
     usage_from_langchain,
+    validate_payload,
 )
 
 if TYPE_CHECKING:
@@ -33,8 +34,9 @@ class OpenAICompatibleChatClient:
     """Real `ChatClient` for any OpenAI-compatible provider endpoint
     (Fireworks and friends) -- generalizes `FireworksChatClient`
     (fireworks_adversary.py) to a provider-agnostic client. OpenAI-compatible
-    providers surface no reliable refusal stop-reason, so `complete` always
-    reports `refused=False`."""
+    providers surface no reliable refusal stop-reason, so `complete` never
+    reports `status="refused"` -- only `"ok"` or `"error"` (non-string or
+    empty-payload content, via `validate_payload`)."""
 
     llm: ChatOpenAI
 
@@ -42,9 +44,16 @@ class OpenAICompatibleChatClient:
         response = self.llm.invoke(
             [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
         )
-        return ChatResult(
-            text=str(response.content), refused=False, usage=usage_from_langchain(response)
-        )
+        usage = usage_from_langchain(response)
+        content = response.content
+        if not isinstance(content, str):
+            return ChatResult(
+                text="",
+                status="error",
+                detail=f"non-string model response content: {type(content).__name__}",
+                usage=usage,
+            )
+        return validate_payload(ChatResult(text=content, usage=usage))
 
 
 def build_openai_compatible_client(
@@ -77,7 +86,7 @@ def _parse_anthropic_response(response: Any) -> ChatResult:
     if response.stop_reason == "refusal":
         return ChatResult(
             text="",
-            refused=True,
+            status="refused",
             detail=str(getattr(response, "stop_details", "") or "refusal"),
             usage=usage,
         )
@@ -85,7 +94,7 @@ def _parse_anthropic_response(response: Any) -> ChatResult:
         (block.text for block in response.content if getattr(block, "type", None) == "text"),
         "",
     )
-    return ChatResult(text=text, refused=False, usage=usage)
+    return validate_payload(ChatResult(text=text, usage=usage))
 
 
 @dataclass

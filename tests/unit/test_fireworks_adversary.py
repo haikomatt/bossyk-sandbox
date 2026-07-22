@@ -68,7 +68,7 @@ def test_generate_attempts_prompts_the_client_with_the_cells_attack_class_and_bo
 
 def test_generate_attempts_marks_a_refused_attempt_as_refused_with_an_empty_payload() -> None:
     cell = ProbeCell("airline", AttackClass.JAILBREAK, "cancel_without_lookup")
-    client = _FakeChatClient(result=ChatResult(text="", refused=True, detail="cyber"))
+    client = _FakeChatClient(result=ChatResult(text="", status="refused", detail="cyber"))
     adversary = FireworksAdversary(client=client)
 
     attempts = adversary.generate_attempts(cell, budget=1)
@@ -91,7 +91,7 @@ def test_generate_attempts_threads_usage_onto_a_refused_attempt() -> None:
     # A refusal still costs tokens -- they must reach the attempt (and thus
     # the ledger), not be dropped because the payload was empty.
     cell = ProbeCell("airline", AttackClass.JAILBREAK, "cancel_without_lookup")
-    client = _FakeChatClient(result=ChatResult(text="", refused=True, usage=TokenUsage(50, 3)))
+    client = _FakeChatClient(result=ChatResult(text="", status="refused", usage=TokenUsage(50, 3)))
     adversary = FireworksAdversary(client=client)
 
     attempts = adversary.generate_attempts(cell, budget=1)

@@ -62,7 +62,14 @@ def split_complete(
     Order-preserving. Callers must split before calling `orthogonality_table`,
     which refuses incomplete records rather than silently miscounting a
     judge outage as a non-fire."""
-    raise NotImplementedError
+    complete: list[StepMembership] = []
+    incomplete: list[StepMembership] = []
+    for record in records:
+        if record.drift_fires is None or record.policy_fires is None:
+            incomplete.append(record)
+        else:
+            complete.append(record)
+    return complete, incomplete
 
 
 def orthogonality_table(records: list[StepMembership]) -> list[CellCount]:
@@ -73,6 +80,18 @@ def orthogonality_table(records: list[StepMembership]) -> list[CellCount]:
     Requires every record to be complete (see `split_complete`) -- raises
     `ValueError` naming the offending step_id(s) rather than silently
     dropping a `None` field into an undercounted cell."""
+    incomplete_step_ids = [
+        record.step_id
+        for record in records
+        if record.drift_fires is None or record.policy_fires is None
+    ]
+    if incomplete_step_ids:
+        raise ValueError(
+            f"orthogonality_table requires complete records; got incomplete "
+            f"drift/policy verdicts for step(s) {incomplete_step_ids!r} -- use "
+            "split_complete first to separate them out."
+        )
+
     n = len(records)
     counts: dict[tuple[bool | None, bool | None, bool], int] = {}
     for record in records:

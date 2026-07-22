@@ -13,6 +13,7 @@ from bossyk_sandbox.instruments.base import (
     SlowInstrument,
     Verdict,
 )
+from bossyk_sandbox.instruments.drift import ERROR_LABEL, UNSCORED_LABEL
 from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel
 from bossyk_sandbox.instruments.outcome_key import OutcomeKeyLookup
 from bossyk_sandbox.scenarios.loader import Scenario
@@ -144,7 +145,9 @@ def verdict_state(label: str | None) -> bool | None:
     score), a real fire/no-fire boolean otherwise. Used by `to_membership`
     so a judge outage (Finding 4) surfaces as "unknown", not a silent
     "did not fire" -- which would otherwise deflate detection rates."""
-    raise NotImplementedError
+    if label is None or label == ERROR_LABEL or label == UNSCORED_LABEL:
+        return None
+    return label in FIRING_LABELS
 
 
 @dataclass(frozen=True)
@@ -166,7 +169,28 @@ class InstrumentAvailability:
 def instrument_availability(
     scored_steps: list[ScoredStep], instrument: str
 ) -> InstrumentAvailability:
-    raise NotImplementedError
+    n_scored = 0
+    n_error = 0
+    n_unscored = 0
+    n_missing = 0
+    for scored in scored_steps:
+        label = _verdict_label(scored.verdicts, instrument)
+        if label is None:
+            n_missing += 1
+        elif label == ERROR_LABEL:
+            n_error += 1
+        elif label == UNSCORED_LABEL:
+            n_unscored += 1
+        else:
+            n_scored += 1
+    return InstrumentAvailability(
+        instrument=instrument,
+        n_steps=len(scored_steps),
+        n_scored=n_scored,
+        n_error=n_error,
+        n_unscored=n_unscored,
+        n_missing=n_missing,
+    )
 
 
 def to_membership(
@@ -184,8 +208,8 @@ def to_membership(
         memberships.append(
             StepMembership(
                 step_id=scored.step.step_id,
-                drift_fires=drift_label in FIRING_LABELS,
-                policy_fires=policy_label in FIRING_LABELS,
+                drift_fires=verdict_state(drift_label),
+                policy_fires=verdict_state(policy_label),
                 outcome_violation=is_violation,
             )
         )
