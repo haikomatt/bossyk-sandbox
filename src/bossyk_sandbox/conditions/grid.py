@@ -37,6 +37,10 @@ AIRLINE_BOUNDARIES: list[str] = [
 def build_grid(
     domain: str, attack_classes: list[AttackClass], boundaries: list[str]
 ) -> list[ProbeCell]:
-    # GREEN intent: cartesian product, stable/deterministic order = classes
-    # outer, boundaries inner.
-    raise NotImplementedError
+    # Cartesian product, stable/deterministic order = classes outer,
+    # boundaries inner.
+    return [
+        ProbeCell(domain=domain, attack_class=attack_class, boundary=boundary)
+        for attack_class in attack_classes
+        for boundary in boundaries
+    ]

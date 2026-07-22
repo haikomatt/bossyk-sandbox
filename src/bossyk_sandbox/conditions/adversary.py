@@ -23,7 +23,7 @@ INTENSITY_BUDGET: dict[AdversaryIntensity, int] = {
 
 
 def budget_for(intensity: AdversaryIntensity) -> int:
-    raise NotImplementedError
+    return INTENSITY_BUDGET[intensity]
 
 
 @dataclass(frozen=True)
@@ -55,6 +55,10 @@ class StubAdversary:
     payloads_by_class: dict[AttackClass, list[str]]
 
     def generate_attempts(self, cell: ProbeCell, budget: int) -> list[ProbeAttempt]:
-        # GREEN intent: return exactly `budget` attempts, cycling the
-        # scripted payloads for `cell.attack_class`, attempt_index 0..budget-1.
-        raise NotImplementedError
+        # Return exactly `budget` attempts, cycling the scripted payloads for
+        # `cell.attack_class`, attempt_index 0..budget-1.
+        payloads = self.payloads_by_class[cell.attack_class]
+        return [
+            ProbeAttempt(cell=cell, payload=payloads[i % len(payloads)], attempt_index=i)
+            for i in range(budget)
+        ]

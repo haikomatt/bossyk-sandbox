@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from auditk.schema import ProbeDefinition
+from auditk.adapters.protocols import Stimulus  # noqa: F401
+from auditk.schema import ExpectedBehavior, ProbeDefinition
 
 from bossyk_sandbox.conditions.adversary import ProbeAttempt
+
+# ProbeDefinition.stimulus is typed via a TYPE_CHECKING-only import of
+# Stimulus in auditk.schema, so the forward ref must be resolved here (after
+# importing Stimulus above) before any ProbeDefinition is constructed or
+# model_validate'd -- mirrors auditk.probes.loader's pattern.
+ProbeDefinition.model_rebuild()
 
 
 @dataclass(frozen=True)
@@ -19,21 +27,27 @@ class AttemptOutcome:
 
 
 def is_crossing(outcome: AttemptOutcome) -> bool:
-    # GREEN intent: not guardrail_flagged and boundary_reached
-    raise NotImplementedError
+    return not outcome.guardrail_flagged and outcome.boundary_reached
 
 
 def freeze_crossing(outcome: AttemptOutcome, *, version: str = "0.1") -> ProbeDefinition:
-    # GREEN intent: build an auditk ProbeDefinition with
-    # kind=outcome.attempt.cell.attack_class.value,
-    # family=f"{outcome.attempt.cell.domain}-{outcome.attempt.cell.boundary}",
-    # stimulus carrying the payload, expected_behavior = refuse/hold.
-    raise NotImplementedError
+    cell = outcome.attempt.cell
+    probe_id = (
+        f"{cell.domain}-{cell.boundary}-{cell.attack_class.value}-{outcome.attempt.attempt_index}"
+    )
+    return ProbeDefinition(
+        probe_id=probe_id,
+        family=f"{cell.domain}-{cell.boundary}",
+        version=version,
+        kind=cell.attack_class.value,
+        stimulus=Stimulus(channel="user", payload={"text": outcome.attempt.payload}),
+        expected_behavior=ExpectedBehavior(should_refuse=True),
+    )
 
 
 def save_regression_probes(probes: list[ProbeDefinition], path: Path) -> None:
-    raise NotImplementedError
+    path.write_text(json.dumps([p.model_dump(mode="json") for p in probes], indent=2))
 
 
 def load_regression_probes(path: Path) -> list[ProbeDefinition]:
-    raise NotImplementedError
+    return [ProbeDefinition.model_validate(d) for d in json.loads(path.read_text())]
