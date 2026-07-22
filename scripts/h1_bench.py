@@ -64,6 +64,7 @@ from bossyk_sandbox.conditions.adversary_registry import ADVERSARY_MODELS, build
 from bossyk_sandbox.conditions.grid import AttackClass, ProbeCell, boundaries_for, build_grid
 from bossyk_sandbox.conditions.harness import ProbeGridRun, run_probe_grid
 from bossyk_sandbox.conditions.retention import save_regression_probes
+from bossyk_sandbox.env import load_project_env
 from bossyk_sandbox.guardrail.guardrail import GradedRuleGuardrail, Guardrail, GuardrailStrength
 from bossyk_sandbox.guardrail.model_backed import (
     INJECTION_CLASSIFIER_MODEL,
@@ -359,6 +360,8 @@ def _print_token_ledger(ledger: dict[str, ModelLedgerEntry]) -> None:
 
 
 def main() -> None:
+    # Load .env before _real_mode_requested()'s key gate (non-overriding).
+    load_project_env()
     real_mode = _real_mode_requested()
     label = _adversary_label(real_mode)
     output_path = _output_path(label)

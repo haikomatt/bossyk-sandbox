@@ -31,6 +31,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from bossyk_sandbox.domains import domain_config
+from bossyk_sandbox.env import load_project_env
 from bossyk_sandbox.instruments.base import Verdict
 from bossyk_sandbox.instruments.drift import ERROR_LABEL as DRIFT_ERROR_LABEL
 from bossyk_sandbox.instruments.drift import build_default_drift_instrument
@@ -256,6 +257,8 @@ def _write_report(
 
 
 def main() -> None:
+    # Load .env before the key gates below (non-overriding: shell wins).
+    load_project_env()
     if os.environ.get("RUN_SANDBOX_BENCH") != "1":
         print("Set RUN_SANDBOX_BENCH=1 to run the real-judge benchmark.", file=sys.stderr)
         raise SystemExit(1)
