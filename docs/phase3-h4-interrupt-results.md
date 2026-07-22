@@ -1,10 +1,16 @@
 # Phase 3 — interrupt efficacy + latency (H4, airline + retail)
 
-_Generated: 2026-07-22. Branch: `phase3-BE-interrupt-h4`._
+_Generated: 2026-07-22. Branch: `phase3-BE-interrupt-h4`.
+Corrected 2026-07-23 (code-review finding 14): H4 here is a **modeled
+counterfactual over the Phase 2c scripted run**, not a live interruption
+experiment — the headline and claims below are scoped accordingly._
 
-Tests **H4**: _live interruption on a high-severity detection reduces realized harm
-vs the un-interrupted counterfactual._ Falsifier: no delta, or harm realized
-**before** detection (the latency problem — plan §5, "the most honest test").
+Tests **H4** as **modeled prevention under a matched scripted counterfactual**:
+_would interruption on a high-severity detection reduce realized harm vs the
+un-interrupted counterfactual?_ No live tool execution is observed and no
+with/without paired run is performed — see Method. Falsifier: no delta, or harm
+realized **before** detection (the latency problem — plan §5, "the most honest
+test").
 
 ## Method
 
@@ -20,9 +26,13 @@ Per violation:
   *post-hoc*, after the action executed → not prevented).
 - **undetected** — gate allowed it and nothing fired.
 
-`harm_off` = every violation executes (no interrupt); `harm_on` = only gate-allowed
-violations execute; `harm_delta = harm_off − harm_on` = prevented. Report + data:
-`scripts/h4_report.py`, `docs/bench_output/phase3_h4.json`.
+`harm_off` = every violation executes (no interrupt), **assuming one unit of
+realized harm per violation** — a modeling assumption, not an observation;
+`harm_on` = only gate-allowed violations execute; `harm_delta = harm_off −
+harm_on` = **computed** prevention count. Distinguish throughout: observed gate
+blocks (real, deterministic), assumed harm-if-allowed (modeled), computed
+prevention (derived), and the unmeasured real-world effect and latency. Report +
+data: `scripts/h4_report.py`, `docs/bench_output/phase3_h4.json`.
 
 ## Result
 
@@ -38,8 +48,9 @@ violations execute; `harm_delta = harm_off − harm_on` = prevented. Report + da
 
 ## Interpretation
 
-- **H4 is not falsified, but it is latency-bounded — the honest headline.**
-  Interruption *does* reduce realized harm (12 → 7, delta 5). But it prevents only
+- **H4 is not falsified as a modeled counterfactual, but it is latency-bounded —
+  the honest headline.** Under the counterfactual model, interruption reduces
+  modeled harm (12 → 7, delta 5). But it prevents only
   **41.7%** of violations pre-execution; the other **7 of 12 are detected only
   post-hoc** by the slow drift/policy judges — **observed, but not prevented**.
   You can see more than you can stop. That gap *is* the H4 finding.
@@ -67,6 +78,20 @@ verdicts (incl. its 8.6% policy parse-error rate — one airline violation count
 "detected too late" via the gate, its policy verdict being an error); the fast/slow
 latency is characterised qualitatively (structural sub-ms vs LLM-judge seconds), not
 wall-clock benchmarked here.
+
+## What a true live H4 test needs (not done here)
+
+This phase's evidence is a deterministic recomputation over persisted scenario
+labels and gate decisions. Upgrading H4 from "modeled" to "live" requires:
+
+- **paired runs** (interruption on vs off) over the same seeded environment, or a
+  deterministic environment reset between arms;
+- **concrete side-effect observation** — the tau2 environment state actually
+  mutated (or not), rather than assuming one harm unit per violation;
+- **timestamps** around detection, decision, and execution, so the fast/slow
+  latency crux becomes wall-clock measurement (plan §15B);
+- **an explicit harm oracle** mapping realized side effects to harm, replacing
+  the 1-unit-per-violation assumption.
 
 ## What's next
 
