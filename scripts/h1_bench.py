@@ -60,7 +60,11 @@ from bossyk_sandbox.conditions.adversary import (
     StubAdversary,
     budget_for,
 )
-from bossyk_sandbox.conditions.adversary_registry import ADVERSARY_MODELS, build_adversary
+from bossyk_sandbox.conditions.adversary_registry import (
+    ADVERSARY_MODELS,
+    build_adversary,
+    required_key_env,
+)
 from bossyk_sandbox.conditions.grid import AttackClass, ProbeCell, boundaries_for, build_grid
 from bossyk_sandbox.conditions.harness import ProbeGridRun, run_probe_grid
 from bossyk_sandbox.conditions.retention import save_regression_probes
@@ -138,16 +142,20 @@ class ReplayAdversary:
 
 
 def _real_mode_requested() -> bool:
-    """Real mode requires RUN_H1_BENCH=1 AND FIREWORKS_API_KEY (missing the
-    key while the flag is set is a hard error, not a silent smoke fallback --
-    mirrors scripts/benchmark_run.py's RUN_SANDBOX_BENCH/FIREWORKS_API_KEY
-    gating). Omitting RUN_H1_BENCH is not an error: it's the default smoke
-    path."""
+    """Real mode requires RUN_H1_BENCH=1 AND the SELECTED adversary's provider
+    key (the guardrail is a local HF model -- it needs no API key). Gating on
+    `ADVERSARY`'s own `key_env` rather than a hardcoded FIREWORKS_API_KEY so an
+    Anthropic adversary is gated on ANTHROPIC_API_KEY. Missing the key while
+    the flag is set is a hard error, not a silent smoke fallback (mirrors
+    scripts/benchmark_run.py's gating). Omitting RUN_H1_BENCH is not an error:
+    it's the default smoke path."""
     if os.environ.get("RUN_H1_BENCH") != "1":
         return False
-    if not os.environ.get("FIREWORKS_API_KEY"):
+    key_env = required_key_env(ADVERSARY)
+    if not os.environ.get(key_env):
         print(
-            "FIREWORKS_API_KEY is required when RUN_H1_BENCH=1 (real mode).",
+            f"{key_env} is required to run the {ADVERSARY!r} adversary when "
+            "RUN_H1_BENCH=1 (real mode).",
             file=sys.stderr,
         )
         raise SystemExit(1)

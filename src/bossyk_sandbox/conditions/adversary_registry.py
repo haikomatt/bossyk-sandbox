@@ -42,6 +42,14 @@ ADVERSARY_MODELS: dict[str, AdversaryModelSpec] = {
 }
 
 
+def required_key_env(name: str) -> str:
+    """The environment variable that must hold `name`'s provider API key to run
+    it in real mode -- the real-mode gate keys off this, so each adversary is
+    gated on its own provider's key (not a hardcoded one). Raises `KeyError`
+    for an unregistered name, matching `build_adversary`."""
+    return ADVERSARY_MODELS[name].key_env
+
+
 def build_adversary(name: str, *, fallback_model: str | None = None) -> Adversary:
     """Looks up `name` in `ADVERSARY_MODELS` and builds the matching real
     `Adversary` -- the client-agnostic `FireworksAdversary` wrapping

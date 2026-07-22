@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from bossyk_sandbox.conditions.adversary_registry import ADVERSARY_MODELS, build_adversary
+from bossyk_sandbox.conditions.adversary_registry import (
+    ADVERSARY_MODELS,
+    build_adversary,
+    required_key_env,
+)
 
 
 def test_build_adversary_raises_key_error_for_an_unregistered_model_name() -> None:
@@ -33,3 +37,15 @@ def test_build_adversary_raises_runtime_error_when_the_key_env_is_unset(
 
     with pytest.raises(RuntimeError):
         build_adversary("fireworks-deepseek")
+
+
+def test_required_key_env_returns_the_selected_adversarys_provider_key() -> None:
+    # The real-mode gate keys off this, so an Anthropic adversary is gated on
+    # ANTHROPIC_API_KEY, not a hardcoded FIREWORKS_API_KEY.
+    assert required_key_env("fireworks-deepseek") == "FIREWORKS_API_KEY"
+    assert required_key_env("anthropic-fable") == "ANTHROPIC_API_KEY"
+
+
+def test_required_key_env_raises_key_error_for_an_unregistered_model_name() -> None:
+    with pytest.raises(KeyError):
+        required_key_env("telecom")
