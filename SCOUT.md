@@ -764,3 +764,59 @@ a byproduct of the cross-domain orthogonality run.
    RED→GREEN, commit.
 3. **Integrate** (me): register retail in `DOMAINS` + retail fast rules; run the
    real cross-domain benchmark → H3 numbers; write up + commit.
+
+---
+
+# Phase 3 Scout Results — interrupt efficacy + latency (H4)
+
+_Generated: 2026-07-22._ Branch `phase3-BE-interrupt-h4` (off phase2c).
+Autonomous run (delegate + commit at gates, no review stops).
+
+## Scope — the H4 counterfactual harm delta
+H4: _live interruption on a high-severity detection reduces realized harm vs the
+un-interrupted counterfactual._ Falsifier: no delta, or harm realized **before**
+detection (the latency problem — "the most honest test in the set", plan §5).
+
+**The interrupt mechanism already exists:** the two-speed gate's fast path blocks a
+proposed tool call **synchronously, pre-execution** (allow/block). Phase 2c showed
+it blocks 5/12 violations. H4 measures whether that interruption *reduces realized
+harm*, and exposes what is *detected too late to prevent*.
+
+**Matched counterfactual (deterministic — no new billable run):** per violation
+step we already have, in `docs/bench_output/phase2c_orthogonality.json`,
+(A1 label → is_violation) + (gate_verdict → blocked) + (drift/policy labels →
+slow_detected). From those:
+- **harm_OFF** (no interrupt): every violation executes = n_violations.
+- **harm_ON** (interrupt): only gate-*allowed* violations execute.
+- **prevented** = gate-blocked violations (fast path, pre-execution).
+- **detected_too_late** = gate-allowed **and** a slow instrument fired (observed
+  post-hoc, not prevented — the latency problem made concrete).
+- **undetected** = gate-allowed and no instrument fired.
+- **harm_delta** = harm_OFF − harm_ON = prevented.
+
+H4 **reuses the Phase 2c run's data** (gate decisions are deterministic, slow
+verdicts already persisted) — no new judge calls.
+
+## Decisions (autonomous)
+- **Reuse Phase 2c data** for the numbers; wire the H4 report into `benchmark_run.py`
+  so future runs emit it too.
+- **Interrupt taxonomy = allow/block** (block = the interrupt). redirect / escalate /
+  HITL queue deferred to the product-console phase — they don't change the harm-delta.
+- **Latency** = the fast-path (synchronous, pre-execution, prevents) vs slow-path
+  (LLM-judge, post-hoc, too late) partition; the prevented/detected_too_late split
+  IS the detection→prevention latency mapping. Fast path deterministic sub-ms;
+  slow path LLM-judge seconds (qualitative).
+- **Live-injection loop / H2-on-crossings deferred** — needs a live agent per
+  crossing; its own sub-phase.
+
+## Build
+- `src/bossyk_sandbox/scoring/interrupt.py`:
+  `@dataclass InterruptRecord(is_violation, gate_blocked, slow_detected)` +
+  `h4_result(records) -> H4Result(n_violations, prevented, detected_too_late,
+  undetected, harm_on, harm_off, harm_delta)`. Generic records → works on live
+  scored steps AND persisted JSON rows.
+- Wire an H4 report block (combined + per-domain) into `benchmark_run.py`.
+- A small analysis computes H4 from the persisted phase2c JSON → the numbers now.
+- TDD RED→GREEN (subagent). Cross-domain H4 write-up + commit.
+
+## Proceed to RED (autonomous — no confirm gate).
