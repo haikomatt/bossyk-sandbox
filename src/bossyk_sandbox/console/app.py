@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,34 @@ _held: dict[str, Any] | None = None
 _decision_event = asyncio.Event()
 _decision_value: str | None = None
 _session_running = False
+
+
+@dataclass
+class HeldAction:
+    """One gated proposal awaiting a manual decision, scoped to a single
+    console session (Finding 6) -- not yet wired into `start_session`/
+    `decide`; the module-global `_held`/`_decision_event` pair above still
+    drives current behaviour."""
+
+    action_id: str
+    payload: dict[str, Any]
+    event: asyncio.Event = field(default_factory=asyncio.Event)
+    override: str | None = None
+
+
+@dataclass
+class ConsoleSession:
+    """A single console run, scoped by `session_id` (Finding 6) -- not yet
+    registered or read anywhere; `_session_running` remains the single
+    process-global flag until the GREEN phase."""
+
+    session_id: str
+    held: HeldAction | None = None
+    task: asyncio.Task[None] | None = None
+
+
+_sessions: dict[str, ConsoleSession] = {}
+_sessions_lock = asyncio.Lock()
 
 
 async def _broadcast(event: dict[str, Any]) -> None:
@@ -93,7 +122,10 @@ async def index() -> FileResponse:
 
 
 @app.post("/session/run")
-async def start_session() -> dict[str, str]:
+async def start_session(hold_timeout_s: float = 5.0) -> dict[str, str]:
+    # `hold_timeout_s` is accepted but not yet threaded through to
+    # `_run_stub_session` (Finding 6, GREEN phase) -- kept as an inert
+    # passthrough so callers/tests can already target the new signature.
     if _session_running:
         return {"status": "already_running"}
     asyncio.create_task(_run_stub_session())

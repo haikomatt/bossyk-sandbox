@@ -17,14 +17,15 @@ from bossyk_sandbox.scenarios.runner import (
 
 
 class _FixedInstrument:
-    def __init__(self, name: str, label: str) -> None:
+    def __init__(self, name: str, label: str, detail: str = "") -> None:
         self.name = name
         self._label = label
+        self._detail = detail
 
     def annotate(
         self, proposed: ProposedAction, history: list[ProposedAction]
     ) -> InstrumentVerdict:
-        return InstrumentVerdict(instrument=self.name, label=self._label)
+        return InstrumentVerdict(instrument=self.name, label=self._label, detail=self._detail)
 
 
 class _PerToolInstrument:
@@ -78,6 +79,34 @@ def test_run_scenario_records_multi_instrument_verdicts_on_each_step() -> None:
     for scored in scored_steps:
         verdict_metadata = scored.step.metadata[VERDICT_METADATA_KEY]
         assert verdict_metadata == {"drift": "faithful", "policy": "instruction_noncompliance"}
+
+
+# --- Finding 12: evidence metadata must reflect whatever slow instruments
+# are actually configured, not a hardcoded drift/policy shape -------------
+
+
+def test_run_scenario_records_every_configured_instrument_with_label_and_detail() -> None:
+    """`run_scenario` currently hardcodes
+    `{"drift": ..., "policy": ...}` in `Step.metadata[VERDICT_METADATA_KEY]`,
+    so a third configured instrument ("custom") scores but never lands in
+    evidence, and only the label (not the detail) survives. The metadata
+    must instead be keyed by instrument name, one entry per *configured*
+    slow instrument, each carrying both label and detail."""
+    scenario = _two_step_scenario()
+    drift = _FixedInstrument("drift", "faithful", detail="drift detail")
+    policy = _FixedInstrument("policy", "instruction_noncompliance", detail="policy detail")
+    custom = _FixedInstrument("custom", "goal_deviation", detail="custom detail")
+
+    _trace, scored_steps = run_scenario(scenario, slow_instruments=[drift, policy, custom])
+
+    assert len(scored_steps) == 2
+    for scored in scored_steps:
+        verdict_metadata = scored.step.metadata[VERDICT_METADATA_KEY]
+        assert verdict_metadata == {
+            "drift": {"label": "faithful", "detail": "drift detail"},
+            "policy": {"label": "instruction_noncompliance", "detail": "policy detail"},
+            "custom": {"label": "goal_deviation", "detail": "custom detail"},
+        }
 
 
 def test_run_scenario_fast_path_blocks_the_second_step() -> None:

@@ -58,6 +58,10 @@ class TwoSpeedGate:
 
     gate: Gate
     slow_instruments: list[SlowInstrument]
+    # Per-INSTRUMENT timeout (None = wait forever, preserving benchmark
+    # behaviour where first-call model loads are slow). Not yet read by
+    # `process`/`_annotate` (Finding 8) -- wired up in the GREEN phase.
+    annotation_timeout_s: float | None = None
     _executor: ThreadPoolExecutor = field(
         default_factory=lambda: ThreadPoolExecutor(
             max_workers=4, thread_name_prefix="slow-instrument"
