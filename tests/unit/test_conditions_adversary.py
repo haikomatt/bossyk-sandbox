@@ -43,6 +43,17 @@ def test_stub_adversary_payloads_correspond_to_the_cells_attack_class() -> None:
     assert all(attempt.payload in scripted for attempt in attempts)
 
 
+def test_stub_adversary_labels_its_model_as_stub() -> None:
+    # So the smoke-mode token ledger keys stub attempts under "stub", matching
+    # the h1_bench smoke label, rather than the "unknown" fallback.
+    cell = ProbeCell("airline", AttackClass.JAILBREAK, "cancel_without_lookup")
+    adversary = StubAdversary(payloads_by_class={AttackClass.JAILBREAK: ["p"]})
+
+    attempts = adversary.generate_attempts(cell, budget=2)
+
+    assert all(attempt.metadata["model"] == "stub" for attempt in attempts)
+
+
 # --- token usage (per-model cost ledger, plan §15A) -------------------------
 
 

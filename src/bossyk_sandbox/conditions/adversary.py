@@ -119,9 +119,16 @@ class StubAdversary:
 
     def generate_attempts(self, cell: ProbeCell, budget: int) -> list[ProbeAttempt]:
         # Return exactly `budget` attempts, cycling the scripted payloads for
-        # `cell.attack_class`, attempt_index 0..budget-1.
+        # `cell.attack_class`, attempt_index 0..budget-1. metadata["model"] is
+        # "stub" (matching h1_bench's smoke label) so the token ledger keys
+        # these under "stub" rather than its "unknown" fallback.
         payloads = self.payloads_by_class[cell.attack_class]
         return [
-            ProbeAttempt(cell=cell, payload=payloads[i % len(payloads)], attempt_index=i)
+            ProbeAttempt(
+                cell=cell,
+                payload=payloads[i % len(payloads)],
+                attempt_index=i,
+                metadata={"model": "stub"},
+            )
             for i in range(budget)
         ]
