@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from auditk.adapters.protocols import Stimulus  # noqa: F401
+from auditk.adapters.protocols import Stimulus
 from auditk.schema import ExpectedBehavior, ProbeDefinition
 
 from bossyk_sandbox.conditions.adversary import ProbeAttempt
