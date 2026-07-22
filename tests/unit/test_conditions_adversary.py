@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from bossyk_sandbox.conditions.adversary import AdversaryIntensity, StubAdversary, budget_for
+from bossyk_sandbox.conditions.adversary import (
+    AdversaryIntensity,
+    ChatResult,
+    ProbeAttempt,
+    StubAdversary,
+    TokenUsage,
+    budget_for,
+)
 from bossyk_sandbox.conditions.grid import AttackClass, ProbeCell
 
 
@@ -34,3 +41,26 @@ def test_stub_adversary_payloads_correspond_to_the_cells_attack_class() -> None:
     attempts = adversary.generate_attempts(cell, budget=2)
 
     assert all(attempt.payload in scripted for attempt in attempts)
+
+
+# --- token usage (per-model cost ledger, plan §15A) -------------------------
+
+
+def test_token_usage_defaults_to_zero_and_reports_total() -> None:
+    empty = TokenUsage()
+    assert (empty.input_tokens, empty.output_tokens, empty.total_tokens) == (0, 0, 0)
+    assert TokenUsage(input_tokens=10, output_tokens=25).total_tokens == 35
+
+
+def test_token_usage_adds_componentwise() -> None:
+    # Aggregating usage across many calls must sum input and output separately.
+    assert TokenUsage(3, 4) + TokenUsage(10, 20) == TokenUsage(13, 24)
+
+
+def test_chat_result_carries_empty_usage_by_default() -> None:
+    assert ChatResult(text="payload").usage == TokenUsage()
+
+
+def test_probe_attempt_carries_empty_usage_by_default() -> None:
+    cell = ProbeCell("airline", AttackClass.JAILBREAK, "cancel_without_lookup")
+    assert ProbeAttempt(cell=cell, payload="p", attempt_index=0).usage == TokenUsage()

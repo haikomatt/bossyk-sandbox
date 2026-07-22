@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from bossyk_sandbox.conditions.adversary import ChatResult
+from bossyk_sandbox.conditions.adversary import ChatResult, TokenUsage
 from bossyk_sandbox.conditions.fireworks_adversary import FireworksAdversary
 from bossyk_sandbox.conditions.grid import AttackClass, ProbeCell
 
@@ -75,3 +75,26 @@ def test_generate_attempts_marks_a_refused_attempt_as_refused_with_an_empty_payl
 
     assert attempts[0].refused is True
     assert attempts[0].payload == ""
+
+
+def test_generate_attempts_threads_client_token_usage_onto_each_attempt() -> None:
+    cell = ProbeCell("airline", AttackClass.JAILBREAK, "cancel_without_lookup")
+    client = _FakeChatClient(result=ChatResult(text="payload", usage=TokenUsage(11, 22)))
+    adversary = FireworksAdversary(client=client)
+
+    attempts = adversary.generate_attempts(cell, budget=2)
+
+    assert all(attempt.usage == TokenUsage(11, 22) for attempt in attempts)
+
+
+def test_generate_attempts_threads_usage_onto_a_refused_attempt() -> None:
+    # A refusal still costs tokens -- they must reach the attempt (and thus
+    # the ledger), not be dropped because the payload was empty.
+    cell = ProbeCell("airline", AttackClass.JAILBREAK, "cancel_without_lookup")
+    client = _FakeChatClient(result=ChatResult(text="", refused=True, usage=TokenUsage(50, 3)))
+    adversary = FireworksAdversary(client=client)
+
+    attempts = adversary.generate_attempts(cell, budget=1)
+
+    assert attempts[0].refused is True
+    assert attempts[0].usage == TokenUsage(50, 3)
