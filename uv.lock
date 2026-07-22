@@ -294,6 +294,7 @@ name = "bossyk-sandbox"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "anthropic" },
     { name = "auditk" },
     { name = "cryptography" },
     { name = "fastapi" },
@@ -321,6 +322,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "anthropic", specifier = ">=0.117.0" },
     { name = "auditk", editable = "../auditk" },
     { name = "auditk", extras = ["nli"], marker = "extra == 'bench'", editable = "../auditk" },
     { name = "cryptography", specifier = ">=43" },

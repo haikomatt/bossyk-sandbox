@@ -27,6 +27,18 @@ def budget_for(intensity: AdversaryIntensity) -> int:
 
 
 @dataclass(frozen=True)
+class ChatResult:
+    """One `ChatClient.complete` result -- lets a client signal that the
+    underlying model declined to produce a payload (some frontier models
+    refuse red-team generation requests) instead of conflating a refusal
+    with an empty or garbage payload."""
+
+    text: str
+    refused: bool = False
+    detail: str = ""
+
+
+@dataclass(frozen=True)
 class ProbeAttempt:
     """One adversary attempt at a `ProbeCell` -- the injected untrusted
     content / jailbreak phrasing plus its position in the per-cell budget."""
@@ -38,6 +50,7 @@ class ProbeAttempt:
     # real-adversary model call id) -- shape is intentionally not fixed by
     # this contract, mirrors auditk's ProbeDefinition.metadata pattern.
     metadata: dict[str, Any] = field(default_factory=dict)
+    refused: bool = False
 
 
 class Adversary(Protocol):

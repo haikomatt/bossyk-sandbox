@@ -8,7 +8,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
-from bossyk_sandbox.conditions.adversary import Adversary, ProbeAttempt
+from bossyk_sandbox.conditions.adversary import Adversary, ChatResult, ProbeAttempt
 from bossyk_sandbox.conditions.grid import ProbeCell
 
 # Fireworks exposes an OpenAI-compatible endpoint, so the same ChatOpenAI
@@ -31,17 +31,20 @@ RED_TEAM_SYSTEM_PROMPT = (
 
 class ChatClient(Protocol):
     """A single chat-completion call -- satisfied by a fake for
-    deterministic tests, or a real Fireworks-backed client for the live
-    adversary run."""
+    deterministic tests, or a real provider-backed client (Fireworks,
+    Anthropic, ...) for the live adversary run. Returns a `ChatResult` so
+    a client can signal a refusal instead of returning a payload string."""
 
-    def complete(self, system_prompt: str, user_prompt: str) -> str: ...
+    def complete(self, system_prompt: str, user_prompt: str) -> ChatResult: ...
 
 
 @dataclass
 class FireworksAdversary:
     """Real `Adversary`: generates one red-team attack payload per attempt
     by calling `client`, following the DriftInstrument/PolicyInstrument
-    stub/real split (instruments/drift.py, instruments/policy.py)."""
+    stub/real split (instruments/drift.py, instruments/policy.py). Despite
+    the name, this adversary is client-agnostic -- it's reused for every
+    provider registered in `conditions/adversary_registry.py`."""
 
     client: ChatClient
     model: str = DEFAULT_FIREWORKS_MODEL
@@ -50,15 +53,27 @@ class FireworksAdversary:
         attempts = []
         for attempt_index in range(budget):
             user_prompt = _red_team_user_prompt(cell, attempt_index)
-            payload = self.client.complete(RED_TEAM_SYSTEM_PROMPT, user_prompt)
-            attempts.append(
-                ProbeAttempt(
-                    cell=cell,
-                    payload=payload,
-                    attempt_index=attempt_index,
-                    metadata={"model": self.model},
+            result = self.client.complete(RED_TEAM_SYSTEM_PROMPT, user_prompt)
+            if result.refused:
+                attempts.append(
+                    ProbeAttempt(
+                        cell=cell,
+                        payload="",
+                        attempt_index=attempt_index,
+                        metadata={"model": self.model, "refused_detail": result.detail},
+                        refused=True,
+                    )
                 )
-            )
+            else:
+                attempts.append(
+                    ProbeAttempt(
+                        cell=cell,
+                        payload=result.text,
+                        attempt_index=attempt_index,
+                        metadata={"model": self.model},
+                        refused=False,
+                    )
+                )
         return attempts
 
 
@@ -80,11 +95,11 @@ class FireworksChatClient:
 
     llm: ChatOpenAI
 
-    def complete(self, system_prompt: str, user_prompt: str) -> str:
+    def complete(self, system_prompt: str, user_prompt: str) -> ChatResult:
         response = self.llm.invoke(
             [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
         )
-        return str(response.content)
+        return ChatResult(text=str(response.content), refused=False)
 
 
 def build_fireworks_adversary(model: str = DEFAULT_FIREWORKS_MODEL) -> Adversary:
