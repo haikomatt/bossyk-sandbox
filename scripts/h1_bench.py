@@ -60,6 +60,7 @@ from bossyk_sandbox.guardrail.model_backed import (
     ModelBackedGuardrail,
     load_injection_classifier,
 )
+from bossyk_sandbox.scoring.cost import ModelLedgerEntry, build_token_ledger
 from bossyk_sandbox.scoring.h1 import BypassRateResult
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -200,6 +201,25 @@ def _build_guardrail(
     return GradedRuleGuardrail(strength=strength)
 
 
+def _flatten_attempts(
+    attempts_by_cell: dict[ProbeCell, list[ProbeAttempt]],
+) -> list[ProbeAttempt]:
+    return [attempt for attempts in attempts_by_cell.values() for attempt in attempts]
+
+
+def _ledger_to_dict(ledger: dict[str, ModelLedgerEntry]) -> dict[str, Any]:
+    return {
+        model: {
+            "calls": entry.calls,
+            "refused_calls": entry.refused_calls,
+            "input_tokens": entry.usage.input_tokens,
+            "output_tokens": entry.usage.output_tokens,
+            "total_tokens": entry.usage.total_tokens,
+        }
+        for model, entry in ledger.items()
+    }
+
+
 def _bypass_result_to_dict(result: BypassRateResult) -> dict[str, Any]:
     low, high = result.wilson_ci95()
     return {
@@ -253,6 +273,7 @@ def _build_output(
     canonical_run: ProbeGridRun,
     adversary_label: str,
     adversary_model_id: str,
+    token_ledger: dict[str, ModelLedgerEntry],
 ) -> dict[str, Any]:
     return {
         "generated_at": datetime.now(UTC).isoformat(),
@@ -277,6 +298,7 @@ def _build_output(
         },
         "canonical_strength": CANONICAL_STRENGTH.value,
         "regression_probe_count": len(canonical_run.regression_probes),
+        "token_ledger": _ledger_to_dict(token_ledger),
         "generated_attempts": _attempts_to_records(attempts_by_cell),
     }
 
@@ -315,6 +337,16 @@ def _print_summary(runs_by_strength: dict[GuardrailStrength, ProbeGridRun]) -> N
             )
 
 
+def _print_token_ledger(ledger: dict[str, ModelLedgerEntry]) -> None:
+    print("\n=== token ledger (per adversary model) ===")
+    for model, entry in ledger.items():
+        print(
+            f"  {model}: {entry.calls} calls ({entry.refused_calls} refused), "
+            f"input={entry.usage.input_tokens} output={entry.usage.output_tokens} "
+            f"total={entry.usage.total_tokens}"
+        )
+
+
 def main() -> None:
     real_mode = _real_mode_requested()
     label = _adversary_label(real_mode)
@@ -345,6 +377,8 @@ def main() -> None:
     total_attempts = sum(len(attempts) for attempts in attempts_by_cell.values())
     print(f"Generated {total_attempts} attempts across {len(CELLS)} cells.\n")
 
+    token_ledger = build_token_ledger(_flatten_attempts(attempts_by_cell))
+
     replay_adversary = ReplayAdversary(attempts_by_cell=attempts_by_cell)
 
     shared_classifier: InjectionClassifier | None = None
@@ -362,13 +396,20 @@ def main() -> None:
     save_regression_probes(canonical_run.regression_probes, regression_probes_path)
 
     output = _build_output(
-        real_mode, attempts_by_cell, runs_by_strength, canonical_run, label, adversary_model_id
+        real_mode,
+        attempts_by_cell,
+        runs_by_strength,
+        canonical_run,
+        label,
+        adversary_model_id,
+        token_ledger,
     )
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(output, indent=2))
 
     print()
     _print_summary(runs_by_strength)
+    _print_token_ledger(token_ledger)
 
     print(f"\nWrote results to {output_path}")
     print(

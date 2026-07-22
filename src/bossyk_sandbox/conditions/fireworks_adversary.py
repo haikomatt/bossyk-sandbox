@@ -8,7 +8,12 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
-from bossyk_sandbox.conditions.adversary import Adversary, ChatResult, ProbeAttempt
+from bossyk_sandbox.conditions.adversary import (
+    Adversary,
+    ChatResult,
+    ProbeAttempt,
+    usage_from_langchain,
+)
 from bossyk_sandbox.conditions.grid import ProbeCell
 
 # Fireworks exposes an OpenAI-compatible endpoint, so the same ChatOpenAI
@@ -62,6 +67,7 @@ class FireworksAdversary:
                         attempt_index=attempt_index,
                         metadata={"model": self.model, "refused_detail": result.detail},
                         refused=True,
+                        usage=result.usage,
                     )
                 )
             else:
@@ -72,6 +78,7 @@ class FireworksAdversary:
                         attempt_index=attempt_index,
                         metadata={"model": self.model},
                         refused=False,
+                        usage=result.usage,
                     )
                 )
         return attempts
@@ -99,7 +106,9 @@ class FireworksChatClient:
         response = self.llm.invoke(
             [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
         )
-        return ChatResult(text=str(response.content), refused=False)
+        return ChatResult(
+            text=str(response.content), refused=False, usage=usage_from_langchain(response)
+        )
 
 
 def build_fireworks_adversary(model: str = DEFAULT_FIREWORKS_MODEL) -> Adversary:

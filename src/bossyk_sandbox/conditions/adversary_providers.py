@@ -8,7 +8,11 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
-from bossyk_sandbox.conditions.adversary import ChatResult
+from bossyk_sandbox.conditions.adversary import (
+    ChatResult,
+    usage_from_anthropic,
+    usage_from_langchain,
+)
 
 if TYPE_CHECKING:
     # Lazily imported for real at call time in `build_anthropic_client` --
@@ -38,7 +42,9 @@ class OpenAICompatibleChatClient:
         response = self.llm.invoke(
             [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
         )
-        return ChatResult(text=str(response.content), refused=False)
+        return ChatResult(
+            text=str(response.content), refused=False, usage=usage_from_langchain(response)
+        )
 
 
 def build_openai_compatible_client(
@@ -67,17 +73,19 @@ def _parse_anthropic_response(response: Any) -> ChatResult:
     Checks `stop_reason` BEFORE reading `content` -- a refusal's `content`
     can be empty (declined before any output) or a partial response
     (declined mid-stream), and must never be treated as the payload."""
+    usage = usage_from_anthropic(response)
     if response.stop_reason == "refusal":
         return ChatResult(
             text="",
             refused=True,
             detail=str(getattr(response, "stop_details", "") or "refusal"),
+            usage=usage,
         )
     text = next(
         (block.text for block in response.content if getattr(block, "type", None) == "text"),
         "",
     )
-    return ChatResult(text=text, refused=False)
+    return ChatResult(text=text, refused=False, usage=usage)
 
 
 @dataclass

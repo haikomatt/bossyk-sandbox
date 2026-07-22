@@ -27,6 +27,54 @@ def budget_for(intensity: AdversaryIntensity) -> int:
 
 
 @dataclass(frozen=True)
+class TokenUsage:
+    """Input/output token counts for one or many model calls -- the unit
+    of the per-model cost ledger (scoring/cost.py). Frozen and additive so
+    usage can be summed across a whole run."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+    @property
+    def total_tokens(self) -> int:
+        return self.input_tokens + self.output_tokens
+
+    def __add__(self, other: TokenUsage) -> TokenUsage:
+        return TokenUsage(
+            input_tokens=self.input_tokens + other.input_tokens,
+            output_tokens=self.output_tokens + other.output_tokens,
+        )
+
+
+def usage_from_anthropic(response: Any) -> TokenUsage:
+    """Read token usage off an Anthropic Messages response
+    (`response.usage.input_tokens` / `.output_tokens`). Duck-typed (no SDK
+    import) and tolerant of a missing `usage` -- returns empty usage rather
+    than raising. Reads only `.usage`, never `.content`, so it is safe to
+    call before branching on a refusal."""
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return TokenUsage()
+    return TokenUsage(
+        input_tokens=int(getattr(usage, "input_tokens", 0) or 0),
+        output_tokens=int(getattr(usage, "output_tokens", 0) or 0),
+    )
+
+
+def usage_from_langchain(message: Any) -> TokenUsage:
+    """Read token usage off a langchain chat message (`message.usage_metadata`,
+    a dict with `input_tokens`/`output_tokens`). Duck-typed and tolerant of a
+    provider that returns no usage (`usage_metadata` is None/empty)."""
+    metadata = getattr(message, "usage_metadata", None)
+    if not metadata:
+        return TokenUsage()
+    return TokenUsage(
+        input_tokens=int(metadata.get("input_tokens", 0) or 0),
+        output_tokens=int(metadata.get("output_tokens", 0) or 0),
+    )
+
+
+@dataclass(frozen=True)
 class ChatResult:
     """One `ChatClient.complete` result -- lets a client signal that the
     underlying model declined to produce a payload (some frontier models
@@ -36,6 +84,7 @@ class ChatResult:
     text: str
     refused: bool = False
     detail: str = ""
+    usage: TokenUsage = field(default_factory=TokenUsage)
 
 
 @dataclass(frozen=True)
@@ -51,6 +100,7 @@ class ProbeAttempt:
     # this contract, mirrors auditk's ProbeDefinition.metadata pattern.
     metadata: dict[str, Any] = field(default_factory=dict)
     refused: bool = False
+    usage: TokenUsage = field(default_factory=TokenUsage)
 
 
 class Adversary(Protocol):
