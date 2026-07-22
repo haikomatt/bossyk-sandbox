@@ -48,6 +48,7 @@ class AirlineAgentSession:
     graph: CompiledStateGraph[AgentState, Any, AgentState, AgentState]
     trace_id: str
     steps: list[Step] = field(default_factory=list)
+    gate: Gate | None = None
 
 
 def build_airline_agent_session(
@@ -56,6 +57,8 @@ def build_airline_agent_session(
     model_name: str | None = None,
     api_key: str | None = None,
     base_url: str = FIREWORKS_BASE_URL,
+    llm: Any | None = None,
+    environment: Any | None = None,
 ) -> AirlineAgentSession:
     """Live LangGraph airline agent with in-graph tool-node interception.
 
@@ -71,6 +74,8 @@ def build_airline_agent_session(
     to $FIREWORKS_API_KEY. Pass `base_url`/`api_key`/`model_name` explicitly
     to target a different OpenAI-compatible provider instead.
     """
+    if llm is not None or environment is not None:
+        raise NotImplementedError
     resolved_model = model_name or os.environ.get("FIREWORKS_MODEL", DEFAULT_FIREWORKS_MODEL)
     resolved_api_key = api_key or os.environ.get("FIREWORKS_API_KEY")
     if not resolved_api_key:

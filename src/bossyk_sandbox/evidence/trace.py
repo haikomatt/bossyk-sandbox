@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from auditk.schema import Action, ActionType, Actor, FlowType, Step, Trace
 
-from bossyk_sandbox.instruments.base import Decision, ProposedAction
+from bossyk_sandbox.instruments.base import Decision, ProposedAction, Verdict
 
 
 def make_step(
@@ -34,6 +34,27 @@ def make_step(
         ),
         metadata={"gate_verdict": decision.verdict.value},
     )
+
+
+def make_attested_step(
+    trace_id: str,
+    proposed: ProposedAction,
+    *,
+    auto_decision: Decision,
+    final_verdict: Verdict,
+    step_id: str | None = None,
+    timestamp: datetime | None = None,
+) -> Step:
+    """Map one GATE-scored tool call onto a spec-conformant auditk-spec Step,
+    attesting the FINAL verdict (possibly a manual override of the automatic
+    decision) rather than the automatic decision alone.
+
+    `overridden` is True whenever `final_verdict` differs from
+    `auto_decision.verdict`. The step's payload/metadata always reflect the
+    final verdict; `gate_reason` explains the automatic reasoning, prefixed
+    with a manual-override note when the human overrode it.
+    """
+    raise NotImplementedError
 
 
 def build_trace(

@@ -23,6 +23,15 @@ class Gate:
     instruments: list[Instrument]
     _history: list[ProposedAction] = field(default_factory=list)
 
+    @property
+    def history(self) -> list[ProposedAction]:
+        """A copy of the recorded proposed actions, in commit order.
+
+        Read-only: mutating the returned list does not affect the gate's
+        internal history.
+        """
+        raise NotImplementedError
+
     def score(self, proposed: ProposedAction) -> Decision:
         """Score a proposed action without recording it in session history.
 

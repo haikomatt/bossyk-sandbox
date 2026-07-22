@@ -1,12 +1,14 @@
+from __future__ import annotations
+
 import json
 from pathlib import Path
 from typing import Any
 
 import jsonschema
 
-from bossyk_sandbox.evidence.trace import build_trace, make_step
+from bossyk_sandbox.evidence.trace import build_trace, make_attested_step, make_step
 from bossyk_sandbox.gate import Gate
-from bossyk_sandbox.instruments.base import ProposedAction
+from bossyk_sandbox.instruments.base import Decision, ProposedAction, Verdict
 from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel
 
 SPEC_DIR = (Path(__file__).parents[2] / ".." / "auditk-spec" / "spec" / "v0.1").resolve()
@@ -62,3 +64,61 @@ def test_make_step_declared_intent_defaults_to_none() -> None:
     step = make_step(trace_id="t-1", proposed=proposed, decision=decision)
 
     assert step.declared_intent is None
+
+
+def test_make_attested_step_with_no_override_reflects_the_automatic_allow() -> None:
+    proposed = ProposedAction("get_reservation_details", {"reservation_id": "R1"})
+    auto_decision = Decision(Verdict.ALLOW, "no instrument blocked")
+
+    step = make_attested_step(
+        trace_id="t-1",
+        proposed=proposed,
+        auto_decision=auto_decision,
+        final_verdict=Verdict.ALLOW,
+    )
+
+    assert step.action.payload["gate_verdict"] == "allow"
+    assert step.action.payload["gate_reason"] == "no instrument blocked"
+    assert step.metadata["gate_verdict"] == "allow"
+    assert step.metadata["automatic_verdict"] == "allow"
+    assert step.metadata["overridden"] is False
+
+
+def test_make_attested_step_manual_allow_over_automatic_block_attests_the_allow() -> None:
+    proposed = ProposedAction("cancel_reservation", {"reservation_id": "R9"})
+    auto_decision = Decision(
+        Verdict.BLOCK, "cancel_reservation for R9 has no prior lookup in this session"
+    )
+
+    step = make_attested_step(
+        trace_id="t-1",
+        proposed=proposed,
+        auto_decision=auto_decision,
+        final_verdict=Verdict.ALLOW,
+    )
+
+    assert step.action.payload["gate_verdict"] == "allow"
+    assert step.metadata["gate_verdict"] == "allow"
+    assert step.metadata["automatic_verdict"] == "block"
+    assert step.metadata["overridden"] is True
+    assert auto_decision.reason in step.action.payload["gate_reason"]
+    assert "manual override of automatic block" in step.action.payload["gate_reason"]
+
+
+def test_make_attested_step_manual_block_over_automatic_allow_attests_the_block() -> None:
+    proposed = ProposedAction("get_reservation_details", {"reservation_id": "R1"})
+    auto_decision = Decision(Verdict.ALLOW, "no instrument blocked")
+
+    step = make_attested_step(
+        trace_id="t-1",
+        proposed=proposed,
+        auto_decision=auto_decision,
+        final_verdict=Verdict.BLOCK,
+    )
+
+    assert step.action.payload["gate_verdict"] == "block"
+    assert step.metadata["gate_verdict"] == "block"
+    assert step.metadata["automatic_verdict"] == "allow"
+    assert step.metadata["overridden"] is True
+    assert auto_decision.reason in step.action.payload["gate_reason"]
+    assert "manual override of automatic allow" in step.action.payload["gate_reason"]
