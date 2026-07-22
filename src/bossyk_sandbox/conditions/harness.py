@@ -7,9 +7,9 @@ from auditk.schema import ProbeDefinition
 
 from bossyk_sandbox.conditions.adversary import Adversary, ProbeAttempt
 from bossyk_sandbox.conditions.grid import ProbeCell
-from bossyk_sandbox.conditions.retention import AttemptOutcome
+from bossyk_sandbox.conditions.retention import AttemptOutcome, freeze_crossing, is_crossing
 from bossyk_sandbox.guardrail.guardrail import Guardrail
-from bossyk_sandbox.scoring.h1 import BypassRateResult
+from bossyk_sandbox.scoring.h1 import BypassRateResult, bypass_rate, bypass_rate_by
 
 
 def _all_boundaries_reached(attempt: ProbeAttempt) -> bool:
@@ -42,34 +42,28 @@ def run_probe_grid(
     budget: int,
     boundary_oracle: Callable[[ProbeAttempt], bool] = _all_boundaries_reached,
 ) -> ProbeGridRun:
-    # GREEN intent: compose the already-built Phase 2a pieces end-to-end.
-    #
-    # for cell in cells:
-    #     for attempt in adversary.generate_attempts(cell, budget):
-    #         verdict = guardrail.inspect(attempt.payload)
-    #         reached = boundary_oracle(attempt)
-    #         outcomes.append(
-    #             AttemptOutcome(
-    #                 attempt=attempt,
-    #                 guardrail_flagged=verdict.flagged,
-    #                 boundary_reached=reached,
-    #             )
-    #         )
-    #
-    # crossings = [o for o in outcomes if is_crossing(o)]
-    # regression_probes = [freeze_crossing(o) for o in crossings]
-    # h1_overall = bypass_rate(outcomes)
-    # h1_by_class = bypass_rate_by(
-    #     outcomes, key=lambda o: o.attempt.cell.attack_class.value
-    # )
-    # h1_by_boundary = bypass_rate_by(outcomes, key=lambda o: o.attempt.cell.boundary)
-    #
-    # return ProbeGridRun(
-    #     outcomes=outcomes,
-    #     crossings=crossings,
-    #     regression_probes=regression_probes,
-    #     h1_overall=h1_overall,
-    #     h1_by_class=h1_by_class,
-    #     h1_by_boundary=h1_by_boundary,
-    # )
-    raise NotImplementedError
+    outcomes: list[AttemptOutcome] = []
+    for cell in cells:
+        for attempt in adversary.generate_attempts(cell, budget):
+            verdict = guardrail.inspect(attempt.payload)
+            reached = boundary_oracle(attempt)
+            outcomes.append(
+                AttemptOutcome(
+                    attempt=attempt,
+                    guardrail_flagged=verdict.flagged,
+                    boundary_reached=reached,
+                )
+            )
+
+    crossings = [outcome for outcome in outcomes if is_crossing(outcome)]
+    regression_probes = [freeze_crossing(outcome) for outcome in crossings]
+    return ProbeGridRun(
+        outcomes=outcomes,
+        crossings=crossings,
+        regression_probes=regression_probes,
+        h1_overall=bypass_rate(outcomes),
+        h1_by_class=bypass_rate_by(
+            outcomes, key=lambda outcome: outcome.attempt.cell.attack_class.value
+        ),
+        h1_by_boundary=bypass_rate_by(outcomes, key=lambda outcome: outcome.attempt.cell.boundary),
+    )
