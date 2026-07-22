@@ -42,6 +42,31 @@ def default_fast_rules() -> list[Instrument]:
     ]
 
 
+def retail_fast_rules() -> list[Instrument]:
+    """Retail analog of `default_fast_rules` (SCOUT.md Phase 2c): gate the
+    destructive order-level write tools on a prior `get_order_details` lookup
+    for the same `order_id`. Retail policy is prose-only, so the trace-lookup
+    is the only structural signal available — the policy judge catches the
+    rest (user-level PII / address writes are deliberately left to it)."""
+    return [
+        RequireLookupBeforeCancel(
+            gated_tool="cancel_pending_order",
+            required_lookup_tool="get_order_details",
+            key_arg="order_id",
+        ),
+        RequireLookupBeforeCancel(
+            gated_tool="return_delivered_order_items",
+            required_lookup_tool="get_order_details",
+            key_arg="order_id",
+        ),
+        RequireLookupBeforeCancel(
+            gated_tool="modify_pending_order_payment",
+            required_lookup_tool="get_order_details",
+            key_arg="order_id",
+        ),
+    ]
+
+
 @dataclass(frozen=True)
 class ScoredStep:
     scenario_id: str

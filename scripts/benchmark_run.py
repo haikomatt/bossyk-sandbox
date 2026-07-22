@@ -1,10 +1,17 @@
 #!/usr/bin/env python
-"""Phase 1 benchmark run: real drift + policy judges over the scripted
-airline scenario set, producing the 3-way orthogonality table and the
-gate-vs-ground-truth confusion read (B2 safety-weighted + B3 bind/no-bind).
-Also persists full per-step output (declared_intent, action, both verdicts +
-reasoning) to docs/bench_output/ so future runs and diagnostics read from
-disk instead of a recompute.
+"""Phase 2c cross-domain benchmark run: real drift + policy judges over
+each registered domain's scripted scenario set (see
+`bossyk_sandbox.domains`), producing a combined 3-way orthogonality table
+across all domains plus a per-domain breakdown, and the gate-vs-ground-truth
+confusion read (B2 safety-weighted + B3 bind/no-bind) both combined and
+per-domain. Also persists full per-step output (declared_intent, action,
+both verdicts + reasoning, tagged with domain) to docs/bench_output/ so
+future runs and diagnostics read from disk instead of a recompute.
+
+Which domains run is controlled by the `BENCH_DOMAINS` env var (comma
+separated domain names, default "airline,retail") -- each name is looked up
+via `bossyk_sandbox.domains.domain_config`, so only registered domains can
+be selected.
 
 Gated on FIREWORKS_API_KEY + RUN_SANDBOX_BENCH=1 (same shape as Phase 0's
 scripts/live_demo.py) -- not part of the test suite, run explicitly:
@@ -23,6 +30,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
+from bossyk_sandbox.domains import domain_config
 from bossyk_sandbox.instruments.drift import ERROR_LABEL as DRIFT_ERROR_LABEL
 from bossyk_sandbox.instruments.drift import build_default_drift_instrument
 from bossyk_sandbox.instruments.outcome_key import OutcomeKeyLookup
@@ -35,10 +43,24 @@ from bossyk_sandbox.scenarios.runner import (
     to_gate_outcomes,
     to_membership,
 )
-from bossyk_sandbox.scoring.confusion import b2_safety_weighted, b3_bind_headline, binary_confusion
-from bossyk_sandbox.scoring.orthogonality import orthogonality_table
+from bossyk_sandbox.scoring.confusion import (
+    ConfusionMatrix,
+    GateOutcomeRecord,
+    b2_safety_weighted,
+    b3_bind_headline,
+    binary_confusion,
+)
+from bossyk_sandbox.scoring.orthogonality import StepMembership, orthogonality_table
 
 OUTPUT_DIR = Path(__file__).parent.parent / "docs" / "bench_output"
+DEFAULT_BENCH_DOMAINS = "airline,retail"
+
+
+def _bench_domains() -> list[str]:
+    """Parses `BENCH_DOMAINS` (comma separated, default "airline,retail")
+    into the ordered list of domain names to run this benchmark over."""
+    raw = os.environ.get("BENCH_DOMAINS", DEFAULT_BENCH_DOMAINS)
+    return [name.strip() for name in raw.split(",") if name.strip()]
 
 
 def _report_judge_errors(all_scored_steps: list[ScoredStep]) -> None:
@@ -69,38 +91,103 @@ def _report_judge_errors(all_scored_steps: list[ScoredStep]) -> None:
     print()
 
 
-def _persist_per_step_output(all_scored_steps: list[ScoredStep], lookup: OutcomeKeyLookup) -> Path:
-    """Writes full per-step judge output to disk -- scenario/step,
-    boundary_label, declared_intent, action, both verdicts + reasoning --
-    so a diagnostic can inspect exactly what a benchmark run computed
+def _print_orthogonality_table(memberships: list[StepMembership]) -> None:
+    for cell in orthogonality_table(memberships):
+        print(
+            f"drift={cell.cell.drift_fires} policy={cell.cell.policy_fires} "
+            f"outcome_violation={cell.cell.outcome_violation}: "
+            f"n={cell.count} p={cell.proportion:.3f} "
+            f"CI=[{cell.ci_low:.3f}, {cell.ci_high:.3f}]"
+        )
+
+
+def _print_confusion_read(label: str, matrix: ConfusionMatrix) -> None:
+    safety = b2_safety_weighted(matrix)
+    headline = b3_bind_headline(matrix)
+    print(f"\n=== {label}: B2 safety-weighted confusion (false-admit vs false-hold) ===")
+    print(f"false_admit={safety.false_admit} (rate={safety.false_admit_rate:.3f})")
+    print(f"false_hold={safety.false_hold} (rate={safety.false_hold_rate:.3f})")
+    print(f"\n=== {label}: B3 bind/no-bind headline ===")
+    print(f"accuracy={headline.accuracy:.3f}")
+    print(f"bind_precision={headline.bind_precision:.3f}")
+    print(f"bind_recall={headline.bind_recall:.3f}")
+
+
+def _domain_report(
+    memberships: list[StepMembership], gate_outcomes: list[GateOutcomeRecord]
+) -> dict[str, object]:
+    matrix = binary_confusion(gate_outcomes)
+    return {
+        "orthogonality_table": [asdict(cell) for cell in orthogonality_table(memberships)],
+        "confusion_matrix": asdict(matrix),
+        "safety_weighted": asdict(b2_safety_weighted(matrix)),
+        "bind_headline": asdict(b3_bind_headline(matrix)),
+    }
+
+
+def _per_step_rows(
+    scored_steps_by_domain: dict[str, list[ScoredStep]],
+    lookups_by_domain: dict[str, OutcomeKeyLookup],
+) -> list[dict[str, object]]:
+    """Full per-step judge output -- scenario/step, boundary_label,
+    declared_intent, action, both verdicts + reasoning, tagged with domain
+    -- so a diagnostic can inspect exactly what a benchmark run computed
     without recomputing it (see docs/drift-diagnostic-findings.md, which
     had to re-run the whole benchmark because this didn't exist yet)."""
     rows: list[dict[str, object]] = []
-    for scored in all_scored_steps:
-        boundary = lookup.label_for(scored.scenario_id, scored.step_index)
-        drift_v = next((v for v in scored.verdicts if v.instrument == "drift"), None)
-        policy_v = next((v for v in scored.verdicts if v.instrument == "policy"), None)
-        rows.append(
-            {
-                "scenario_id": scored.scenario_id,
-                "step_index": scored.step_index,
-                "boundary_label": boundary.value if boundary else None,
-                "outcome_violation": lookup.is_violation(scored.scenario_id, scored.step_index),
-                "tool_name": scored.step.action.payload.get("tool_name"),
-                "arguments": scored.step.action.payload.get("arguments"),
-                "declared_intent": scored.step.declared_intent,
-                "gate_verdict": scored.decision.verdict.value,
-                "gate_reason": scored.decision.reason,
-                "drift": asdict(drift_v) if drift_v else None,
-                "policy": asdict(policy_v) if policy_v else None,
-            }
-        )
+    for domain_name, scored_steps in scored_steps_by_domain.items():
+        lookup = lookups_by_domain[domain_name]
+        for scored in scored_steps:
+            boundary = lookup.label_for(scored.scenario_id, scored.step_index)
+            drift_v = next((v for v in scored.verdicts if v.instrument == "drift"), None)
+            policy_v = next((v for v in scored.verdicts if v.instrument == "policy"), None)
+            rows.append(
+                {
+                    "domain": domain_name,
+                    "scenario_id": scored.scenario_id,
+                    "step_index": scored.step_index,
+                    "boundary_label": boundary.value if boundary else None,
+                    "outcome_violation": lookup.is_violation(scored.scenario_id, scored.step_index),
+                    "tool_name": scored.step.action.payload.get("tool_name"),
+                    "arguments": scored.step.action.payload.get("arguments"),
+                    "declared_intent": scored.step.declared_intent,
+                    "gate_verdict": scored.decision.verdict.value,
+                    "gate_reason": scored.decision.reason,
+                    "drift": asdict(drift_v) if drift_v else None,
+                    "policy": asdict(policy_v) if policy_v else None,
+                }
+            )
+    return rows
+
+
+def _write_report(
+    *,
+    domain_names: list[str],
+    scored_steps_by_domain: dict[str, list[ScoredStep]],
+    lookups_by_domain: dict[str, OutcomeKeyLookup],
+    memberships_by_domain: dict[str, list[StepMembership]],
+    gate_outcomes_by_domain: dict[str, list[GateOutcomeRecord]],
+    all_memberships: list[StepMembership],
+    all_gate_outcomes: list[GateOutcomeRecord],
+) -> Path:
+    """Persists the combined + per-domain 3-way orthogonality tables and
+    confusion reads, plus full per-step judge output tagged with domain --
+    the phase2c cross-domain extension of phase1's single-domain report."""
+    report = {
+        "generated_at": datetime.now(UTC).isoformat(),
+        "combined": _domain_report(all_memberships, all_gate_outcomes),
+        "per_domain": {
+            domain_name: _domain_report(
+                memberships_by_domain[domain_name], gate_outcomes_by_domain[domain_name]
+            )
+            for domain_name in domain_names
+        },
+        "steps": _per_step_rows(scored_steps_by_domain, lookups_by_domain),
+    }
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = OUTPUT_DIR / "phase1_benchmark_run.json"
-    out_path.write_text(
-        json.dumps({"generated_at": datetime.now(UTC).isoformat(), "steps": rows}, indent=2)
-    )
+    out_path = OUTPUT_DIR / "phase2c_orthogonality.json"
+    out_path.write_text(json.dumps(report, indent=2))
     return out_path
 
 
@@ -112,49 +199,67 @@ def main() -> None:
         print("FIREWORKS_API_KEY is required for the real-judge benchmark.", file=sys.stderr)
         raise SystemExit(1)
 
-    scenarios = load_scenarios()
-    lookup = OutcomeKeyLookup(keys=outcome_keys(scenarios))
+    domain_names = _bench_domains()
 
+    # Drift is domain-agnostic (it scores declared-intent-vs-action text,
+    # not domain-specific policy) so it's built once and reused; the policy
+    # instrument is loaded against a specific policy_path per domain, so it
+    # must be built per domain.
     drift_instrument = build_default_drift_instrument()
-    policy_instrument = build_default_policy_instrument()
 
-    all_memberships = []
-    all_gate_outcomes = []
-    all_scored_steps: list[ScoredStep] = []
-    for scenario in scenarios:
-        _, scored_steps = run_scenario(
-            scenario, slow_instruments=[drift_instrument, policy_instrument]
-        )
-        all_scored_steps.extend(scored_steps)
-        all_memberships.extend(to_membership(scored_steps, lookup))
-        all_gate_outcomes.extend(to_gate_outcomes(scored_steps, lookup))
+    scored_steps_by_domain: dict[str, list[ScoredStep]] = {}
+    lookups_by_domain: dict[str, OutcomeKeyLookup] = {}
+    memberships_by_domain: dict[str, list[StepMembership]] = {}
+    gate_outcomes_by_domain: dict[str, list[GateOutcomeRecord]] = {}
 
-    out_path = _persist_per_step_output(all_scored_steps, lookup)
-    print(f"Wrote {len(all_scored_steps)} steps to {out_path}\n")
+    for domain_name in domain_names:
+        cfg = domain_config(domain_name)
+        scenarios = load_scenarios(cfg.scenarios_path)
+        lookup = OutcomeKeyLookup(keys=outcome_keys(scenarios))
+        policy_instrument = build_default_policy_instrument(cfg.policy_path)
+
+        domain_scored_steps: list[ScoredStep] = []
+        for scenario in scenarios:
+            _, scenario_scored_steps = run_scenario(
+                scenario,
+                slow_instruments=[drift_instrument, policy_instrument],
+                fast_rules=cfg.fast_rules_factory(),
+            )
+            domain_scored_steps.extend(scenario_scored_steps)
+
+        scored_steps_by_domain[domain_name] = domain_scored_steps
+        lookups_by_domain[domain_name] = lookup
+        memberships_by_domain[domain_name] = to_membership(domain_scored_steps, lookup)
+        gate_outcomes_by_domain[domain_name] = to_gate_outcomes(domain_scored_steps, lookup)
+
+    all_scored_steps = [step for steps in scored_steps_by_domain.values() for step in steps]
+    all_memberships = [m for ms in memberships_by_domain.values() for m in ms]
+    all_gate_outcomes = [g for gs in gate_outcomes_by_domain.values() for g in gs]
+
+    out_path = _write_report(
+        domain_names=domain_names,
+        scored_steps_by_domain=scored_steps_by_domain,
+        lookups_by_domain=lookups_by_domain,
+        memberships_by_domain=memberships_by_domain,
+        gate_outcomes_by_domain=gate_outcomes_by_domain,
+        all_memberships=all_memberships,
+        all_gate_outcomes=all_gate_outcomes,
+    )
+    print(
+        f"Wrote {len(all_scored_steps)} steps across {len(domain_names)} domain(s) to {out_path}\n"
+    )
 
     _report_judge_errors(all_scored_steps)
 
-    print("=== 3-way orthogonality table (drift / policy / outcome) ===")
-    for cell in orthogonality_table(all_memberships):
-        print(
-            f"drift={cell.cell.drift_fires} policy={cell.cell.policy_fires} "
-            f"outcome_violation={cell.cell.outcome_violation}: "
-            f"n={cell.count} p={cell.proportion:.3f} "
-            f"CI=[{cell.ci_low:.3f}, {cell.ci_high:.3f}]"
-        )
+    print("=== Combined 3-way orthogonality table (drift / policy / outcome) ===")
+    _print_orthogonality_table(all_memberships)
+    for domain_name in domain_names:
+        print(f"\n=== {domain_name}: 3-way orthogonality table (drift / policy / outcome) ===")
+        _print_orthogonality_table(memberships_by_domain[domain_name])
 
-    matrix = binary_confusion(all_gate_outcomes)
-    safety = b2_safety_weighted(matrix)
-    headline = b3_bind_headline(matrix)
-
-    print("\n=== B2 safety-weighted confusion (false-admit vs false-hold) ===")
-    print(f"false_admit={safety.false_admit} (rate={safety.false_admit_rate:.3f})")
-    print(f"false_hold={safety.false_hold} (rate={safety.false_hold_rate:.3f})")
-
-    print("\n=== B3 bind/no-bind headline ===")
-    print(f"accuracy={headline.accuracy:.3f}")
-    print(f"bind_precision={headline.bind_precision:.3f}")
-    print(f"bind_recall={headline.bind_recall:.3f}")
+    _print_confusion_read("Combined", binary_confusion(all_gate_outcomes))
+    for domain_name in domain_names:
+        _print_confusion_read(domain_name, binary_confusion(gate_outcomes_by_domain[domain_name]))
 
 
 if __name__ == "__main__":
