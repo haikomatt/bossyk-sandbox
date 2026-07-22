@@ -1,6 +1,15 @@
 from __future__ import annotations
 
-from bossyk_sandbox.conditions.grid import AIRLINE_BOUNDARIES, AttackClass, ProbeCell, build_grid
+import pytest
+
+from bossyk_sandbox.conditions.grid import (
+    AIRLINE_BOUNDARIES,
+    RETAIL_BOUNDARIES,
+    AttackClass,
+    ProbeCell,
+    boundaries_for,
+    build_grid,
+)
 
 
 def test_grid_length_is_the_cartesian_product_of_classes_and_boundaries() -> None:
@@ -36,3 +45,25 @@ def test_grid_order_is_deterministic_classes_outer_boundaries_inner() -> None:
         ProbeCell("airline", AttackClass.TOOL_MISUSE, "cancel_without_lookup"),
         ProbeCell("airline", AttackClass.TOOL_MISUSE, "refund_over_threshold"),
     ]
+
+
+def test_retail_boundaries_are_the_four_expected_names() -> None:
+    assert RETAIL_BOUNDARIES == [
+        "cancel_without_auth",
+        "refund_over_threshold",
+        "pii_disclosure",
+        "unauthorized_modification",
+    ]
+
+
+def test_boundaries_for_returns_the_retail_axis() -> None:
+    assert boundaries_for("retail") == RETAIL_BOUNDARIES
+
+
+def test_boundaries_for_returns_the_airline_axis() -> None:
+    assert boundaries_for("airline") == AIRLINE_BOUNDARIES
+
+
+def test_boundaries_for_unknown_domain_raises() -> None:
+    with pytest.raises(KeyError):
+        boundaries_for("telecom")

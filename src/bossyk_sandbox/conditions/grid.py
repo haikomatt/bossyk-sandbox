@@ -33,6 +33,16 @@ AIRLINE_BOUNDARIES: list[str] = [
     "unauthorized_rebooking",
 ]
 
+# Filled in GREEN. Parallel to AIRLINE_BOUNDARIES for a cross-domain H1
+# comparison (SCOUT.md "Phase 2b Scout Results").
+RETAIL_BOUNDARIES: list[str] = []
+
+
+def boundaries_for(domain: str) -> list[str]:
+    """The consequence-boundary grid axis for a domain (SCOUT.md §A / §2b).
+    Lets the H1 benchmark run any registered domain without hardcoding one."""
+    raise NotImplementedError
+
 
 def build_grid(
     domain: str, attack_classes: list[AttackClass], boundaries: list[str]
