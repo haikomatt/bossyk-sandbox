@@ -7,9 +7,9 @@ from typing import Any
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 
-from bossyk_sandbox.evidence.trace import build_trace, make_step
+from bossyk_sandbox.evidence.trace import build_trace, make_attested_step
 from bossyk_sandbox.gate import Gate
-from bossyk_sandbox.instruments.base import Decision, Verdict
+from bossyk_sandbox.instruments.base import Verdict
 from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel
 from bossyk_sandbox.runtime.stub_agent import SCRIPTED_TOOL_CALLS
 
@@ -60,13 +60,15 @@ async def _run_stub_session(hold_timeout_s: float = 5.0) -> None:
                 pass
 
             final_verdict = Verdict(_decision_value) if _decision_value else auto_decision.verdict
-            gate.record(call)
+            if final_verdict is Verdict.ALLOW:
+                gate.record(call)
             _held = None
 
-            step = make_step(
+            step = make_attested_step(
                 trace_id="console-session-1",
                 proposed=call,
-                decision=Decision(final_verdict, auto_decision.reason),
+                auto_decision=auto_decision,
+                final_verdict=final_verdict,
             )
             steps.append(step)
             await _broadcast(

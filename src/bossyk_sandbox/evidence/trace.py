@@ -54,7 +54,24 @@ def make_attested_step(
     final verdict; `gate_reason` explains the automatic reasoning, prefixed
     with a manual-override note when the human overrode it.
     """
-    raise NotImplementedError
+    overridden = final_verdict is not auto_decision.verdict
+    if overridden:
+        reason = (
+            f"manual override of automatic {auto_decision.verdict.value}: {auto_decision.reason}"
+        )
+    else:
+        reason = auto_decision.reason
+
+    step = make_step(
+        trace_id,
+        proposed,
+        Decision(final_verdict, reason),
+        step_id=step_id,
+        timestamp=timestamp,
+    )
+    step.metadata["automatic_verdict"] = auto_decision.verdict.value
+    step.metadata["overridden"] = overridden
+    return step
 
 
 def build_trace(

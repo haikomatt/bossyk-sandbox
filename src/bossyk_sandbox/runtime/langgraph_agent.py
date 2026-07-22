@@ -15,9 +15,9 @@ from langgraph.types import interrupt
 from pydantic import SecretStr
 from tau2.domains.airline.environment import get_environment
 
-from bossyk_sandbox.evidence.trace import make_step
+from bossyk_sandbox.evidence.trace import make_attested_step
 from bossyk_sandbox.gate import Gate
-from bossyk_sandbox.instruments.base import ProposedAction, Verdict
+from bossyk_sandbox.instruments.base import Decision, ProposedAction, Verdict
 from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel
 
 # Fireworks exposes an OpenAI-compatible endpoint, so the same ChatOpenAI
@@ -36,6 +36,11 @@ DEFAULT_FIREWORKS_MODEL = "accounts/fireworks/models/kimi-k2p6"
 
 class AgentState(TypedDict):
     messages: Annotated[list[Any], add_messages]
+    pending_calls: list[dict[str, Any]]
+    active_call: dict[str, Any] | None
+    auto_verdict: str | None
+    auto_reason: str | None
+    final_verdict: str | None
 
 
 @dataclass
@@ -60,40 +65,48 @@ def build_airline_agent_session(
     llm: Any | None = None,
     environment: Any | None = None,
 ) -> AirlineAgentSession:
-    """Live LangGraph airline agent with in-graph tool-node interception.
+    """Live LangGraph airline agent with in-graph tool-call interception.
 
-    Every proposed tool call is held at the `gate` node: scored by the same
-    `Gate`/`Instrument` machinery as the stub agent (bossyk_sandbox.gate),
-    then surfaced via `interrupt()` so a human (via the console) can confirm
-    or override the automatic verdict before the tau2 tool actually runs.
-    Each scored call is also recorded as a spec-conformant Step in
-    `session.steps`, mirroring the stub agent's trace path.
+    Every proposed tool call is scored by the same `Gate`/`Instrument`
+    machinery as the stub agent (bossyk_sandbox.gate), then surfaced via
+    `interrupt()` so a human (via the console) can confirm or override the
+    automatic verdict before the tau2 tool actually runs. Because a single
+    AIMessage can carry several tool calls but LangGraph re-runs a node from
+    the top on every resume (only the `interrupt()` value itself is cached),
+    scoring/deciding/executing are split across separate nodes
+    (`plan_calls` -> `prepare` -> `approve` -> `execute`, looping back to
+    `prepare` while calls remain) so no non-idempotent work — scoring,
+    executing the tau2 tool, recording history — shares a node with
+    `interrupt()`. Each scored call is also recorded as a spec-conformant
+    Step in `session.steps`, mirroring the stub agent's trace path.
 
     Defaults to Fireworks' OpenAI-compatible endpoint: `model_name` falls
     back to $FIREWORKS_MODEL (then `firefunction-v2`), `api_key` falls back
     to $FIREWORKS_API_KEY. Pass `base_url`/`api_key`/`model_name` explicitly
-    to target a different OpenAI-compatible provider instead.
+    to target a different OpenAI-compatible provider instead. Pass `llm`
+    to use an already-constructed chat model (e.g. a test double) instead,
+    skipping the API-key check entirely; pass `environment` to use an
+    already-resolved tau2 environment instead of calling `get_environment()`.
     """
-    if llm is not None or environment is not None:
-        raise NotImplementedError
-    resolved_model = model_name or os.environ.get("FIREWORKS_MODEL", DEFAULT_FIREWORKS_MODEL)
-    resolved_api_key = api_key or os.environ.get("FIREWORKS_API_KEY")
-    if not resolved_api_key:
-        raise RuntimeError(
-            "FIREWORKS_API_KEY is required to run the live airline agent "
-            "(set it in .env, matching auditk-constellaration-experiment's convention)."
-        )
-
-    env = get_environment()
+    env = environment if environment is not None else get_environment()
     toolkit = env.tools
-    tool_schemas = [tool.openai_schema for tool in toolkit.get_tools().values()]
 
-    llm = ChatOpenAI(
-        model=resolved_model,
-        base_url=base_url,
-        api_key=SecretStr(resolved_api_key),
-        temperature=0,
-    ).bind_tools(tool_schemas)
+    if llm is None:
+        resolved_model = model_name or os.environ.get("FIREWORKS_MODEL", DEFAULT_FIREWORKS_MODEL)
+        resolved_api_key = api_key or os.environ.get("FIREWORKS_API_KEY")
+        if not resolved_api_key:
+            raise RuntimeError(
+                "FIREWORKS_API_KEY is required to run the live airline agent "
+                "(set it in .env, matching auditk-constellaration-experiment's convention)."
+            )
+        tool_schemas = [tool.openai_schema for tool in toolkit.get_tools().values()]
+        llm = ChatOpenAI(
+            model=resolved_model,
+            base_url=base_url,
+            api_key=SecretStr(resolved_api_key),
+            temperature=0,
+        ).bind_tools(tool_schemas)
+
     gate = Gate(instruments=[RequireLookupBeforeCancel()])
     steps: list[Step] = []
 
@@ -102,55 +115,101 @@ def build_airline_agent_session(
         response = llm.invoke(messages)
         return {"messages": [response]}
 
-    def gate_node(state: AgentState) -> dict[str, Any]:
+    def plan_calls_node(state: AgentState) -> dict[str, Any]:
         last = state["messages"][-1]
-        if not isinstance(last, AIMessage) or not last.tool_calls:
-            return {"messages": []}
+        tool_calls = last.tool_calls if isinstance(last, AIMessage) else []
+        return {"pending_calls": list(tool_calls)}
 
-        tool_messages: list[ToolMessage] = []
-        for call in last.tool_calls:
-            proposed = ProposedAction(call["name"], dict(call["args"]))
-            auto_decision = gate.evaluate(proposed)
+    def prepare_node(state: AgentState) -> dict[str, Any]:
+        active = state["pending_calls"][0]
+        proposed = ProposedAction(active["name"], dict(active["args"]))
+        decision = gate.score(proposed)
+        return {
+            "active_call": active,
+            "auto_verdict": decision.verdict.value,
+            "auto_reason": decision.reason,
+        }
 
-            override = interrupt(
-                {
-                    "tool_call_id": call["id"],
-                    "tool_name": call["name"],
-                    "arguments": call["args"],
-                    "auto_verdict": auto_decision.verdict.value,
-                    "auto_reason": auto_decision.reason,
-                }
-            )
-            final_verdict = Verdict(override) if override else auto_decision.verdict
-            steps.append(make_step(trace_id=trace_id, proposed=proposed, decision=auto_decision))
+    def approve_node(state: AgentState) -> dict[str, Any]:
+        call = state["active_call"]
+        auto_verdict = state["auto_verdict"]
+        assert call is not None
+        assert auto_verdict is not None
+        override = interrupt(
+            {
+                "tool_call_id": call["id"],
+                "tool_name": call["name"],
+                "arguments": call["args"],
+                "auto_verdict": auto_verdict,
+                "auto_reason": state["auto_reason"],
+            }
+        )
+        final = Verdict(override) if override else Verdict(auto_verdict)
+        return {"final_verdict": final.value}
 
-            if final_verdict is Verdict.ALLOW:
-                try:
-                    result = toolkit.use_tool(call["name"], **call["args"])
-                except Exception as exc:  # tau2 tool raised — surface as a tool error, not a crash
-                    result = f"error: {exc}"
-                tool_messages.append(ToolMessage(content=str(result), tool_call_id=call["id"]))
+    def execute_node(state: AgentState) -> dict[str, Any]:
+        call = state["active_call"]
+        assert call is not None
+        proposed = ProposedAction(call["name"], dict(call["args"]))
+        auto_verdict = state["auto_verdict"]
+        assert auto_verdict is not None
+        auto_decision = Decision(Verdict(auto_verdict), state["auto_reason"] or "")
+        final_verdict_str = state["final_verdict"]
+        assert final_verdict_str is not None
+        final = Verdict(final_verdict_str)
+
+        step = make_attested_step(
+            trace_id=trace_id, proposed=proposed, auto_decision=auto_decision, final_verdict=final
+        )
+        steps.append(step)
+
+        if final is Verdict.ALLOW:
+            try:
+                result = toolkit.use_tool(call["name"], **call["args"])
+            except Exception as exc:  # tau2 tool raised — surface as an error, not a crash
+                tool_message = ToolMessage(content=f"error: {exc}", tool_call_id=call["id"])
             else:
-                tool_messages.append(
-                    ToolMessage(
-                        content=f"BLOCKED by bossyk-sandbox GATE: {auto_decision.reason}",
-                        tool_call_id=call["id"],
-                    )
-                )
-        return {"messages": tool_messages}
+                gate.record(proposed)
+                tool_message = ToolMessage(content=str(result), tool_call_id=call["id"])
+        else:
+            gate_reason = step.action.payload["gate_reason"]
+            tool_message = ToolMessage(
+                content=f"BLOCKED by bossyk-sandbox GATE: {gate_reason}",
+                tool_call_id=call["id"],
+            )
+
+        return {
+            "messages": [tool_message],
+            "pending_calls": state["pending_calls"][1:],
+            "active_call": None,
+            "auto_verdict": None,
+            "auto_reason": None,
+            "final_verdict": None,
+        }
 
     def route_after_agent(state: AgentState) -> str:
         last = state["messages"][-1]
         if isinstance(last, AIMessage) and last.tool_calls:
-            return "gate"
+            return "plan_calls"
         return END
+
+    def route_after_execute(state: AgentState) -> str:
+        return "prepare" if state["pending_calls"] else "agent"
 
     graph = StateGraph(AgentState)
     graph.add_node("agent", agent_node)
-    graph.add_node("gate", gate_node)
+    graph.add_node("plan_calls", plan_calls_node)
+    graph.add_node("prepare", prepare_node)
+    graph.add_node("approve", approve_node)
+    graph.add_node("execute", execute_node)
     graph.set_entry_point("agent")
-    graph.add_conditional_edges("agent", route_after_agent, {"gate": "gate", END: END})
-    graph.add_edge("gate", "agent")
+    graph.add_conditional_edges("agent", route_after_agent, {"plan_calls": "plan_calls", END: END})
+    graph.add_edge("plan_calls", "prepare")
+    graph.add_edge("prepare", "approve")
+    graph.add_edge("approve", "execute")
+    graph.add_conditional_edges(
+        "execute", route_after_execute, {"prepare": "prepare", "agent": "agent"}
+    )
 
     compiled = graph.compile(checkpointer=MemorySaver())
-    return AirlineAgentSession(graph=compiled, trace_id=trace_id, steps=steps)
+    return AirlineAgentSession(graph=compiled, trace_id=trace_id, steps=steps, gate=gate)

@@ -26,7 +26,7 @@ def test_spec_schemas_are_reachable() -> None:
 def test_step_and_trace_are_spec_conformant() -> None:
     gate = Gate(instruments=[RequireLookupBeforeCancel()])
     proposed = ProposedAction("get_reservation_details", {"reservation_id": "R1"})
-    decision = gate.evaluate(proposed)
+    decision = gate.score(proposed)
     step = make_step(trace_id="t-1", proposed=proposed, decision=decision)
     trace = build_trace(trace_id="t-1", agent_config_ref="cfg-1", steps=[step])
 
@@ -38,7 +38,7 @@ def test_step_and_trace_are_spec_conformant() -> None:
 def test_blocked_step_records_block_verdict_in_action_payload() -> None:
     gate = Gate(instruments=[RequireLookupBeforeCancel()])
     proposed = ProposedAction("cancel_reservation", {"reservation_id": "R1"})
-    decision = gate.evaluate(proposed)
+    decision = gate.score(proposed)
     step = make_step(trace_id="t-1", proposed=proposed, decision=decision)
 
     assert step.action.payload["gate_verdict"] == "block"
@@ -51,7 +51,7 @@ def test_make_step_persists_declared_intent() -> None:
         {"reservation_id": "R1"},
         declared_intent="look up R1 before cancelling",
     )
-    decision = gate.evaluate(proposed)
+    decision = gate.score(proposed)
     step = make_step(trace_id="t-1", proposed=proposed, decision=decision)
 
     assert step.declared_intent == "look up R1 before cancelling"
@@ -60,7 +60,7 @@ def test_make_step_persists_declared_intent() -> None:
 def test_make_step_declared_intent_defaults_to_none() -> None:
     gate = Gate(instruments=[RequireLookupBeforeCancel()])
     proposed = ProposedAction("get_reservation_details", {"reservation_id": "R1"})
-    decision = gate.evaluate(proposed)
+    decision = gate.score(proposed)
     step = make_step(trace_id="t-1", proposed=proposed, decision=decision)
 
     assert step.declared_intent is None

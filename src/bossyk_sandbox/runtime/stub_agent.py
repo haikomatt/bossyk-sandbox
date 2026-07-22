@@ -41,11 +41,12 @@ def run_stub_session(
     executed: list[ProposedAction] = []
 
     for call in SCRIPTED_TOOL_CALLS:
-        decision = gate.evaluate(call)
+        decision = gate.score(call)
         decisions.append((call, decision))
         steps.append(make_step(trace_id=trace_id, proposed=call, decision=decision))
         if decision.verdict is Verdict.ALLOW:
             _execute(call)
+            gate.record(call)
             executed.append(call)
 
     trace = build_trace(trace_id=trace_id, agent_config_ref=agent_config_ref, steps=steps)

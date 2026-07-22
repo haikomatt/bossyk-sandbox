@@ -30,7 +30,7 @@ class Gate:
         Read-only: mutating the returned list does not affect the gate's
         internal history.
         """
-        raise NotImplementedError
+        return list(self._history)
 
     def score(self, proposed: ProposedAction) -> Decision:
         """Score a proposed action without recording it in session history.
@@ -47,14 +47,6 @@ class Gate:
     def record(self, proposed: ProposedAction) -> None:
         """Commit a proposed action to session history."""
         self._history.append(proposed)
-
-    def evaluate(self, proposed: ProposedAction) -> Decision:
-        """Score and immediately commit a proposed action. The synchronous
-        hold -> score -> allow/block path used when no manual override step
-        is needed."""
-        decision = self.score(proposed)
-        self.record(proposed)
-        return decision
 
 
 @dataclass
@@ -75,9 +67,16 @@ class TwoSpeedGate:
     def process(self, proposed: ProposedAction) -> tuple[Decision, Future[list[InstrumentVerdict]]]:
         """Returns the fast decision immediately (already committed to
         history) plus a Future for the slow instruments' verdicts, submitted
-        against the history snapshot as of just before this action."""
+        against the history snapshot as of just before this action.
+
+        This path deliberately records PROPOSALS, not successful executions
+        (scripted benchmark semantics — Phase 1-4 committed results depend
+        on it), unlike the live agent path where history means successful
+        execution.
+        """
         history_snapshot = list(self.gate._history)
-        decision = self.gate.evaluate(proposed)
+        decision = self.gate.score(proposed)
+        self.gate.record(proposed)
         verdicts_future = self._executor.submit(self._annotate, proposed, history_snapshot)
         return decision, verdicts_future
 

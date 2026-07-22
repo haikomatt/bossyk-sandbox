@@ -13,7 +13,7 @@ from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel
 def _sample_trace() -> Trace:
     gate = Gate(instruments=[RequireLookupBeforeCancel()])
     proposed = ProposedAction("get_reservation_details", {"reservation_id": "R1"})
-    decision = gate.evaluate(proposed)
+    decision = gate.score(proposed)
     step = make_step(trace_id="t-1", proposed=proposed, decision=decision)
     return build_trace(trace_id="t-1", agent_config_ref="cfg-1", steps=[step])
 

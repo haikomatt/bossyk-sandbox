@@ -66,7 +66,8 @@ def _after_records(rows: list[dict[str, Any]]) -> list[InterruptRecord]:
     for scenario in load_scenarios(cfg.scenarios_path):
         gate = Gate(instruments=cfg.fast_rules_factory())
         for index, step in enumerate(scenario.steps):
-            decision = gate.evaluate(step.proposed)
+            decision = gate.score(step.proposed)
+            gate.record(step.proposed)
             row = by_key.get((scenario.scenario_id, index))
             if row is None or row["outcome_violation"] is None:
                 continue
