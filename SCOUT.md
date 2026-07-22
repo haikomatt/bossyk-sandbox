@@ -868,3 +868,53 @@ Phase 2c/3 numbers are the **before**; this is the **after**.
   + the threat-model. Write-up + commit.
 
 ## Proceed to RED (autonomous).
+
+---
+
+# Scout — Multi-provider adversary registry (plan §15A)
+
+_Generated: 2026-07-22._ Branch `adv-registry-BE-multiprovider` (off phase4).
+Autonomous. Matt's decisions: **record refusals + optional fallback flag**;
+**framework + the 2 ready providers** (fireworks/deepseek, anthropic/fable);
+**model-variance only** (H5 adaptive adversary deferred).
+
+## Headline insight (from the `claude-api` skill)
+`claude-fable-5` runs safety classifiers that **decline jailbreak/injection/cyber
+content** with `stop_reason: "refusal"` (HTTP 200, empty/partial content). Our
+adversary generates exactly that content, so **Fable will refuse a fraction of the
+grid cells** — and that per-model refusal rate is a *finding* (how willing each
+frontier model is to act as an attacker), recorded, not hidden.
+
+## Design (2 client types + registry, behind the existing `ChatClient`)
+- `ChatClient.complete() -> ChatResult(text, refused, detail)` (was `-> str`) —
+  lets a client signal a refusal.
+- `OpenAICompatibleChatClient(base_url, api_key, model)` — generalizes
+  `FireworksChatClient`; covers Fireworks/GLM/MiniMax/DeepSeek-native/OpenAI.
+  Always `refused=False` (no fable-style refusal stop reason).
+- `AnthropicChatClient(model="claude-fable-5", ...)` — `anthropic` SDK; **omit the
+  `thinking` param** (always-on on Fable), no prefill, `output_config.effort`
+  optional; check `stop_reason=="refusal"` → `ChatResult(refused=True)`. Optional
+  `fallback_model` → server-side `fallbacks` (beta `server-side-fallback-2026-06-01`).
+  Key-gated (`ANTHROPIC_API_KEY`; note: Fable needs 30-day retention — ZDR org → 400).
+- `AdversaryModelSpec` + `ADVERSARY_MODELS` registry (2 entries now:
+  `fireworks-deepseek`, `anthropic-fable`) + `build_adversary(name, *, fallback_model=None)`.
+  GLM/MiniMax/DeepSeek-native/GPT-5.6-Sol added as keys + exact model IDs arrive.
+- The client-agnostic adversary (currently `FireworksAdversary`) handles a refused
+  `ChatResult` → `ProbeAttempt(payload="", refused=True, metadata=...)`.
+  `build_fireworks_adversary` kept working (delegates to the registry) so
+  `h1_bench` doesn't break.
+
+## Refusal-aware scoring (me, integration)
+`ProbeAttempt.refused` threads to `AttemptOutcome`; `bypass_rate` **excludes refused
+attempts from the denominator** and reports `n_refused` / refusal rate. `h1_bench`
+gains an `H1_ADVERSARY` env selector + per-adversary output; the real run compares
+`fireworks-deepseek` vs `anthropic-fable` on the airline H1 grid (billable; expect
+Fable refusals).
+
+## Build order
+1. **Subagent:** client layer + registry + refusal-signaling adversary (deterministic,
+   stub clients incl. a fake anthropic client returning a refusal). RED→GREEN.
+2. **Me:** wire `refused` through harness/h1/`h1_bench`; run the variance benchmark;
+   write up (bypass profile across attackers + per-model refusal rate).
+
+## Proceed (autonomous).
