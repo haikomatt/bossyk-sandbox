@@ -40,3 +40,25 @@ def test_blocked_step_records_block_verdict_in_action_payload() -> None:
     step = make_step(trace_id="t-1", proposed=proposed, decision=decision)
 
     assert step.action.payload["gate_verdict"] == "block"
+
+
+def test_make_step_persists_declared_intent() -> None:
+    gate = Gate(instruments=[RequireLookupBeforeCancel()])
+    proposed = ProposedAction(
+        "get_reservation_details",
+        {"reservation_id": "R1"},
+        declared_intent="look up R1 before cancelling",
+    )
+    decision = gate.evaluate(proposed)
+    step = make_step(trace_id="t-1", proposed=proposed, decision=decision)
+
+    assert step.declared_intent == "look up R1 before cancelling"
+
+
+def test_make_step_declared_intent_defaults_to_none() -> None:
+    gate = Gate(instruments=[RequireLookupBeforeCancel()])
+    proposed = ProposedAction("get_reservation_details", {"reservation_id": "R1"})
+    decision = gate.evaluate(proposed)
+    step = make_step(trace_id="t-1", proposed=proposed, decision=decision)
+
+    assert step.declared_intent is None

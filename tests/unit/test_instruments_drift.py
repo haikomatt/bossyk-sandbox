@@ -101,3 +101,51 @@ def test_drift_instrument_unscored_without_declared_intent() -> None:
     verdict = instrument.annotate(proposed, history=[])
 
     assert verdict.label == "unscored"
+
+
+class _CapturingScorer:
+    """Records the `Trace` it was called with so a test can inspect exactly
+    what `DriftInstrument` hands to auditk's scorer -- in particular the
+    `action.payload["text"]` field auditk's `_action_text()` requires (see
+    docs/drift-diagnostic-findings.md: a missing "text" key makes auditk fall
+    back to `str(dict)`, which collapses the NLI gate to `neutral`
+    universally)."""
+
+    method = "fake"
+    method_version = "0.0"
+
+    def __init__(self) -> None:
+        self.last_trace: Trace | None = None
+
+    def score(self, trace: Trace) -> DriftReport:
+        self.last_trace = trace
+        last_step = trace.steps[-1]
+        return DriftReport(
+            drift_score=0.0,
+            method=self.method,
+            method_version=self.method_version,
+            per_step={
+                last_step.step_id: StepDrift(
+                    step_id=last_step.step_id, label=TaxonomyLabel.FAITHFUL, reasoning="n/a"
+                )
+            },
+        )
+
+
+def test_drift_instrument_renders_action_payload_as_natural_language_text() -> None:
+    scorer = _CapturingScorer()
+    instrument = DriftInstrument(scorer=scorer)
+    proposed = ProposedAction(
+        "cancel_reservation",
+        {"reservation_id": "R1"},
+        declared_intent="cancel it",
+    )
+
+    instrument.annotate(proposed, history=[])
+
+    assert scorer.last_trace is not None
+    text = scorer.last_trace.steps[-1].action.payload.get("text")
+    assert isinstance(text, str)
+    assert "{'" not in text  # not a Python dict repr
+    assert "cancel_reservation" in text
+    assert "R1" in text

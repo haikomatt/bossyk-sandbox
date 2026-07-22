@@ -22,6 +22,7 @@ def make_step(
         trace_id=trace_id,
         timestamp=timestamp or datetime.now(UTC),
         actor=Actor.AGENT,
+        declared_intent=proposed.declared_intent,
         action=Action(
             type=ActionType.TOOL_CALL,
             payload={

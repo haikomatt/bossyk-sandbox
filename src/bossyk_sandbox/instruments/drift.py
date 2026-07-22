@@ -20,6 +20,16 @@ class DriftScorer(Protocol):
     def score(self, trace: Trace) -> DriftReport: ...
 
 
+def _action_nl_text(proposed: ProposedAction) -> str:
+    """Renders a tool call as a natural-language sentence for auditk's NLI
+    gate (`action.payload["text"]`). Key=value pairs, not a Python dict repr
+    -- interpolating `proposed.arguments` directly would reproduce the same
+    `str(dict)` artifact the fix is meant to remove (see
+    docs/drift-diagnostic-findings.md)."""
+    args = ", ".join(f"{key}={value}" for key, value in proposed.arguments.items())
+    return f"Call {proposed.tool_name} with {args}." if args else f"Call {proposed.tool_name}."
+
+
 def _step_from_action(step_id: str, proposed: ProposedAction) -> Step:
     return Step(
         step_id=step_id,
@@ -29,7 +39,15 @@ def _step_from_action(step_id: str, proposed: ProposedAction) -> Step:
         declared_intent=proposed.declared_intent,
         action=Action(
             type=ActionType.TOOL_CALL,
-            payload={"tool_name": proposed.tool_name, "arguments": proposed.arguments},
+            payload={
+                "tool_name": proposed.tool_name,
+                "arguments": proposed.arguments,
+                # auditk's `_action_text()` (nli.py / judge.py) reads
+                # payload["text"] and silently falls back to `str(dict)`
+                # when it's missing -- which collapses the NLI gate to
+                # `neutral` universally (see docs/drift-diagnostic-findings.md).
+                "text": _action_nl_text(proposed),
+            },
         ),
     )
 

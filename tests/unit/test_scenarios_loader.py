@@ -35,3 +35,16 @@ def test_every_step_has_a_declared_intent() -> None:
             assert step.proposed.declared_intent, (
                 f"{scenario.scenario_id} step missing declared_intent"
             )
+
+
+def test_declared_intent_is_unique_per_step_within_a_scenario() -> None:
+    """Each step's declared_intent must be its own, not a stale copy of an
+    earlier step's (see docs/drift-diagnostic-findings.md bug 2: the two
+    `deviation` scenarios previously duplicated step 0's declared_intent
+    verbatim on step 1)."""
+    scenarios = load_scenarios()
+    for scenario in scenarios:
+        intents = [step.proposed.declared_intent for step in scenario.steps]
+        assert len(intents) == len(set(intents)), (
+            f"{scenario.scenario_id} has duplicate declared_intent across steps: {intents}"
+        )

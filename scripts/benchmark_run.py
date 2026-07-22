@@ -2,6 +2,9 @@
 """Phase 1 benchmark run: real drift + policy judges over the scripted
 airline scenario set, producing the 3-way orthogonality table and the
 gate-vs-ground-truth confusion read (B2 safety-weighted + B3 bind/no-bind).
+Also persists full per-step output (declared_intent, action, both verdicts +
+reasoning) to docs/bench_output/ so future runs and diagnostics read from
+disk instead of a recompute.
 
 Gated on FIREWORKS_API_KEY + RUN_SANDBOX_BENCH=1 (same shape as Phase 0's
 scripts/live_demo.py) -- not part of the test suite, run explicitly:
@@ -13,8 +16,12 @@ scripts/live_demo.py) -- not part of the test suite, run explicitly:
 
 from __future__ import annotations
 
+import json
 import os
 import sys
+from dataclasses import asdict
+from datetime import UTC, datetime
+from pathlib import Path
 
 from bossyk_sandbox.instruments.drift import ERROR_LABEL as DRIFT_ERROR_LABEL
 from bossyk_sandbox.instruments.drift import build_default_drift_instrument
@@ -30,6 +37,8 @@ from bossyk_sandbox.scenarios.runner import (
 )
 from bossyk_sandbox.scoring.confusion import b2_safety_weighted, b3_bind_headline, binary_confusion
 from bossyk_sandbox.scoring.orthogonality import orthogonality_table
+
+OUTPUT_DIR = Path(__file__).parent.parent / "docs" / "bench_output"
 
 
 def _report_judge_errors(all_scored_steps: list[ScoredStep]) -> None:
@@ -60,6 +69,41 @@ def _report_judge_errors(all_scored_steps: list[ScoredStep]) -> None:
     print()
 
 
+def _persist_per_step_output(all_scored_steps: list[ScoredStep], lookup: OutcomeKeyLookup) -> Path:
+    """Writes full per-step judge output to disk -- scenario/step,
+    boundary_label, declared_intent, action, both verdicts + reasoning --
+    so a diagnostic can inspect exactly what a benchmark run computed
+    without recomputing it (see docs/drift-diagnostic-findings.md, which
+    had to re-run the whole benchmark because this didn't exist yet)."""
+    rows: list[dict[str, object]] = []
+    for scored in all_scored_steps:
+        boundary = lookup.label_for(scored.scenario_id, scored.step_index)
+        drift_v = next((v for v in scored.verdicts if v.instrument == "drift"), None)
+        policy_v = next((v for v in scored.verdicts if v.instrument == "policy"), None)
+        rows.append(
+            {
+                "scenario_id": scored.scenario_id,
+                "step_index": scored.step_index,
+                "boundary_label": boundary.value if boundary else None,
+                "outcome_violation": lookup.is_violation(scored.scenario_id, scored.step_index),
+                "tool_name": scored.step.action.payload.get("tool_name"),
+                "arguments": scored.step.action.payload.get("arguments"),
+                "declared_intent": scored.step.declared_intent,
+                "gate_verdict": scored.decision.verdict.value,
+                "gate_reason": scored.decision.reason,
+                "drift": asdict(drift_v) if drift_v else None,
+                "policy": asdict(policy_v) if policy_v else None,
+            }
+        )
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = OUTPUT_DIR / "phase1_benchmark_run.json"
+    out_path.write_text(
+        json.dumps({"generated_at": datetime.now(UTC).isoformat(), "steps": rows}, indent=2)
+    )
+    return out_path
+
+
 def main() -> None:
     if os.environ.get("RUN_SANDBOX_BENCH") != "1":
         print("Set RUN_SANDBOX_BENCH=1 to run the real-judge benchmark.", file=sys.stderr)
@@ -84,6 +128,9 @@ def main() -> None:
         all_scored_steps.extend(scored_steps)
         all_memberships.extend(to_membership(scored_steps, lookup))
         all_gate_outcomes.extend(to_gate_outcomes(scored_steps, lookup))
+
+    out_path = _persist_per_step_output(all_scored_steps, lookup)
+    print(f"Wrote {len(all_scored_steps)} steps to {out_path}\n")
 
     _report_judge_errors(all_scored_steps)
 
