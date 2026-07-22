@@ -138,6 +138,37 @@ def run_scenario(
     return trace, scored_steps
 
 
+def verdict_state(label: str | None) -> bool | None:
+    """Tri-state read of a judge label: `None` when the judge verdict is
+    unavailable (no verdict at all, or the judge itself errored/declined to
+    score), a real fire/no-fire boolean otherwise. Used by `to_membership`
+    so a judge outage (Finding 4) surfaces as "unknown", not a silent
+    "did not fire" -- which would otherwise deflate detection rates."""
+    raise NotImplementedError
+
+
+@dataclass(frozen=True)
+class InstrumentAvailability:
+    """How often `instrument` actually produced a scored verdict across a
+    run's steps, versus erroring, being unscored, or never running at all
+    (Finding 4) -- the measurement-integrity counterpart to a bare firing
+    rate, which cannot distinguish "instrument never fires" from "instrument
+    was never asked"."""
+
+    instrument: str
+    n_steps: int
+    n_scored: int
+    n_error: int
+    n_unscored: int
+    n_missing: int
+
+
+def instrument_availability(
+    scored_steps: list[ScoredStep], instrument: str
+) -> InstrumentAvailability:
+    raise NotImplementedError
+
+
 def to_membership(
     scored_steps: list[ScoredStep], outcome_lookup: OutcomeKeyLookup
 ) -> list[StepMembership]:

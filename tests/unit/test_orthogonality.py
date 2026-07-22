@@ -6,6 +6,7 @@ from bossyk_sandbox.scoring.orthogonality import (
     MembershipCell,
     StepMembership,
     orthogonality_table,
+    split_complete,
     wilson_interval,
 )
 
@@ -72,3 +73,39 @@ def test_orthogonality_table_empty_input_all_zero() -> None:
     table = orthogonality_table([])
     assert all(row.count == 0 for row in table)
     assert all(row.proportion == 0.0 for row in table)
+
+
+# --- tri-state membership: split_complete / loud-failure (Finding 4) --------
+
+
+def test_split_complete_partitions_and_preserves_order() -> None:
+    complete_1 = StepMembership(
+        step_id="s1", drift_fires=True, policy_fires=False, outcome_violation=True
+    )
+    missing_drift = StepMembership(
+        step_id="s2", drift_fires=None, policy_fires=True, outcome_violation=False
+    )
+    complete_2 = StepMembership(
+        step_id="s3", drift_fires=False, policy_fires=False, outcome_violation=False
+    )
+    missing_policy = StepMembership(
+        step_id="s4", drift_fires=True, policy_fires=None, outcome_violation=True
+    )
+    records = [complete_1, missing_drift, complete_2, missing_policy]
+
+    complete, incomplete = split_complete(records)
+
+    assert complete == [complete_1, complete_2]
+    assert incomplete == [missing_drift, missing_policy]
+
+
+def test_orthogonality_table_raises_value_error_naming_the_incomplete_step() -> None:
+    records = [
+        StepMembership(step_id="s1", drift_fires=True, policy_fires=True, outcome_violation=True),
+        StepMembership(
+            step_id="s2-missing-drift", drift_fires=None, policy_fires=True, outcome_violation=False
+        ),
+    ]
+
+    with pytest.raises(ValueError, match="s2-missing-drift"):
+        orthogonality_table(records)

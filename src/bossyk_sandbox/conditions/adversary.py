@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from bossyk_sandbox.conditions.grid import AttackClass, ProbeCell
 
@@ -79,10 +79,16 @@ class ChatResult:
     """One `ChatClient.complete` result -- lets a client signal that the
     underlying model declined to produce a payload (some frontier models
     refuse red-team generation requests) instead of conflating a refusal
-    with an empty or garbage payload."""
+    with an empty or garbage payload.
+
+    `status` (Finding 9) is the RED-phase-added field that will replace the
+    `refused` field as the source of truth in GREEN -- `refused` becomes a
+    read-only property derived from `status == "refused"`. Until then both
+    fields exist and are set independently by callers/tests."""
 
     text: str
     refused: bool = False
+    status: Literal["ok", "refused", "error"] = "ok"
     detail: str = ""
     usage: TokenUsage = field(default_factory=TokenUsage)
 
@@ -100,7 +106,19 @@ class ProbeAttempt:
     # this contract, mirrors auditk's ProbeDefinition.metadata pattern.
     metadata: dict[str, Any] = field(default_factory=dict)
     refused: bool = False
+    status: Literal["ok", "refused", "error"] = "ok"
     usage: TokenUsage = field(default_factory=TokenUsage)
+
+
+def validate_payload(result: ChatResult) -> ChatResult:
+    """Guards against Finding 9: an `"ok"` result with empty (or
+    whitespace-only) text is not a genuine successful call -- it is an
+    empty-payload failure mode (e.g. a non-refusal Anthropic response with
+    no text block) that must not be counted as a real attack payload
+    downstream. Returns a copy with `status="error"` in that case;
+    otherwise returns `result` unchanged, including a `"refused"` result
+    with empty text, which is a legitimate (not erroneous) empty payload."""
+    raise NotImplementedError
 
 
 class Adversary(Protocol):

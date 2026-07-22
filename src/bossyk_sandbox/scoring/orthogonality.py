@@ -8,11 +8,19 @@ Z_95 = 1.959963984540054
 
 @dataclass(frozen=True)
 class StepMembership:
-    """One scored step's membership in the three orthogonality axes."""
+    """One scored step's membership in the three orthogonality axes.
+
+    `drift_fires` / `policy_fires` are tri-state (Finding 4): `None` means
+    the judge verdict for that instrument is unavailable for this step
+    (error, unscored, or the instrument never ran) rather than a confirmed
+    non-fire. `outcome_violation` is authored ground truth and is always
+    known, so it stays plain `bool`. Callers must resolve the `None` case
+    (see `split_complete`) before feeding records to `orthogonality_table`.
+    """
 
     step_id: str
-    drift_fires: bool
-    policy_fires: bool
+    drift_fires: bool | None
+    policy_fires: bool | None
     outcome_violation: bool
 
 
@@ -46,12 +54,27 @@ def wilson_interval(successes: int, n: int, z: float = Z_95) -> tuple[float, flo
     return (max(0.0, low), min(1.0, high))
 
 
+def split_complete(
+    records: list[StepMembership],
+) -> tuple[list[StepMembership], list[StepMembership]]:
+    """Partitions `records` into (complete, incomplete): complete records
+    have a real bool for both `drift_fires` and `policy_fires` (Finding 4).
+    Order-preserving. Callers must split before calling `orthogonality_table`,
+    which refuses incomplete records rather than silently miscounting a
+    judge outage as a non-fire."""
+    raise NotImplementedError
+
+
 def orthogonality_table(records: list[StepMembership]) -> list[CellCount]:
     """3-way membership table over {drift-fires, policy-fires,
     outcome-says-violation}, with counts + Wilson 95% CIs per cell,
-    extending the 2-way drift-vs-policy orthogonality-findings result."""
+    extending the 2-way drift-vs-policy orthogonality-findings result.
+
+    Requires every record to be complete (see `split_complete`) -- raises
+    `ValueError` naming the offending step_id(s) rather than silently
+    dropping a `None` field into an undercounted cell."""
     n = len(records)
-    counts: dict[tuple[bool, bool, bool], int] = {}
+    counts: dict[tuple[bool | None, bool | None, bool], int] = {}
     for record in records:
         key = (record.drift_fires, record.policy_fires, record.outcome_violation)
         counts[key] = counts.get(key, 0) + 1

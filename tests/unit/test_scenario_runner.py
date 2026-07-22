@@ -1,13 +1,18 @@
 from __future__ import annotations
 
-from bossyk_sandbox.instruments.base import InstrumentVerdict, ProposedAction, Verdict
+from bossyk_sandbox.evidence.trace import make_step
+from bossyk_sandbox.instruments.base import Decision, InstrumentVerdict, ProposedAction, Verdict
 from bossyk_sandbox.instruments.outcome_key import BoundaryLabel, OutcomeKey, OutcomeKeyLookup
 from bossyk_sandbox.scenarios.loader import Scenario, ScenarioStep
 from bossyk_sandbox.scenarios.runner import (
     VERDICT_METADATA_KEY,
+    InstrumentAvailability,
+    ScoredStep,
+    instrument_availability,
     run_scenario,
     to_gate_outcomes,
     to_membership,
+    verdict_state,
 )
 
 
@@ -149,3 +154,89 @@ def test_steps_without_a1_key_are_skipped() -> None:
 
     assert to_membership(scored_steps, empty_lookup) == []
     assert to_gate_outcomes(scored_steps, empty_lookup) == []
+
+
+# --- verdict_state / tri-state membership (Finding 4) -----------------------
+
+
+def test_verdict_state_maps_error_label_to_none() -> None:
+    assert verdict_state("error") is None
+
+
+def test_verdict_state_maps_unscored_label_to_none() -> None:
+    assert verdict_state("unscored") is None
+
+
+def test_verdict_state_maps_missing_label_to_none() -> None:
+    assert verdict_state(None) is None
+
+
+def test_verdict_state_maps_firing_label_to_true() -> None:
+    assert verdict_state("goal_deviation") is True
+
+
+def test_verdict_state_maps_non_firing_label_to_false() -> None:
+    assert verdict_state("faithful") is False
+
+
+def test_to_membership_error_drift_verdict_yields_none_not_false() -> None:
+    # Finding 4: a judge that errored on this step must not be reported as
+    # "did not fire" -- that silently deflates the drift detection rate.
+    scenario = _two_step_scenario()
+    drift = _FixedInstrument("drift", "error")
+    policy = _FixedInstrument("policy", "goal_deviation")
+    _trace, scored_steps = run_scenario(scenario, slow_instruments=[drift, policy])
+
+    lookup = OutcomeKeyLookup(
+        keys=[
+            OutcomeKey(
+                scenario_id=scenario.scenario_id, step_index=0, boundary_label=BoundaryLabel.BENIGN
+            ),
+            OutcomeKey(
+                scenario_id=scenario.scenario_id,
+                step_index=1,
+                boundary_label=BoundaryLabel.POLICY_VIOLATION,
+            ),
+        ]
+    )
+
+    memberships = to_membership(scored_steps, lookup)
+
+    assert memberships[0].drift_fires is None
+    assert memberships[0].policy_fires is True
+
+
+# --- instrument_availability (Finding 4) -------------------------------------
+
+
+def _scored_step(step_index: int, verdicts: list[InstrumentVerdict]) -> ScoredStep:
+    proposed = ProposedAction("get_reservation_details", {"reservation_id": "R1"})
+    decision = Decision(Verdict.ALLOW, "ok")
+    step = make_step(
+        trace_id="availability-scenario",
+        proposed=proposed,
+        decision=decision,
+        step_id=f"availability-scenario-step-{step_index}",
+    )
+    return ScoredStep(
+        scenario_id="availability-scenario",
+        step_index=step_index,
+        step=step,
+        decision=decision,
+        verdicts=verdicts,
+    )
+
+
+def test_instrument_availability_counts_scored_error_unscored_and_missing_steps() -> None:
+    scored_steps = [
+        _scored_step(0, [InstrumentVerdict(instrument="drift", label="goal_deviation")]),
+        _scored_step(1, [InstrumentVerdict(instrument="drift", label="error")]),
+        _scored_step(2, [InstrumentVerdict(instrument="drift", label="unscored")]),
+        _scored_step(3, [InstrumentVerdict(instrument="policy", label="goal_deviation")]),
+    ]
+
+    availability = instrument_availability(scored_steps, "drift")
+
+    assert availability == InstrumentAvailability(
+        instrument="drift", n_steps=4, n_scored=1, n_error=1, n_unscored=1, n_missing=1
+    )

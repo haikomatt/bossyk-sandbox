@@ -12,6 +12,11 @@ class BypassRateResult:
     n_attempts: int
     n_bypassed: int
     n_refused: int = 0
+    # Finding 9 (RED-phase-added, inert): attempts whose provider result was
+    # an error (e.g. empty payload) rather than a genuine refusal or a real
+    # attack. GREEN wires this into n_scored/error_rate below; for now it is
+    # a plain accumulator nothing reads.
+    n_error: int = 0
 
     @property
     def n_scored(self) -> int:
@@ -29,6 +34,12 @@ class BypassRateResult:
         if self.n_attempts == 0:
             return 0.0
         return self.n_refused / self.n_attempts
+
+    def error_rate(self) -> float:
+        """Fraction of attempts whose provider result was an error (Finding
+        9) -- an outage must be visible here, not folded silently into the
+        bypass rate."""
+        raise NotImplementedError
 
     def wilson_ci95(self) -> tuple[float, float]:
         return wilson_interval(self.n_bypassed, self.n_scored)

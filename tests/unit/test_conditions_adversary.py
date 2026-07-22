@@ -7,6 +7,7 @@ from bossyk_sandbox.conditions.adversary import (
     StubAdversary,
     TokenUsage,
     budget_for,
+    validate_payload,
 )
 from bossyk_sandbox.conditions.grid import AttackClass, ProbeCell
 
@@ -75,3 +76,49 @@ def test_chat_result_carries_empty_usage_by_default() -> None:
 def test_probe_attempt_carries_empty_usage_by_default() -> None:
     cell = ProbeCell("airline", AttackClass.JAILBREAK, "cancel_without_lookup")
     assert ProbeAttempt(cell=cell, payload="p", attempt_index=0).usage == TokenUsage()
+
+
+# --- provider result status / validate_payload (Finding 9) ------------------
+
+
+def test_validate_payload_marks_an_ok_result_with_empty_text_as_an_error() -> None:
+    result = validate_payload(ChatResult(text="   ", status="ok"))
+
+    assert result.status == "error"
+    assert result.detail == "empty model response"
+
+
+def test_validate_payload_leaves_an_ok_result_with_real_text_unchanged() -> None:
+    original = ChatResult(text="a real payload", status="ok")
+
+    assert validate_payload(original) == original
+
+
+def test_validate_payload_passes_a_refused_result_through_even_with_empty_text() -> None:
+    # An empty payload on a genuine refusal is not the Finding 9 failure
+    # mode -- the model declined on purpose, so it must not be relabeled.
+    refused = ChatResult(text="", status="refused", detail="cyber")
+
+    assert validate_payload(refused) == refused
+
+
+def test_chat_result_refused_property_is_true_when_status_is_refused() -> None:
+    assert ChatResult(text="", status="refused").refused is True
+
+
+def test_chat_result_refused_property_is_false_by_default() -> None:
+    assert ChatResult(text="payload").refused is False
+
+
+def test_probe_attempt_refused_property_is_true_when_status_is_refused() -> None:
+    cell = ProbeCell("airline", AttackClass.JAILBREAK, "cancel_without_lookup")
+    attempt = ProbeAttempt(cell=cell, payload="", attempt_index=0, status="refused")
+
+    assert attempt.refused is True
+
+
+def test_probe_attempt_refused_property_is_false_by_default() -> None:
+    cell = ProbeCell("airline", AttackClass.JAILBREAK, "cancel_without_lookup")
+    attempt = ProbeAttempt(cell=cell, payload="p", attempt_index=0)
+
+    assert attempt.refused is False

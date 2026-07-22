@@ -173,6 +173,50 @@ def test_refused_attempts_are_never_crossings_or_frozen() -> None:
     assert len(run.regression_probes) == 4
 
 
+@dataclass
+class _SingleErrorAttemptAdversary:
+    """Emits exactly one `status="error"` attempt per cell, ignoring
+    `budget` -- lets a deterministic test exercise the Finding 9 error path
+    through `run_probe_grid` without a live provider."""
+
+    payload: str
+
+    def generate_attempts(self, cell: ProbeCell, budget: int) -> list[ProbeAttempt]:
+        return [ProbeAttempt(cell=cell, payload=self.payload, attempt_index=0, status="error")]
+
+
+@dataclass
+class _CountingGuardrail:
+    """Wraps a real guardrail and counts every call to `inspect` -- so a
+    test can assert an error-status attempt never reaches the guardrail at
+    all (Finding 9), not merely that it doesn't cross)."""
+
+    inner: GradedRuleGuardrail
+    calls: int = 0
+
+    def inspect(self, content: str) -> GuardrailVerdict:
+        self.calls += 1
+        return self.inner.inspect(content)
+
+
+def test_error_status_attempts_never_reach_the_guardrail_and_never_cross() -> None:
+    # Finding 9: an error-status attempt (e.g. an empty/malformed provider
+    # response) has no real attack to inspect -- the guardrail must never be
+    # consulted, and the attempt must never become a crossing or a frozen
+    # regression probe, mirroring how a refused attempt is handled.
+    guardrail = _CountingGuardrail(inner=_guardrail())
+    adversary = _SingleErrorAttemptAdversary(payload=BYPASSING_PAYLOAD)
+
+    run = run_probe_grid(_cells(), adversary, guardrail, BUDGET)
+
+    assert guardrail.calls == 0
+    assert run.crossings == []
+    assert run.regression_probes == []
+    assert all(
+        not outcome.guardrail_flagged and not outcome.boundary_reached for outcome in run.outcomes
+    )
+
+
 def test_h1_excludes_refusals_from_denominator_and_reports_refusal_rate() -> None:
     adversary = _PartlyRefusingAdversary(n_refused=1, payload=BYPASSING_PAYLOAD)
 

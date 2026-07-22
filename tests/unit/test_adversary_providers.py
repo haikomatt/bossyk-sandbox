@@ -48,12 +48,29 @@ class _FakeTextResponse:
 
 
 @dataclass
+class _FakeNoTextBlockResponse:
+    """A non-refusal response with no text block at all (Finding 9) --
+    e.g. the model produced only a tool_use block. Must not be parsed as a
+    successful empty-string payload."""
+
+    stop_reason: str | None = None
+    content: list[Any] = field(default_factory=list)
+    usage: _FakeUsage = field(default_factory=lambda: _FakeUsage(input_tokens=8, output_tokens=0))
+
+
+@dataclass
 class _FakeMessage:
     """Stand-in for a langchain `AIMessage` -- `.content` plus the
     `.usage_metadata` dict langchain populates from an OpenAI-compatible
-    provider's token counts (None when the provider returns no usage)."""
+    provider's token counts (None when the provider returns no usage).
 
-    content: str
+    `content` is typed `Any`, not `str`: a real OpenAI-compatible response
+    can return a non-string `content` (e.g. a list of content blocks), and
+    that malformed-content path (Finding 9) is exactly what
+    `test_openai_compatible_client_non_string_content_is_an_error` needs to
+    construct."""
+
+    content: Any
     usage_metadata: dict[str, int] | None
 
 
@@ -118,3 +135,36 @@ def test_openai_compatible_client_tolerates_missing_usage_metadata() -> None:
     client = OpenAICompatibleChatClient(llm=_FakeLLM(_FakeMessage("payload", None)))
 
     assert client.complete("system", "user").usage == TokenUsage()
+
+
+# --- provider result status (Finding 9) --------------------------------------
+
+
+def test_parse_anthropic_response_with_no_text_blocks_is_an_error_not_a_silent_ok() -> None:
+    # A non-refusal response with no text block must not be parsed as a
+    # successful empty-string payload -- that's the Finding 9 failure mode
+    # (an outage/malformed response masquerading as a real attack turn).
+    result = _parse_anthropic_response(_FakeNoTextBlockResponse())
+
+    assert result.status == "error"
+    assert result.refused is False
+
+
+def test_parse_anthropic_response_refusal_sets_status_refused() -> None:
+    result = _parse_anthropic_response(_FakeRefusalResponse())
+
+    assert result.status == "refused"
+
+
+def test_openai_compatible_client_non_string_content_is_an_error() -> None:
+    # An OpenAI-compatible provider that returns non-string content (e.g. a
+    # list of content blocks) must not be blindly str()'d into a payload.
+    client = OpenAICompatibleChatClient(
+        llm=_FakeLLM(  # type: ignore[arg-type]
+            _FakeMessage(content=[{"type": "text", "text": "hi"}], usage_metadata=None)
+        )
+    )
+
+    result = client.complete("system", "user")
+
+    assert result.status == "error"

@@ -98,3 +98,21 @@ def test_generate_attempts_threads_usage_onto_a_refused_attempt() -> None:
 
     assert attempts[0].refused is True
     assert attempts[0].usage == TokenUsage(50, 3)
+
+
+def test_generate_attempts_marks_an_error_result_with_error_status_and_metadata() -> None:
+    # Finding 9: a provider result that came back as an error (e.g. an
+    # empty payload caught by validate_payload) must not be laundered into
+    # an ordinary attempt -- it needs its own status, an error_detail in
+    # metadata, and an empty payload, mirroring the refused-attempt path.
+    cell = ProbeCell("airline", AttackClass.JAILBREAK, "cancel_without_lookup")
+    client = _FakeChatClient(
+        result=ChatResult(text="", status="error", detail="empty model response")
+    )
+    adversary = FireworksAdversary(client=client)
+
+    attempts = adversary.generate_attempts(cell, budget=1)
+
+    assert attempts[0].status == "error"
+    assert attempts[0].metadata.get("error_detail") == "empty model response"
+    assert attempts[0].payload == ""
