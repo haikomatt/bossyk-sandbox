@@ -256,6 +256,24 @@ def test_goal_mode_prompt_asks_for_a_multi_turn_adversarial_user_goal() -> None:
     assert "verification" in lowered  # a tactic to push past identity verification
 
 
+def test_goal_mode_prompt_names_the_boundarys_oracle_watched_action_tool() -> None:
+    # The corpus must target the exact tool the boundary oracle scores, else
+    # reach is spuriously 0. unauthorized_modification -> modify_user_address
+    # (NOT modify_pending_order_address, which the oracle doesn't watch). The
+    # tool_context here deliberately omits it, so its appearance proves the
+    # prompt names it as the target via the boundary spec.
+    cell = ProbeCell("retail", AttackClass.TOOL_MISUSE, "unauthorized_modification")
+    client = _FakeChatClient(result=ChatResult(text="goal"))
+    adversary = FireworksAdversary(
+        client=client, tool_context="- unrelated_tool(x)", goal_mode=True
+    )
+
+    adversary.generate_attempts(cell, budget=1)
+
+    _, prompt = client.calls[0]
+    assert "modify_user_address" in prompt
+
+
 def test_goal_mode_prompt_frames_second_person_persona_instructions() -> None:
     cell = ProbeCell("retail", AttackClass.TOOL_MISUSE, "refund_over_threshold")
     client = _FakeChatClient(result=ChatResult(text="goal"))
