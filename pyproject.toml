@@ -15,6 +15,7 @@ dependencies = [
     "langchain-openai>=1.4.0",
     "anthropic>=0.117.0",
     "python-dotenv>=1.0",
+    "pyyaml>=6.0.3",
 ]
 
 [project.optional-dependencies]
@@ -35,6 +36,8 @@ dev = [
     "mypy>=1.13",
     "pytest-cov>=7.1.0",
     "types-jsonschema>=4.26.0.20260518",
+    "matplotlib>=3.11.1",
+    "types-pyyaml>=6.0.12.20260518",
 ]
 
 [build-system]
