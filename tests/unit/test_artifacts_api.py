@@ -19,7 +19,7 @@ def test_story_endpoint_returns_full_story() -> None:
     assert resp.status_code == 200
     body = resp.json()
     assert len(body["acts"]) == 6
-    assert len(body["claims"]) == 17
+    assert len(body["claims"]) == 18
     claim = body["claims"][0]
     for field in (
         "id",

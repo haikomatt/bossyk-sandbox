@@ -70,6 +70,9 @@ H4_ARTIFACT = "docs/bench_output/phase3_h4.json"
 H4_COMMIT = "af33a88"
 SMACTR_ARTIFACT = "docs/bench_output/phase4_smactr.json"
 SMACTR_COMMIT = "12c65a0"
+DIR1_WEAK_ARTIFACT = "docs/bench_output/live_h2h4_retail_weak.json"
+DIR1_STRUCTURAL_ARTIFACT = "docs/bench_output/live_h2h4_retail_weak_structural.json"
+DIR1_COMMIT = "27ca0e3"
 
 H1_CLASS_ORDER = ["tool_misuse", "pii_leak", "jailbreak", "prompt_injection"]
 H4_GROUP_ORDER = ["combined", "airline", "retail"]
@@ -413,6 +416,94 @@ def render_smactr_before_after(
 
     fig.tight_layout(rect=(0, 0.04, 1, 0.94))
     _add_source_line(fig, SMACTR_ARTIFACT, SMACTR_COMMIT)
+    return fig
+
+
+# --- figure 4: dir1-gate-save -----------------------------------------------
+
+
+def render_dir1_gate_save(weak_data: dict[str, Any], structural_data: dict[str, Any]) -> Figure:
+    """Horizontal before/after bars: the live gate-save. A compliant agent never
+    crosses a structural boundary on these attacks (0 -- the gate stays silent);
+    an under-specified (latency-optimized) agent crosses, and the two-speed gate
+    prevents every crossing pre-execution, turning N unauthorized actions into 0.
+    Combines the cancel_without_auth run (`weak_data`) and the
+    refund_over_threshold run (`structural_data`)."""
+    fig, ax = plt.subplots(figsize=FIGURE_SIZE_INCHES, dpi=DPI)
+
+    harm_off = weak_data["live_h4"]["harm_off"] + structural_data["live_h4"]["harm_off"]
+    harm_on = weak_data["live_h4"]["harm_on"] + structural_data["live_h4"]["harm_on"]
+    prevented = weak_data["live_h4"]["prevented"] + structural_data["live_h4"]["prevented"]
+
+    rows = [
+        ("Compliant agent", 0, BASE_COLOR, "0 crossings on the same 32 attacks -- gate silent"),
+        (
+            "Under-specified agent\n(no gate)",
+            harm_off,
+            RETAIL_COLOR,
+            f"{harm_off} unauthorized actions execute",
+        ),
+        (
+            "Under-specified agent\n(+ two-speed gate)",
+            harm_on,
+            AIRLINE_COLOR,
+            f"{harm_on} -- all {prevented} blocked before execution",
+        ),
+    ]
+    y_positions = list(reversed(range(len(rows))))  # first row on top
+    bar_height = 0.55
+
+    for y, (_label, value, color, note) in zip(y_positions, rows, strict=True):
+        ax.barh(
+            y,
+            value,
+            height=bar_height,
+            color=color,
+            alpha=0.9,
+            edgecolor=BASE_COLOR,
+            linewidth=0.5,
+            zorder=2,
+        )
+        ax.annotate(
+            note,
+            xy=(value, y),
+            xytext=(6, 0),
+            textcoords="offset points",
+            va="center",
+            fontsize=VALUE_LABEL_FONTSIZE,
+            color=BASE_COLOR,
+        )
+
+    ax.set_yticks(y_positions)
+    ax.set_yticklabels([label for label, *_ in rows], fontsize=TICK_FONTSIZE)
+    ax.set_xlim(0, harm_off + 5)
+    ax.set_xlabel("Harmful actions that executed (count)", fontsize=AXIS_LABEL_FONTSIZE)
+    _style_axes(ax)
+
+    fig.suptitle(
+        f"The live gate-save: governance turns {harm_off} unauthorized actions into {harm_on}",
+        fontsize=TITLE_FONTSIZE,
+        fontweight="bold",
+        x=0.02,
+        ha="left",
+    )
+    ax.set_title(
+        "Retail, cancel + refund boundaries; the same attacks the compliant agent resisted",
+        fontsize=SUBTITLE_FONTSIZE,
+        loc="left",
+        color=BASE_COLOR,
+    )
+
+    fig.tight_layout(rect=(0, 0.04, 1, 0.94))
+    fig.text(
+        0.01,
+        0.01,
+        f"Source: {DIR1_WEAK_ARTIFACT} + {DIR1_STRUCTURAL_ARTIFACT} (commit {DIR1_COMMIT})",
+        fontsize=SOURCE_FONTSIZE,
+        color=BASE_COLOR,
+        ha="left",
+        va="bottom",
+    )
     return fig
 
 

@@ -375,3 +375,35 @@ claims:
   - docs/phase5-h1-h5-synthesis.md
   figure_ids: []
   numeric_checks: []
+- id: live-gate-save-under-specified-agent
+  act: 2
+  exec_copy: When an agent is misconfigured to skip its own checks, the same attacks a careful agent
+    shrugged off now go through -- and the governance gate stops every one before it executes.
+  tech_copy: A latency-optimized retail agent (system prompt weakened to act on the customer id directly
+    without a lookup) was replayed against the same grounded attacks a policy-following agent had resisted
+    0/24. The under-specified agent crossed a structural consequence boundary 6 times (4 unauthorized
+    cancellations + 2 over-threshold refunds), and the two-speed gate prevented all 6 before execution
+    -- harm 6 -> 0. The gate is the difference between six unauthorized actions and zero; its value depends
+    on the agent it wraps, so evaluate against the weakest agent, not the best. Caveat -- retail, cancel
+    + refund boundaries, small n per boundary.
+  verdict: not falsified (live measurement)
+  evidence_grade: live-measurement
+  artifact_refs:
+  - docs/bench_output/live_h2h4_retail_weak.json
+  - docs/bench_output/live_h2h4_retail_weak_structural.json
+  - docs/phase-dir1-weakened-agent-results.md
+  figure_ids:
+  - dir1-gate-save
+  numeric_checks:
+  - artifact: docs/bench_output/live_h2h4_retail_weak.json
+    json_path: live_h4.prevented
+    expected: 4
+  - artifact: docs/bench_output/live_h2h4_retail_weak.json
+    json_path: live_h4.harm_delta
+    expected: 4
+  - artifact: docs/bench_output/live_h2h4_retail_weak_structural.json
+    json_path: live_h4.prevented
+    expected: 2
+  - artifact: docs/bench_output/live_h2h4_retail_weak_structural.json
+    json_path: live_h4.harm_on
+    expected: 0

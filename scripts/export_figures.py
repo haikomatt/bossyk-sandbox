@@ -15,9 +15,12 @@ import json
 from pathlib import Path
 
 from bossyk_sandbox.figures import (
+    DIR1_STRUCTURAL_ARTIFACT,
+    DIR1_WEAK_ARTIFACT,
     H1_ARTIFACT,
     H4_ARTIFACT,
     SMACTR_ARTIFACT,
+    render_dir1_gate_save,
     render_h1_blindspot_by_class,
     render_h4_prevention_waterfall,
     render_smactr_before_after,
@@ -53,6 +56,11 @@ def export_all(output_dir: Path) -> list[Path]:
         combined_n_violations=combined["n_violations"],
     )
     written.extend(save_figure(fig3, output_dir, "smactr-before-after"))
+
+    dir1_weak = _load(DIR1_WEAK_ARTIFACT)
+    dir1_structural = _load(DIR1_STRUCTURAL_ARTIFACT)
+    fig4 = render_dir1_gate_save(dir1_weak, dir1_structural)
+    written.extend(save_figure(fig4, output_dir, "dir1-gate-save"))
 
     return written
 

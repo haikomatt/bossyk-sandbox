@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from bossyk_sandbox.figures import (
+    render_dir1_gate_save,
     render_h1_blindspot_by_class,
     render_h4_prevention_waterfall,
     render_smactr_before_after,
@@ -19,8 +20,17 @@ BENCH_OUTPUT = REPO_ROOT / "docs" / "bench_output"
 _H1_DATA = json.loads((BENCH_OUTPUT / "phase2b_crossdomain_h1.json").read_text())
 _H4_DATA = json.loads((BENCH_OUTPUT / "phase3_h4.json").read_text())
 _SMACTR_DATA = json.loads((BENCH_OUTPUT / "phase4_smactr.json").read_text())
+_DIR1_WEAK_DATA = json.loads((BENCH_OUTPUT / "live_h2h4_retail_weak.json").read_text())
+_DIR1_STRUCTURAL_DATA = json.loads(
+    (BENCH_OUTPUT / "live_h2h4_retail_weak_structural.json").read_text()
+)
 
-_ALL_FIGURE_IDS = ["h1-blindspot-by-class", "h4-prevention-waterfall", "smactr-before-after"]
+_ALL_FIGURE_IDS = [
+    "h1-blindspot-by-class",
+    "h4-prevention-waterfall",
+    "smactr-before-after",
+    "dir1-gate-save",
+]
 
 
 def _all_output_files(out_dir: Path) -> list[str]:
@@ -78,9 +88,17 @@ def test_smactr_figure_raises_on_missing_key() -> None:
         )
 
 
+def test_dir1_figure_raises_on_missing_key() -> None:
+    broken = json.loads(json.dumps(_DIR1_WEAK_DATA))
+    del broken["live_h4"]
+
+    with pytest.raises(KeyError):
+        render_dir1_gate_save(broken, _DIR1_STRUCTURAL_DATA)
+
+
 def test_render_functions_do_not_silently_produce_empty_figures() -> None:
     # A sanity check alongside (b): the happy path actually draws
-    # something (axes with data), not just an empty canvas, for all 3.
+    # something (axes with data), not just an empty canvas, for all figures.
     fig1 = render_h1_blindspot_by_class(_H1_DATA)
     assert len(fig1.axes[0].patches) > 0
 
@@ -93,6 +111,9 @@ def test_render_functions_do_not_silently_produce_empty_figures() -> None:
         combined_n_violations=_H4_DATA["combined"]["n_violations"],
     )
     assert len(fig3.axes[0].patches) > 0
+
+    fig4 = render_dir1_gate_save(_DIR1_WEAK_DATA, _DIR1_STRUCTURAL_DATA)
+    assert len(fig4.axes[0].patches) > 0
 
 
 # --- (c) committed-files-current check --------------------------------------
