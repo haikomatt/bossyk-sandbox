@@ -160,9 +160,7 @@ def test_openai_compatible_client_non_string_content_is_an_error() -> None:
     # An OpenAI-compatible provider that returns non-string content (e.g. a
     # list of content blocks) must not be blindly str()'d into a payload.
     client = OpenAICompatibleChatClient(
-        llm=_FakeLLM(  # type: ignore[arg-type]
-            _FakeMessage(content=[{"type": "text", "text": "hi"}], usage_metadata=None)
-        )
+        llm=_FakeLLM(_FakeMessage(content=[{"type": "text", "text": "hi"}], usage_metadata=None))
     )
 
     result = client.complete("system", "user")

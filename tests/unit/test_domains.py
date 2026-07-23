@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from bossyk_sandbox.domains import domain_config
+from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel
 
 
 def test_airline_domain_scenarios_path_exists_on_disk() -> None:
@@ -50,7 +53,10 @@ def test_retail_domain_is_registered_with_existing_paths() -> None:
 def test_retail_fast_rules_gate_the_order_write_tools() -> None:
     cfg = domain_config("retail")
 
-    gated = {rule.gated_tool for rule in cfg.fast_rules_factory()}
+    rules = cfg.fast_rules_factory()
+    for rule in rules:
+        assert isinstance(rule, RequireLookupBeforeCancel)
+    gated = {rule.gated_tool for rule in rules if isinstance(rule, RequireLookupBeforeCancel)}
 
     assert gated == {
         "cancel_pending_order",
@@ -64,3 +70,25 @@ def test_retail_fast_rules_gate_the_order_write_tools() -> None:
 def test_domain_config_raises_key_error_for_unregistered_domain() -> None:
     with pytest.raises(KeyError):
         domain_config("telecom")
+
+
+def test_airline_domain_policy_path_resolves_under_overridden_bossyk_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    custom_root = tmp_path / "custom-bossyk"
+    monkeypatch.setenv("BOSSYK_ROOT", str(custom_root))
+
+    cfg = domain_config("airline")
+
+    assert cfg.policy_path == custom_root / "data" / "policies" / "airline-support-v1.yaml"
+
+
+def test_retail_domain_policy_path_resolves_under_overridden_bossyk_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    custom_root = tmp_path / "custom-bossyk"
+    monkeypatch.setenv("BOSSYK_ROOT", str(custom_root))
+
+    cfg = domain_config("retail")
+
+    assert cfg.policy_path == custom_root / "data" / "policies" / "retail-support-v1.yaml"

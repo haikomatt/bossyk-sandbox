@@ -1,9 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
+
+import pytest
 
 from bossyk_sandbox.instruments.base import ProposedAction
-from bossyk_sandbox.instruments.policy import ERROR_LABEL, PolicyInstrument
+from bossyk_sandbox.instruments.policy import (
+    ERROR_LABEL,
+    PolicyInstrument,
+    bossyk_src_path,
+    default_policy_path,
+)
 
 
 @dataclass
@@ -84,3 +92,35 @@ def test_policy_instrument_assigns_unique_step_ids_across_calls() -> None:
 
     step_ids = [call[0] for call in judge.calls]
     assert len(set(step_ids)) == 2
+
+
+# --- BOSSYK_ROOT-configurable checkout path (remediation item 2) -----------
+
+
+def test_default_policy_path_honors_bossyk_root_env_var(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    custom_root = tmp_path / "custom-bossyk"
+    monkeypatch.setenv("BOSSYK_ROOT", str(custom_root))
+
+    assert default_policy_path() == custom_root / "data" / "policies" / "airline-support-v1.yaml"
+
+
+def test_default_policy_path_defaults_to_projects_bossyk_under_home(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("BOSSYK_ROOT", raising=False)
+
+    expected = (
+        Path("~/Projects/bossyk").expanduser() / "data" / "policies" / ("airline-support-v1.yaml")
+    )
+    assert default_policy_path() == expected
+
+
+def test_bossyk_src_path_honors_bossyk_root_env_var(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    custom_root = tmp_path / "custom-bossyk"
+    monkeypatch.setenv("BOSSYK_ROOT", str(custom_root))
+
+    assert bossyk_src_path() == custom_root / "src"

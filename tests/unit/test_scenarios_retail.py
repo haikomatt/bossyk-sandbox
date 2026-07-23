@@ -4,7 +4,7 @@ from pathlib import Path
 
 import bossyk_sandbox
 from bossyk_sandbox.instruments.outcome_key import BoundaryLabel
-from bossyk_sandbox.scenarios.loader import load_scenarios
+from bossyk_sandbox.scenarios.loader import Scenario, load_scenarios
 
 RETAIL_SCENARIOS_PATH = (
     Path(bossyk_sandbox.__file__).parent / "scenarios" / "retail" / "scenarios.json"
@@ -46,7 +46,7 @@ EXPECTED_BOUNDARIES = {
 }
 
 
-def _load() -> list:
+def _load() -> list[Scenario]:
     return load_scenarios(RETAIL_SCENARIOS_PATH)
 
 

@@ -15,6 +15,7 @@ from bossyk_sandbox.conditions.adversary import (
     usage_from_langchain,
     validate_payload,
 )
+from bossyk_sandbox.conditions.adversary_providers import ChatModel
 from bossyk_sandbox.conditions.grid import ProbeCell
 
 # Fireworks exposes an OpenAI-compatible endpoint, so the same ChatOpenAI
@@ -111,7 +112,7 @@ class FireworksChatClient:
     construction pattern from `build_airline_agent_session`
     (runtime/langgraph_agent.py)."""
 
-    llm: ChatOpenAI
+    llm: ChatModel
 
     def complete(self, system_prompt: str, user_prompt: str) -> ChatResult:
         response = self.llm.invoke(

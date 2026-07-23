@@ -5,17 +5,26 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from bossyk_sandbox.env import bossyk_root
 from bossyk_sandbox.instruments.base import InstrumentVerdict, ProposedAction
-
-DEFAULT_POLICY_PATH = Path("~/Projects/bossyk/data/policies/airline-support-v1.yaml").expanduser()
 
 ERROR_LABEL = "error"
 
-# bossyk has no pyproject.toml / package metadata (SCOUT.md Phase 1 #2) — it's
-# a flat `src/` script collection consumed via sys.path, mirroring bossyk's
-# own internal convention (see bossyk/src/run_policy.py). Not an auditk-style
-# editable install; this is the reuse path, not a modification.
-BOSSYK_SRC = Path("~/Projects/bossyk/src").expanduser()
+
+def default_policy_path() -> Path:
+    """Resolved at call time (not a module-level constant) through
+    `bossyk_root()`, so overriding `BOSSYK_ROOT` changes where this points
+    without reimporting anything."""
+    return bossyk_root() / "data" / "policies" / "airline-support-v1.yaml"
+
+
+def bossyk_src_path() -> Path:
+    """bossyk has no pyproject.toml / package metadata (SCOUT.md Phase 1
+    #2) — it's a flat `src/` script collection consumed via sys.path,
+    mirroring bossyk's own internal convention (see bossyk/src/run_policy.py).
+    Not an auditk-style editable install; this is the reuse path, not a
+    modification. Resolved at call time through `bossyk_root()`."""
+    return bossyk_root() / "src"
 
 
 class PolicyStepResult(Protocol):
@@ -66,18 +75,23 @@ class PolicyInstrument:
 
 
 def build_default_policy_instrument(
-    policy_path: Path | str = DEFAULT_POLICY_PATH,
+    policy_path: Path | str | None = None,
 ) -> PolicyInstrument:
     """Real judge path: bossyk's `PolicyAwareJudge` against the
     `airline-support-v1` policy, unmodified — including its hardcoded
     deepseek-v4-pro judge model (non-Kimi, satisfies family exclusion
     against the kimi-k2p6 agent; see SCOUT.md Phase 1 #2). Requires
-    FIREWORKS_API_KEY — gated, not imported at module load time."""
-    bossyk_src = str(BOSSYK_SRC)
+    FIREWORKS_API_KEY — gated, not imported at module load time.
+
+    `policy_path=None` (the default) resolves `default_policy_path()` at
+    call time, honoring `BOSSYK_ROOT` -- mirrors the None-default pattern
+    used elsewhere in this module/package for call-time resolution."""
+    resolved_policy_path = policy_path if policy_path is not None else default_policy_path()
+    bossyk_src = str(bossyk_src_path())
     if bossyk_src not in sys.path:
         sys.path.insert(0, bossyk_src)
     from judge import PolicyAwareJudge  # type: ignore[import-not-found]
     from policy import load_policy  # type: ignore[import-not-found]
 
-    policy = load_policy(policy_path)
+    policy = load_policy(resolved_policy_path)
     return PolicyInstrument(judge=PolicyAwareJudge(policy=policy))

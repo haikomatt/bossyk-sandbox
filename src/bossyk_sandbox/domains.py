@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from bossyk_sandbox.instruments.base import Instrument
-from bossyk_sandbox.instruments.policy import DEFAULT_POLICY_PATH
+from bossyk_sandbox.instruments.policy import default_policy_path
 from bossyk_sandbox.scenarios.loader import SCENARIOS_PATH
 from bossyk_sandbox.scenarios.runner import default_fast_rules, retail_fast_rules
 
@@ -26,25 +26,35 @@ class DomainConfig:
     fast_rules_factory: Callable[[], list[Instrument]]
 
 
-AIRLINE = DomainConfig(
-    name="airline",
-    scenarios_path=SCENARIOS_PATH,
-    policy_path=DEFAULT_POLICY_PATH,
-    fast_rules_factory=default_fast_rules,
-)
+def _airline_domain() -> DomainConfig:
+    return DomainConfig(
+        name="airline",
+        scenarios_path=SCENARIOS_PATH,
+        policy_path=default_policy_path(),
+        fast_rules_factory=default_fast_rules,
+    )
 
-RETAIL = DomainConfig(
-    name="retail",
-    scenarios_path=SCENARIOS_PATH.parent.parent / "retail" / "scenarios.json",
-    policy_path=DEFAULT_POLICY_PATH.parent / "retail-support-v1.yaml",
-    fast_rules_factory=retail_fast_rules,
-)
 
-DOMAINS: dict[str, DomainConfig] = {"airline": AIRLINE, "retail": RETAIL}
+def _retail_domain() -> DomainConfig:
+    return DomainConfig(
+        name="retail",
+        scenarios_path=SCENARIOS_PATH.parent.parent / "retail" / "scenarios.json",
+        policy_path=default_policy_path().parent / "retail-support-v1.yaml",
+        fast_rules_factory=retail_fast_rules,
+    )
+
+
+# Builders, not built instances -- each is called fresh inside `domain_config`
+# so a `BOSSYK_ROOT` override (or monkeypatch in a test) is honored at
+# lookup time rather than baked in at import time.
+_DOMAIN_BUILDERS: dict[str, Callable[[], DomainConfig]] = {
+    "airline": _airline_domain,
+    "retail": _retail_domain,
+}
 
 
 def domain_config(name: str) -> DomainConfig:
     """Looks up a registered domain's config. Raises `KeyError` for an
     unregistered domain name — callers should let it propagate rather than
     silently falling back to a default domain."""
-    return DOMAINS[name]
+    return _DOMAIN_BUILDERS[name]()

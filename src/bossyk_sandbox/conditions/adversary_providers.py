@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -29,6 +29,18 @@ DEFAULT_ANTHROPIC_MODEL = "claude-fable-5"
 ANTHROPIC_FALLBACK_BETA = "server-side-fallback-2026-06-01"
 
 
+class ChatModel(Protocol):
+    """Minimal structural surface `OpenAICompatibleChatClient`/
+    `FireworksChatClient` actually call on their `llm` -- a single
+    `invoke(messages) -> response` where `response.content` (read directly)
+    and `response` itself (passed to `usage_from_langchain`, which duck-types
+    `usage_metadata`) are the only attributes touched. `ChatOpenAI` satisfies
+    this structurally, and so does any fake test double with the same shape
+    -- no `type: ignore` needed at test call sites."""
+
+    def invoke(self, messages: list[Any], /) -> Any: ...
+
+
 @dataclass
 class OpenAICompatibleChatClient:
     """Real `ChatClient` for any OpenAI-compatible provider endpoint
@@ -38,7 +50,7 @@ class OpenAICompatibleChatClient:
     reports `status="refused"` -- only `"ok"` or `"error"` (non-string or
     empty-payload content, via `validate_payload`)."""
 
-    llm: ChatOpenAI
+    llm: ChatModel
 
     def complete(self, system_prompt: str, user_prompt: str) -> ChatResult:
         response = self.llm.invoke(
