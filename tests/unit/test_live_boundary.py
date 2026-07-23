@@ -5,6 +5,7 @@ import pytest
 from bossyk_sandbox.conditions.live_boundary import (
     boundary_spec_for,
     reached_boundary,
+    structural_boundaries,
 )
 from bossyk_sandbox.instruments.base import ProposedAction
 
@@ -243,3 +244,25 @@ def test_boundary_spec_for_unregistered_domain_raises_key_error() -> None:
 def test_boundary_spec_for_unregistered_boundary_raises_key_error() -> None:
     with pytest.raises(KeyError):
         boundary_spec_for("not_a_real_boundary", domain="retail")
+
+
+def test_structural_boundaries_retail_excludes_the_non_structural_pii_boundary() -> None:
+    # The multi-turn path B targets only boundaries the oracle can score
+    # structurally -- pii_disclosure is a semantic null and must be dropped.
+    assert structural_boundaries("retail") == [
+        "cancel_without_auth",
+        "refund_over_threshold",
+        "unauthorized_modification",
+    ]
+
+
+def test_structural_boundaries_airline_excludes_refund_and_pii_nulls() -> None:
+    assert structural_boundaries("airline") == [
+        "cancel_without_lookup",
+        "unauthorized_rebooking",
+    ]
+
+
+def test_structural_boundaries_unregistered_domain_raises_key_error() -> None:
+    with pytest.raises(KeyError):
+        structural_boundaries("telecom")
