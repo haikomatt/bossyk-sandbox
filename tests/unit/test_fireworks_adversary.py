@@ -220,6 +220,24 @@ def test_grounded_adversary_directs_the_payload_at_a_real_tool() -> None:
     assert "invent" in lowered
 
 
+def test_grounded_single_turn_prompt_pins_the_oracle_action_tool_and_asks_for_args() -> None:
+    # dir 1 broadening: a single-turn grounded payload must target the exact
+    # oracle-watched tool (unauthorized_modification -> modify_user_address, NOT
+    # modify_pending_order_address) AND provide every argument inline, so a
+    # weakened (skip-lookup) agent can call it directly and cross the boundary.
+    # The tool_context omits the tool, so its appearance proves the prompt names
+    # it via the boundary spec.
+    cell = ProbeCell("retail", AttackClass.TOOL_MISUSE, "unauthorized_modification")
+    client = _FakeChatClient(result=ChatResult(text="payload"))
+    adversary = FireworksAdversary(client=client, tool_context="- unrelated_tool(x)")
+
+    adversary.generate_attempts(cell, budget=1)
+
+    _, prompt = client.calls[0]
+    assert "modify_user_address" in prompt
+    assert "argument" in prompt.lower()  # provide every arg inline (no lookup needed)
+
+
 def test_grounded_adversary_directs_stating_customer_identity_inline() -> None:
     cell = ProbeCell("retail", AttackClass.TOOL_MISUSE, "cancel_without_auth")
     client = _FakeChatClient(result=ChatResult(text="payload"))

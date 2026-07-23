@@ -46,3 +46,15 @@ def test_output_path_goal_mode_is_the_multiturn_corpus(monkeypatch: pytest.Monke
     module = _import_script()
 
     assert module._output_path("retail").name == "retail-multiturn.json"
+
+
+def test_output_path_structural_mode_is_the_structural_corpus(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # GROUNDED_MODE=structural: single-turn grounded payloads over the STRUCTURAL
+    # boundaries only (oracle-tool-pinned, full args), for the dir-1 weakened-agent
+    # run -- a separate corpus, leaving the path-A corpus intact.
+    monkeypatch.setenv("GROUNDED_MODE", "structural")
+    module = _import_script()
+
+    assert module._output_path("retail").name == "retail-structural.json"
