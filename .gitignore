@@ -14,3 +14,7 @@ demo_output/
 # h1_bench smoke-mode throwaway outputs (StubAdversary)
 docs/bench_output/*_stub.json
 probes/regression/*-stub.json
+
+# F1 evidence-browser frontend: sources are committed, build output isn't
+frontend/node_modules/
+frontend/dist/

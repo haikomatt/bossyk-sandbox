@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from bossyk_sandbox.console.artifacts import router as artifacts_router
 from bossyk_sandbox.evidence.trace import build_trace, make_attested_step
@@ -18,6 +19,13 @@ from bossyk_sandbox.runtime.stub_agent import SCRIPTED_TOOL_CALLS
 
 app = FastAPI(title="bossyk-sandbox console")
 app.include_router(artifacts_router)
+
+# F1 evidence-browser SPA (frontend/). Build output is not committed, so
+# this mount is conditional: absent a build, `/app` simply 404s and every
+# other route (including all existing tests) is unaffected.
+_frontend_dist = Path(__file__).resolve().parent.parent.parent.parent / "frontend" / "dist"
+if _frontend_dist.is_dir():
+    app.mount("/app", StaticFiles(directory=_frontend_dist, html=True), name="frontend")
 
 _connections: set[WebSocket] = set()
 
