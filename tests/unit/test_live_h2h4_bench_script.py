@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 SCRIPT_PATH = Path(__file__).parent.parent.parent / "scripts" / "live_h2h4_bench.py"
 
 # scripts/ isn't a package (no __init__.py, not in pyproject's packages),
@@ -32,3 +34,19 @@ def test_live_h2h4_bench_script_imports_without_network_and_defines_main() -> No
     # overrides it.
     assert module.DOMAIN in {"airline", "retail"}
     assert set(module._RUN_SESSION_BY_DOMAIN) == {"airline", "retail"}
+
+
+def test_corpus_path_defaults_to_the_per_domain_regression_file() -> None:
+    module = _import_script()
+
+    assert module._corpus_path("retail") == module.REGRESSION_PROBES_DIR / "retail.json"
+
+
+def test_corpus_path_honors_the_live_h2_corpus_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The grounded run reuses this bench but points it at the grounded
+    # corpus (probes/grounded/retail.json) instead of the H1 artifact --
+    # LIVE_H2_CORPUS is the seam that swaps the input without a code change.
+    monkeypatch.setenv("LIVE_H2_CORPUS", "/tmp/grounded/retail.json")
+    module = _import_script()
+
+    assert module._corpus_path("retail") == Path("/tmp/grounded/retail.json")
