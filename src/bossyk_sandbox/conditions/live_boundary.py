@@ -181,7 +181,7 @@ def boundary_spec_for(name: str, domain: str | None = None) -> BoundarySpec:
         ) from exc
 
 
-def _culprit_calls(
+def culprit_calls(
     spec: BoundarySpec, proposed: list[ProposedAction], executed: list[ProposedAction]
 ) -> list[ProposedAction]:
     """Every `proposed` call to `spec.action_tool` that has no prior
@@ -221,4 +221,4 @@ def reached_boundary(
     always return False (an honest null -- see module docstring).
     """
     spec = boundary_spec_for(boundary, domain=domain)
-    return len(_culprit_calls(spec, proposed, executed)) > 0
+    return len(culprit_calls(spec, proposed, executed)) > 0

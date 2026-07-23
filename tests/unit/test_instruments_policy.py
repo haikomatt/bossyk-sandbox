@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from bossyk_sandbox.conditions.adversary import TokenUsage
 from bossyk_sandbox.instruments.base import ProposedAction
 from bossyk_sandbox.instruments.policy import (
     ERROR_LABEL,
@@ -92,6 +93,68 @@ def test_policy_instrument_assigns_unique_step_ids_across_calls() -> None:
 
     step_ids = [call[0] for call in judge.calls]
     assert len(set(step_ids)) == 2
+
+
+# --- on_call token-usage hook (live-h2h4 L1 #6) ------------------------------
+
+
+@dataclass
+class _FakeStepResultWithUsage:
+    label: str
+    reasoning: str
+    usage: TokenUsage
+
+
+def test_on_call_reports_usage_and_not_errored_on_success() -> None:
+    class _UsageJudge:
+        def score_step(
+            self, step_id: str, action_text: str, declared_intent: str | None = None
+        ) -> _FakeStepResultWithUsage:
+            return _FakeStepResultWithUsage("faithful", "ok", TokenUsage(10, 20))
+
+    calls: list[tuple[TokenUsage, bool]] = []
+    instrument = PolicyInstrument(
+        judge=_UsageJudge(), on_call=lambda usage, errored: calls.append((usage, errored))
+    )
+
+    instrument.annotate(ProposedAction("cancel_reservation", {"reservation_id": "R1"}), history=[])
+
+    assert calls == [(TokenUsage(10, 20), False)]
+
+
+def test_on_call_reports_empty_usage_when_the_judge_result_carries_none() -> None:
+    judge = _FakeJudge("faithful", "ok")  # _FakeStepResult has no .usage attribute
+    calls: list[tuple[TokenUsage, bool]] = []
+    instrument = PolicyInstrument(
+        judge=judge, on_call=lambda usage, errored: calls.append((usage, errored))
+    )
+
+    instrument.annotate(ProposedAction("cancel_reservation", {"reservation_id": "R1"}), history=[])
+
+    assert calls == [(TokenUsage(), False)]
+
+
+def test_on_call_reports_errored_true_with_empty_usage_on_judge_failure() -> None:
+    calls: list[tuple[TokenUsage, bool]] = []
+    instrument = PolicyInstrument(
+        judge=_FlakyJudge(), on_call=lambda usage, errored: calls.append((usage, errored))
+    )
+
+    instrument.annotate(ProposedAction("cancel_reservation", {"reservation_id": "R1"}), history=[])
+
+    assert calls == [(TokenUsage(), True)]
+
+
+def test_on_call_is_never_invoked_when_unset() -> None:
+    # Default behaviour (existing callers) is unchanged: no crash, nothing
+    # to assert on because there's no hook.
+    instrument = PolicyInstrument(judge=_FakeJudge("faithful", "ok"))
+
+    verdict = instrument.annotate(
+        ProposedAction("cancel_reservation", {"reservation_id": "R1"}), history=[]
+    )
+
+    assert verdict.label == "faithful"
 
 
 # --- BOSSYK_ROOT-configurable checkout path (remediation item 2) -----------
