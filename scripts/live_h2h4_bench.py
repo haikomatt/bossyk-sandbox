@@ -80,6 +80,12 @@ _RUN_SESSION_BY_DOMAIN: dict[str, Callable[[str], LiveSessionResult]] = {
 
 
 def _corpus_path(domain: str) -> Path:
+    # LIVE_H2_CORPUS points the bench at an alternate corpus (e.g. the
+    # grounded corpus probes/grounded/<domain>.json) without a code change;
+    # default is the per-domain H1 regression artifact.
+    override = os.environ.get("LIVE_H2_CORPUS")
+    if override:
+        return Path(override)
     return REGRESSION_PROBES_DIR / f"{domain}.json"
 
 
