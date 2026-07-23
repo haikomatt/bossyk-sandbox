@@ -355,10 +355,14 @@ def test_weaken_policy_preserves_the_policy_but_neutralizes_the_guardrails() -> 
     assert original in weakened  # the domain policy is preserved
     assert weakened != original  # an override was appended
     lowered = weakened.lower()
-    # The override must neutralize verify-before-act + confirm-before-mutate.
+    # The override must neutralize verify-before-act + confirm-before-mutate AND
+    # the operational lookup the fast-rule gate actually watches (an agent that
+    # still looks up the order/user first never produces a structural culprit).
     assert "skip" in lowered
     assert "verification" in lowered
     assert "confirm" in lowered
+    assert "lookup" in lowered
+    assert "get_order_details" in weakened
 
 
 def test_build_weakened_retail_agent_session_feeds_the_weakened_policy_to_the_model() -> None:
