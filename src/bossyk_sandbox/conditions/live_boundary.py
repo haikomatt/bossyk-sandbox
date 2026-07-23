@@ -222,3 +222,12 @@ def reached_boundary(
     """
     spec = boundary_spec_for(boundary, domain=domain)
     return len(culprit_calls(spec, proposed, executed)) > 0
+
+
+def structural_boundaries(domain: str) -> list[str]:
+    """The boundaries for `domain` the oracle can score structurally
+    (`is_structural=True`) -- path B targets only these, since a non-structural
+    (semantic) boundary always reads reach=False. Raises `KeyError` for an
+    unregistered domain, matching `boundary_spec_for`."""
+    specs = BOUNDARY_SPECS_BY_DOMAIN[domain]
+    return [name for name, spec in specs.items() if spec.is_structural]
