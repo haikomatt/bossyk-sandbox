@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Annotated, Any, TypedDict
 
@@ -13,12 +14,13 @@ from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import interrupt
 from pydantic import SecretStr
-from tau2.domains.airline.environment import get_environment
+from tau2.domains.airline.environment import get_environment as get_airline_environment
+from tau2.domains.retail.environment import get_environment as get_retail_environment
 
 from bossyk_sandbox.evidence.trace import make_attested_step
 from bossyk_sandbox.gate import Gate
-from bossyk_sandbox.instruments.base import Decision, ProposedAction, Verdict
-from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel
+from bossyk_sandbox.instruments.base import Decision, Instrument, ProposedAction, Verdict
+from bossyk_sandbox.scenarios.runner import default_fast_rules, retail_fast_rules
 
 # Fireworks exposes an OpenAI-compatible endpoint, so the same ChatOpenAI
 # client used elsewhere in this codebase (e.g. no separate SDK) works here
@@ -48,7 +50,14 @@ class AirlineAgentSession:
     """A compiled live agent plus the running list of GATE-scored Steps it
     has produced so far. `steps` is appended to in place as the graph runs,
     so it can be handed to `evidence.trace.build_trace` once the session
-    (or the exit demo) is done."""
+    (or the exit demo) is done.
+
+    Despite the name (kept for backward compatibility with existing
+    imports/tests), nothing about this dataclass is airline-specific --
+    `_build_agent_session` returns the same shape for
+    `build_retail_agent_session` too. `AgentSession` is the domain-neutral
+    alias for new code.
+    """
 
     graph: CompiledStateGraph[AgentState, Any, AgentState, AgentState]
     trace_id: str
@@ -56,16 +65,23 @@ class AirlineAgentSession:
     gate: Gate | None = None
 
 
-def build_airline_agent_session(
+AgentSession = AirlineAgentSession
+
+
+def _build_agent_session(
     *,
-    trace_id: str = "live-airline-session",
-    model_name: str | None = None,
-    api_key: str | None = None,
-    base_url: str = FIREWORKS_BASE_URL,
-    llm: Any | None = None,
-    environment: Any | None = None,
-) -> AirlineAgentSession:
-    """Live LangGraph airline agent with in-graph tool-call interception.
+    trace_id: str,
+    get_environment_fn: Callable[[], Any],
+    fast_rules: list[Instrument],
+    model_name: str | None,
+    api_key: str | None,
+    base_url: str,
+    llm: Any | None,
+    environment: Any | None,
+) -> AgentSession:
+    """Domain-parameterized live LangGraph agent with in-graph tool-call
+    interception, shared by `build_airline_agent_session` and
+    `build_retail_agent_session`.
 
     Every proposed tool call is scored by the same `Gate`/`Instrument`
     machinery as the stub agent (bossyk_sandbox.gate), then surfaced via
@@ -86,9 +102,9 @@ def build_airline_agent_session(
     to target a different OpenAI-compatible provider instead. Pass `llm`
     to use an already-constructed chat model (e.g. a test double) instead,
     skipping the API-key check entirely; pass `environment` to use an
-    already-resolved tau2 environment instead of calling `get_environment()`.
+    already-resolved tau2 environment instead of calling `get_environment_fn()`.
     """
-    env = environment if environment is not None else get_environment()
+    env = environment if environment is not None else get_environment_fn()
     toolkit = env.tools
 
     if llm is None:
@@ -96,7 +112,7 @@ def build_airline_agent_session(
         resolved_api_key = api_key or os.environ.get("FIREWORKS_API_KEY")
         if not resolved_api_key:
             raise RuntimeError(
-                "FIREWORKS_API_KEY is required to run the live airline agent "
+                "FIREWORKS_API_KEY is required to run the live agent "
                 "(set it in .env, matching auditk-constellaration-experiment's convention)."
             )
         tool_schemas = [tool.openai_schema for tool in toolkit.get_tools().values()]
@@ -107,7 +123,7 @@ def build_airline_agent_session(
             temperature=0,
         ).bind_tools(tool_schemas)
 
-    gate = Gate(instruments=[RequireLookupBeforeCancel()])
+    gate = Gate(instruments=fast_rules)
     steps: list[Step] = []
 
     def agent_node(state: AgentState) -> dict[str, Any]:
@@ -212,4 +228,60 @@ def build_airline_agent_session(
     )
 
     compiled = graph.compile(checkpointer=MemorySaver())
-    return AirlineAgentSession(graph=compiled, trace_id=trace_id, steps=steps, gate=gate)
+    return AgentSession(graph=compiled, trace_id=trace_id, steps=steps, gate=gate)
+
+
+def build_airline_agent_session(
+    *,
+    trace_id: str = "live-airline-session",
+    model_name: str | None = None,
+    api_key: str | None = None,
+    base_url: str = FIREWORKS_BASE_URL,
+    llm: Any | None = None,
+    environment: Any | None = None,
+) -> AgentSession:
+    """Live LangGraph airline agent. See `_build_agent_session` for the
+    shared mechanics. Fast-path gate wired to `default_fast_rules()`
+    (scenarios/runner.py): cancel_reservation AND update_reservation_flights,
+    both gated on a prior get_reservation_details lookup -- so both of
+    airline's structural consequence boundaries (cancel_without_lookup,
+    unauthorized_rebooking) are preventable pre-execution live, not just
+    cancel_without_lookup."""
+    return _build_agent_session(
+        trace_id=trace_id,
+        get_environment_fn=get_airline_environment,
+        fast_rules=default_fast_rules(),
+        model_name=model_name,
+        api_key=api_key,
+        base_url=base_url,
+        llm=llm,
+        environment=environment,
+    )
+
+
+def build_retail_agent_session(
+    *,
+    trace_id: str = "live-retail-session",
+    model_name: str | None = None,
+    api_key: str | None = None,
+    base_url: str = FIREWORKS_BASE_URL,
+    llm: Any | None = None,
+    environment: Any | None = None,
+) -> AgentSession:
+    """Live LangGraph retail agent -- the retail counterpart of
+    `build_airline_agent_session`, needed so retail crossings are reachable
+    live (retail-primary: the first billable L1 run targets retail). Same
+    mechanics via `_build_agent_session`, pointed at tau2's retail
+    environment and `retail_fast_rules()` (cancel_pending_order,
+    return_delivered_order_items, modify_pending_order_payment,
+    modify_user_address, each gated on a prior lookup)."""
+    return _build_agent_session(
+        trace_id=trace_id,
+        get_environment_fn=get_retail_environment,
+        fast_rules=retail_fast_rules(),
+        model_name=model_name,
+        api_key=api_key,
+        base_url=base_url,
+        llm=llm,
+        environment=environment,
+    )

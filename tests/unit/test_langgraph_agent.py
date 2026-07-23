@@ -7,7 +7,12 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.types import Command
 
 from bossyk_sandbox.instruments.base import ProposedAction
-from bossyk_sandbox.runtime.langgraph_agent import AirlineAgentSession, build_airline_agent_session
+from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel
+from bossyk_sandbox.runtime.langgraph_agent import (
+    AirlineAgentSession,
+    build_airline_agent_session,
+    build_retail_agent_session,
+)
 
 
 @dataclass
@@ -236,3 +241,89 @@ def test_no_interrupts_when_the_llm_proposes_no_tools() -> None:
     assert session.steps == []
     assert session.gate is not None
     assert session.gate.history == []
+
+
+# --- domain-parameterized builder (live-h2h4 L1 #3) --------------------------
+
+
+def test_airline_gate_is_wired_to_both_structural_fast_rules() -> None:
+    # Both of airline's structural boundaries (cancel_without_lookup,
+    # unauthorized_rebooking) must be preventable pre-execution live, not
+    # just cancel_without_lookup -- see runtime.langgraph_agent's
+    # build_airline_agent_session docstring.
+    toolkit = _CountingToolkit()
+    llm = _ScriptedLLM(responses=[AIMessage(content="done")])
+    session = build_airline_agent_session(
+        trace_id="t-airline-gate-wiring", llm=llm, environment=_FakeEnvironment(tools=toolkit)
+    )
+
+    assert session.gate is not None
+    gated_tools = {
+        rule.gated_tool
+        for rule in session.gate.instruments
+        if isinstance(rule, RequireLookupBeforeCancel)
+    }
+    assert gated_tools == {"cancel_reservation", "update_reservation_flights"}
+
+
+def test_build_retail_agent_session_wires_retail_fast_rules_without_network() -> None:
+    toolkit = _CountingToolkit()
+    llm = _ScriptedLLM(responses=[AIMessage(content="done")])
+
+    session = build_retail_agent_session(
+        trace_id="t-retail-wiring", llm=llm, environment=_FakeEnvironment(tools=toolkit)
+    )
+
+    assert session.gate is not None
+    gated_tools = {
+        rule.gated_tool
+        for rule in session.gate.instruments
+        if isinstance(rule, RequireLookupBeforeCancel)
+    }
+    assert gated_tools == {
+        "cancel_pending_order",
+        "return_delivered_order_items",
+        "modify_pending_order_payment",
+        "modify_user_address",
+    }
+
+
+def test_retail_agent_session_gate_blocks_cancel_without_prior_lookup() -> None:
+    toolkit = _CountingToolkit()
+    llm = _ScriptedLLM(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[_tool_call("cancel_pending_order", {"order_id": "#W1"}, "call-1")],
+            ),
+            AIMessage(content="done"),
+        ]
+    )
+    session = build_retail_agent_session(
+        trace_id="t-retail-block", llm=llm, environment=_FakeEnvironment(tools=toolkit)
+    )
+
+    _result, payloads = _run_to_completion(session, thread_id="retail-block")
+
+    assert payloads[0]["auto_verdict"] == "block"
+    assert toolkit.call_count("cancel_pending_order", order_id="#W1") == 0
+    assert session.gate is not None
+    assert session.gate.history == []
+
+
+def test_retail_agent_session_builds_against_the_real_tau2_retail_environment() -> None:
+    # No FIREWORKS_API_KEY / network needed: `llm` is a fake, and tau2's
+    # retail environment loads from a local bundled JSON file, not a
+    # network call -- confirms the retail tau2 env is cleanly available
+    # (live-h2h4 L1 #3's stop-and-report condition does NOT apply).
+    llm = _ScriptedLLM(responses=[AIMessage(content="done")])
+
+    session = build_retail_agent_session(trace_id="t-retail-real-env", llm=llm)
+
+    assert session.gate is not None
+    gated_tools = {
+        rule.gated_tool
+        for rule in session.gate.instruments
+        if isinstance(rule, RequireLookupBeforeCancel)
+    }
+    assert "cancel_pending_order" in gated_tools
