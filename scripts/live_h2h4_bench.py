@@ -48,6 +48,7 @@ from bossyk_sandbox.conditions.live_replay import (
     replay_crossing,
     run_live_airline_session,
     run_live_retail_session,
+    run_live_weakened_retail_session,
     score_policy_post_hoc,
 )
 from bossyk_sandbox.conditions.retention import load_regression_probes
@@ -76,6 +77,7 @@ DOMAIN = os.environ.get("LIVE_H2_DOMAIN", "retail")
 
 LIVE_H2_MODE = os.environ.get("LIVE_H2_MODE", "single")  # "single" (path A) | "multiturn" (path B)
 LIVE_H2_MAX_TURNS = int(os.environ.get("LIVE_H2_MAX_TURNS", "8"))
+LIVE_H2_AGENT = os.environ.get("LIVE_H2_AGENT", "compliant")  # "compliant" | "weak"
 
 _RUN_SESSION_BY_DOMAIN: dict[str, Callable[[str], LiveSessionResult]] = {
     "airline": run_live_airline_session,
@@ -92,6 +94,8 @@ def _multiturn_retail_session(payload: str) -> LiveSessionResult:
 def _run_session_for(domain: str) -> Callable[[str], LiveSessionResult]:
     if LIVE_H2_MODE == "multiturn":
         return _multiturn_retail_session
+    if LIVE_H2_AGENT == "weak":
+        return run_live_weakened_retail_session
     return _RUN_SESSION_BY_DOMAIN[domain]
 
 
@@ -139,6 +143,12 @@ def _real_mode_requested() -> bool:
         raise SystemExit(1)
     if LIVE_H2_MODE == "multiturn" and DOMAIN != "retail":
         print(f"LIVE_H2_MODE=multiturn only supports retail (got {DOMAIN!r}).", file=sys.stderr)
+        raise SystemExit(1)
+    if LIVE_H2_AGENT not in {"compliant", "weak"}:
+        print(f"LIVE_H2_AGENT={LIVE_H2_AGENT!r} must be 'compliant' or 'weak'.", file=sys.stderr)
+        raise SystemExit(1)
+    if LIVE_H2_AGENT == "weak" and DOMAIN != "retail":
+        print(f"LIVE_H2_AGENT=weak only supports retail (got {DOMAIN!r}).", file=sys.stderr)
         raise SystemExit(1)
     return True
 

@@ -24,6 +24,7 @@ from bossyk_sandbox.runtime.langgraph_agent import (
     AgentSession,
     build_airline_agent_session,
     build_retail_agent_session,
+    build_weakened_retail_agent_session,
 )
 from bossyk_sandbox.scenarios.runner import VERDICT_METADATA_KEY
 from bossyk_sandbox.scoring.latency import Clock, LatencyRecord, timed
@@ -183,6 +184,17 @@ def run_live_retail_session(payload: str) -> LiveRunResult:
     session = build_retail_agent_session(trace_id=trace_id)
     _drive_session(session, payload, trace_id)
     return _live_run_result(session, trace_id, agent_config_ref="live-h2h4-retail@0.1")
+
+
+def run_live_weakened_retail_session(payload: str) -> LiveRunResult:
+    """dir 1: like run_live_retail_session but against the UNDER-SPECIFIED
+    (weakened-policy) retail agent -- real, network-touching, billable. Never
+    called by the deterministic suite -- only scripts/live_h2h4_bench.py does,
+    gated behind RUN_LIVE_H2_E2E=1."""
+    trace_id = f"live-h2-retail-weak-{uuid.uuid4()}"
+    session = build_weakened_retail_agent_session(trace_id=trace_id)
+    _drive_session(session, payload, trace_id)
+    return _live_run_result(session, trace_id, agent_config_ref="live-h2h4-retail-weak@0.1")
 
 
 @dataclass(frozen=True)
