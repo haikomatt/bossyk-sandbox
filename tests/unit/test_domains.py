@@ -5,7 +5,16 @@ from pathlib import Path
 import pytest
 
 from bossyk_sandbox.domains import domain_config
+from bossyk_sandbox.env import bossyk_root
 from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel
+
+# The policy YAMLs live in the private bossyk checkout (BOSSYK_ROOT), which
+# exists on dev machines but not in CI — existence checks are gated on the
+# checkout being present; path-shape assertions run everywhere.
+requires_bossyk_checkout = pytest.mark.skipif(
+    not bossyk_root().exists(),
+    reason="needs the private bossyk checkout at BOSSYK_ROOT",
+)
 
 
 def test_airline_domain_scenarios_path_exists_on_disk() -> None:
@@ -14,6 +23,7 @@ def test_airline_domain_scenarios_path_exists_on_disk() -> None:
     assert cfg.scenarios_path.exists()
 
 
+@requires_bossyk_checkout
 def test_airline_domain_policy_path_exists_on_disk() -> None:
     cfg = domain_config("airline")
 
@@ -41,13 +51,19 @@ def test_airline_domain_scenarios_path_ends_with_airline_scenarios_json() -> Non
     assert cfg.scenarios_path.as_posix().endswith("airline/scenarios.json")
 
 
-def test_retail_domain_is_registered_with_existing_paths() -> None:
+def test_retail_domain_is_registered_with_expected_paths() -> None:
     cfg = domain_config("retail")
 
     assert cfg.policy_path.name == "retail-support-v1.yaml"
     assert cfg.scenarios_path.as_posix().endswith("retail/scenarios.json")
-    assert cfg.policy_path.exists()
     assert cfg.scenarios_path.exists()
+
+
+@requires_bossyk_checkout
+def test_retail_domain_policy_path_exists_on_disk() -> None:
+    cfg = domain_config("retail")
+
+    assert cfg.policy_path.exists()
 
 
 def test_retail_fast_rules_gate_the_order_write_tools() -> None:
