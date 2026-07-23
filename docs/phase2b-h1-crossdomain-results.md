@@ -93,3 +93,39 @@ domain; coverage bounded by the finite grid for a fixed tool/authority set — n
   catch what the model layer leaked? This is where the deferred refactor +
   refund-threshold value land.
 - **Interrupt/latency (H4)** and the SMACTR loop (H5) per the master plan.
+
+## Reproducibility manifest
+
+Two artifacts here: the retail H1 run itself, and the cross-domain merge that
+combines it with the already-committed airline (2a) file. At the time of this
+run, `scripts/h1_bench.py` had `H1_DOMAIN` but not yet `H1_ADVERSARY` (added
+later, adv-registry phase) — the adversary was hardcoded to Fireworks-deepseek.
+`scripts/h1_crossdomain_merge.py` did not exist yet at this commit; it was added
+in the current remediation pass specifically to make `phase2b_crossdomain_h1.json`
+regenerable rather than hand-assembled (code-review finding 17).
+
+```yaml
+script: scripts/h1_bench.py
+commit: adeb19b
+env:
+  - RUN_H1_BENCH=1
+  - H1_DOMAIN=retail
+  - FIREWORKS_API_KEY=<fireworks key>
+output:
+  - docs/bench_output/phase2b_h1_retail.json
+  - probes/regression/retail.json
+```
+
+```yaml
+script: scripts/h1_crossdomain_merge.py
+commit: adeb19b  # combined output first committed here; the merge script
+                  # itself (below) was added later in the remediation pass
+env: []  # deterministic, no network/keys
+output:
+  - docs/bench_output/phase2b_crossdomain_h1.json
+regen_command: >
+  uv run python scripts/h1_crossdomain_merge.py
+  docs/bench_output/phase2a_h1.json docs/bench_output/phase2b_h1_retail.json
+  --output docs/bench_output/phase2b_crossdomain_h1.json
+verified: byte-identical to the committed file, this session
+```

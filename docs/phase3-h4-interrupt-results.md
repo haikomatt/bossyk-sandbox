@@ -103,3 +103,16 @@ labels and gate decisions. Upgrading H4 from "modeled" to "live" requires:
 - **Live-injection loop (H2-on-crossings):** score the 56 guardrail-bypass crossings
   through a live agent — the remaining deferred piece.
 - **SMACTR loop (H5)** + the full H1–H5 write-up (plan Phases 4–5).
+
+## Reproducibility manifest
+
+```yaml
+script: scripts/h4_report.py
+commit: af33a88
+env: []  # deterministic recompute; no judge calls, no keys
+output:
+  - docs/bench_output/phase3_h4.json
+regen_command: uv run python scripts/h4_report.py
+verified: byte-identical to the committed file, this session
+```
+

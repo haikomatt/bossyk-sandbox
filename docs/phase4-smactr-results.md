@@ -72,3 +72,31 @@ needs `ANTHROPIC_API_KEY`); the before/after reuses the Phase 2c real-judge verd
   the regression set (needs `ANTHROPIC_API_KEY`; also the H5 adaptive adversary).
 - **More failures through the loop;** the threat model grows.
 - **Phase 5:** the full H1–H5 result write-up; **Phase 6:** the product console.
+
+## Reproducibility manifest
+
+The regression probe for retail-008 was originally recorded as an ID only;
+code-review finding 15 (this remediation pass) added the actual probe
+construction, persistence, and a replay test — that's a separate, later commit
+from the `phase4_smactr.json` / `threat_model.json` pair below.
+
+```yaml
+script: scripts/smactr_demo.py
+commit: 12c65a0
+env: []  # deterministic; reuses Phase 2c's persisted judge verdicts, no new judge calls
+output:
+  - docs/bench_output/phase4_smactr.json
+  - docs/bench_output/threat_model.json
+regen_command: uv run python scripts/smactr_demo.py
+verified: byte-identical to both committed files, this session (idempotent)
+```
+
+```yaml
+script: scripts/smactr_demo.py   # probe construction folded into the same script
+commit: 149d792   # finding 15: probe now built/saved/replay-tested, not just an ID
+env: []
+output:
+  - probes/regression/retail-smactr.json
+verified: byte-identical to the committed file, this session (idempotent)
+```
+

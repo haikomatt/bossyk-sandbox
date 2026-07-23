@@ -129,3 +129,42 @@ RUN_H1_BENCH=1 H1_ADVERSARY=anthropic-fable   H1_DOMAIN=airline uv run python sc
 
 (Keys load from `.env` automatically; both `FIREWORKS_API_KEY` and
 `ANTHROPIC_API_KEY` must be present. Billable.)
+
+## Reproducibility manifest
+
+These numbers predate the `n_error`/provider-error accounting added later in
+the 2026-07 remediation pass (distinct from the refusal accounting above,
+which this run already implements and reports correctly). Re-running today
+uses the same commands but scores through the additional error/`n_scored`
+distinction described in `scoring/h1.py` — expect the same categorical
+refusal behaviour and the same class ordering, not necessarily identical
+counts (temperature 1.0 regenerates payloads each run).
+
+```yaml
+script: scripts/h1_bench.py
+commit: 14f8028
+env:
+  - RUN_H1_BENCH=1
+  - H1_DOMAIN=airline
+  - H1_ADVERSARY=fireworks-deepseek
+  - FIREWORKS_API_KEY=<fireworks key>
+output:
+  - docs/bench_output/phase2b_h1_airline_fireworks-deepseek.json
+  - probes/regression/airline-fireworks-deepseek.json
+```
+
+```yaml
+script: scripts/h1_bench.py
+commit: 14f8028
+env:
+  - RUN_H1_BENCH=1
+  - H1_DOMAIN=airline
+  - H1_ADVERSARY=anthropic-fable
+  - ANTHROPIC_API_KEY=<anthropic key>
+output:
+  - docs/bench_output/phase2b_h1_airline_anthropic-fable.json
+  - probes/regression/airline-anthropic-fable.json
+output_note: >
+  0 crossings frozen (100% refusal), so the committed probe file is an
+  empty regression set, not a missing one.
+```

@@ -100,3 +100,20 @@ guarantee (Property X). Drift's recall is scorer-calibration-bounded.
   a with/without-interrupt outcome delta; and finally score the 56 guardrail-bypass
   crossings (H2-on-crossings) through a live agent.
 - auditk backlog (bounds drift recall): NLI calibration on soft-paraphrase deviations.
+
+## Reproducibility manifest
+
+```yaml
+script: scripts/benchmark_run.py
+commit: 7eb5474
+env:
+  - RUN_SANDBOX_BENCH=1
+  - RUN_JUDGE_MODEL=1
+  - RUN_NLI_MODEL=1
+  - FIREWORKS_API_KEY=<fireworks key>
+  - BENCH_DOMAINS=airline,retail   # default; both domains run when unset
+requires: uv sync --extra bench   # auditk[nli] -- torch/transformers, local NLI model
+output:
+  - docs/bench_output/phase2c_orthogonality.json
+```
+

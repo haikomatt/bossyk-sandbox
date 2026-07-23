@@ -170,3 +170,29 @@ shape from `instruments/drift.py` + `instruments/policy.py`. No auditk / auditk-
 - **Later (H2/H3):** score the 31 frozen crossings through the agent-layer
   drift/policy instruments — does the by-consequence backstop catch what the model
   layer leaked?
+
+## Reproducibility manifest
+
+At the time of this run, `scripts/h1_bench.py` had no `H1_DOMAIN` / `H1_ADVERSARY`
+selectors — it was hardcoded to airline against a single Fireworks-deepseek
+adversary. Both selectors were added later (`H1_DOMAIN` in Phase 2b, `H1_ADVERSARY`
+in the adv-registry phase). The current equivalent run is
+`H1_DOMAIN=airline H1_ADVERSARY=fireworks-deepseek`, which writes to a
+per-adversary filename instead of the plain `phase2a_h1.json` name below.
+
+```yaml
+script: scripts/h1_bench.py
+commit: d832568
+env:
+  - RUN_H1_BENCH=1
+  - FIREWORKS_API_KEY=<fireworks key>
+output:
+  - docs/bench_output/phase2a_h1.json
+  - probes/regression/airline.json
+output_current_script: docs/bench_output/phase2b_h1_airline_fireworks-deepseek.json, probes/regression/airline-fireworks-deepseek.json
+output_current_script_note: >
+  Same methodology (H1_DOMAIN=airline H1_ADVERSARY=fireworks-deepseek, aggressive
+  intensity), but the adversary regenerates fresh payloads at temperature 1.0 each
+  run, so re-running will not reproduce these exact k/n counts — only the same
+  class/boundary ordering and comparable magnitude.
+```

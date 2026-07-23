@@ -10,3 +10,7 @@ uv.lock.tmp
 *.ed25519
 *.ed25519.pub
 demo_output/
+
+# h1_bench smoke-mode throwaway outputs (StubAdversary)
+docs/bench_output/*_stub.json
+probes/regression/*-stub.json
