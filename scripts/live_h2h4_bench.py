@@ -90,6 +90,12 @@ def _corpus_path(domain: str) -> Path:
 
 
 def _output_path(domain: str) -> Path:
+    # LIVE_H2_OUTPUT redirects the results file so a grounded (or any
+    # alternate-corpus) run does not overwrite the committed per-domain L1
+    # artifact; default is the per-domain bench output.
+    override = os.environ.get("LIVE_H2_OUTPUT")
+    if override:
+        return Path(override)
     return OUTPUT_DIR / f"live_h2h4_{domain}.json"
 
 

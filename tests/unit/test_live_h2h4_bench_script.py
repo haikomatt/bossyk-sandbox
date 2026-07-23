@@ -50,3 +50,19 @@ def test_corpus_path_honors_the_live_h2_corpus_override(monkeypatch: pytest.Monk
     module = _import_script()
 
     assert module._corpus_path("retail") == Path("/tmp/grounded/retail.json")
+
+
+def test_output_path_defaults_to_the_per_domain_bench_output() -> None:
+    module = _import_script()
+
+    assert module._output_path("retail") == module.OUTPUT_DIR / "live_h2h4_retail.json"
+
+
+def test_output_path_honors_the_live_h2_output_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The grounded run must NOT clobber the committed L1 artifact
+    # (live_h2h4_retail.json); LIVE_H2_OUTPUT redirects it to a distinct file
+    # so both the L1 and grounded results survive for the before/after.
+    monkeypatch.setenv("LIVE_H2_OUTPUT", "/tmp/grounded/out.json")
+    module = _import_script()
+
+    assert module._output_path("retail") == Path("/tmp/grounded/out.json")
