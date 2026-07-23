@@ -1,0 +1,70 @@
+name: CI
+
+# Deterministic checks only: ruff, mypy (strict), and the pytest suite
+# including the env-gated stub E2E tests. Nothing here needs an API key,
+# network model call, or GPU — the billable benchmark scripts
+# (h1_bench real mode, benchmark_run) are explicitly out of scope.
+#
+# Layout: this repo resolves auditk + tau2 as editable path dependencies
+# from sibling checkouts (../auditk, ../tau2-bench), and the trace tests
+# validate against ../auditk-spec schemas — so the job recreates the
+# documented four-sibling layout. All three are public; bossyk (the
+# fourth sibling) is private and NOT required for the deterministic
+# suite (its judge import is env-gated), so it is not checked out.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out bossyk-sandbox
+        uses: actions/checkout@v4
+        with:
+          path: bossyk-sandbox
+
+      - name: Check out auditk (sibling)
+        uses: actions/checkout@v4
+        with:
+          repository: auditk/auditk
+          path: auditk
+
+      - name: Check out tau2-bench (sibling)
+        uses: actions/checkout@v4
+        with:
+          repository: sierra-research/tau2-bench
+          path: tau2-bench
+
+      - name: Check out auditk-spec (sibling)
+        uses: actions/checkout@v4
+        with:
+          repository: auditk/auditk-spec
+          path: auditk-spec
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Sync dependencies
+        working-directory: bossyk-sandbox
+        run: uv sync --dev
+
+      - name: Ruff format
+        working-directory: bossyk-sandbox
+        run: uv run ruff format --check .
+
+      - name: Ruff lint
+        working-directory: bossyk-sandbox
+        run: uv run ruff check .
+
+      - name: Mypy (strict)
+        working-directory: bossyk-sandbox
+        run: uv run mypy --explicit-package-bases src/ tests/
+
+      - name: Pytest (deterministic, incl. stub E2E)
+        working-directory: bossyk-sandbox
+        env:
+          RUN_SANDBOX_E2E: "1"
+        run: uv run pytest tests/ --no-cov -q
