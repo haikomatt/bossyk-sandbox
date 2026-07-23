@@ -9,6 +9,7 @@ from uuid import uuid4
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 
+from bossyk_sandbox.console.artifacts import router as artifacts_router
 from bossyk_sandbox.evidence.trace import build_trace, make_attested_step
 from bossyk_sandbox.gate import Gate
 from bossyk_sandbox.instruments.base import Verdict
@@ -16,6 +17,7 @@ from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel
 from bossyk_sandbox.runtime.stub_agent import SCRIPTED_TOOL_CALLS
 
 app = FastAPI(title="bossyk-sandbox console")
+app.include_router(artifacts_router)
 
 _connections: set[WebSocket] = set()
 
