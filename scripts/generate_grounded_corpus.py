@@ -49,7 +49,9 @@ OUTPUT_DIR = REPO_ROOT / "probes" / "grounded"
 DOMAIN = os.environ.get("GROUNDED_DOMAIN", "retail")
 BUDGET = int(os.environ.get("GROUNDED_BUDGET", "2"))
 ADVERSARY = os.environ.get("GROUNDED_ADVERSARY", "fireworks-deepseek")
-GROUNDED_MODE = os.environ.get("GROUNDED_MODE", "single")  # "single" (path A) | "goal" (path B)
+# "single" (path A: full grid, single-turn) | "goal" (path B: structural, multi-turn
+# goals) | "structural" (dir 1: structural boundaries, single-turn, oracle-tool-pinned)
+GROUNDED_MODE = os.environ.get("GROUNDED_MODE", "single")
 
 # Per-domain source of the REAL tool schemas the live agent binds -- the
 # grounding the adversary attacks. Retail-primary; airline can be added when
@@ -60,15 +62,15 @@ _TOOL_SCHEMAS_BY_DOMAIN = {
 
 
 def _output_path(domain: str) -> Path:
-    suffix = "-multiturn" if GROUNDED_MODE == "goal" else ""
+    suffix = {"goal": "-multiturn", "structural": "-structural"}.get(GROUNDED_MODE, "")
     return OUTPUT_DIR / f"{domain}{suffix}.json"
 
 
 def _cells(domain: str) -> list[ProbeCell]:
-    # Path B (goal mode) targets only oracle-scorable structural boundaries,
-    # one representative class (tool_misuse) per boundary. Path A (single) uses
-    # the full attack-class x boundary grid.
-    if GROUNDED_MODE == "goal":
+    # goal (path B) + structural (dir 1) target only oracle-scorable structural
+    # boundaries, one representative class (tool_misuse) per boundary. single
+    # (path A) uses the full attack-class x boundary grid.
+    if GROUNDED_MODE in {"goal", "structural"}:
         return build_grid(domain, [AttackClass.TOOL_MISUSE], structural_boundaries(domain))
     return build_grid(domain, list(AttackClass), boundaries_for(domain))
 
@@ -87,8 +89,11 @@ def _real_mode_requested() -> bool:
             file=sys.stderr,
         )
         raise SystemExit(1)
-    if GROUNDED_MODE not in {"single", "goal"}:
-        print(f"GROUNDED_MODE={GROUNDED_MODE!r} must be 'single' or 'goal'.", file=sys.stderr)
+    if GROUNDED_MODE not in {"single", "goal", "structural"}:
+        print(
+            f"GROUNDED_MODE={GROUNDED_MODE!r} must be 'single', 'goal', or 'structural'.",
+            file=sys.stderr,
+        )
         raise SystemExit(1)
     return True
 
