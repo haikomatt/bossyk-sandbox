@@ -73,3 +73,23 @@ def test_build_adversary_threads_tool_context_onto_the_adversary(
     adversary = build_adversary("fireworks-deepseek", tool_context="GROUNDED-CTX")
 
     assert adversary.tool_context == "GROUNDED-CTX"  # type: ignore[attr-defined]
+
+
+def test_build_adversary_defaults_goal_mode_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FIREWORKS_API_KEY", "dummy-key")
+
+    adversary = build_adversary("fireworks-deepseek")
+
+    assert adversary.goal_mode is False  # type: ignore[attr-defined]
+
+
+def test_build_adversary_threads_goal_mode_onto_the_adversary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Path B generates multi-turn user GOALS -- build_adversary must forward
+    # goal_mode so the registry adversary emits goals, not single-turn payloads.
+    monkeypatch.setenv("FIREWORKS_API_KEY", "dummy-key")
+
+    adversary = build_adversary("fireworks-deepseek", goal_mode=True)
+
+    assert adversary.goal_mode is True  # type: ignore[attr-defined]

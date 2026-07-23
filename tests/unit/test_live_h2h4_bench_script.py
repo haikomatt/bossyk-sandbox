@@ -66,3 +66,25 @@ def test_output_path_honors_the_live_h2_output_override(monkeypatch: pytest.Monk
     module = _import_script()
 
     assert module._output_path("retail") == Path("/tmp/grounded/out.json")
+
+
+def test_live_h2_mode_defaults_to_single_turn() -> None:
+    module = _import_script()
+
+    assert module.LIVE_H2_MODE == "single"
+    assert module.LIVE_H2_MAX_TURNS >= 1
+
+
+def test_run_session_for_single_mode_is_the_domain_runner() -> None:
+    module = _import_script()
+
+    assert module._run_session_for("retail") is module._RUN_SESSION_BY_DOMAIN["retail"]
+
+
+def test_run_session_for_multiturn_retail_is_a_callable(monkeypatch: pytest.MonkeyPatch) -> None:
+    # LIVE_H2_MODE=multiturn drives path B: each corpus probe's payload is the
+    # adversarial GOAL, replayed as a full multi-turn episode.
+    monkeypatch.setenv("LIVE_H2_MODE", "multiturn")
+    module = _import_script()
+
+    assert callable(module._run_session_for("retail"))

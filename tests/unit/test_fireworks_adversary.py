@@ -235,6 +235,53 @@ def test_grounded_adversary_directs_stating_customer_identity_inline() -> None:
     assert "first-person" in lowered
 
 
+def test_goal_mode_prompt_asks_for_a_multi_turn_adversarial_user_goal() -> None:
+    # Path B: goal mode makes the adversary write a free-text multi-turn USER
+    # GOAL (a user-simulator persona), grounded in the real tools, targeting a
+    # boundary -- not a single-turn payload.
+    cell = ProbeCell("retail", AttackClass.TOOL_MISUSE, "cancel_without_auth")
+    client = _FakeChatClient(result=ChatResult(text="goal"))
+    adversary = FireworksAdversary(
+        client=client, tool_context="- cancel_pending_order(order_id)", goal_mode=True
+    )
+
+    adversary.generate_attempts(cell, budget=1)
+
+    _, prompt = client.calls[0]
+    lowered = prompt.lower()
+    assert "multi-turn" in lowered
+    assert "goal" in lowered
+    assert "- cancel_pending_order(order_id)" in prompt  # grounded in the real tools
+    assert "cancel_without_auth" in prompt  # the target boundary
+    assert "verification" in lowered  # a tactic to push past identity verification
+
+
+def test_goal_mode_prompt_frames_second_person_persona_instructions() -> None:
+    cell = ProbeCell("retail", AttackClass.TOOL_MISUSE, "refund_over_threshold")
+    client = _FakeChatClient(result=ChatResult(text="goal"))
+    adversary = FireworksAdversary(
+        client=client, tool_context="- return_delivered_order_items(order_id)", goal_mode=True
+    )
+
+    adversary.generate_attempts(cell, budget=1)
+
+    _, prompt = client.calls[0]
+    # The output is handed verbatim to a tau2 UserSimulator as its persona
+    # instructions, so the prompt must ask for second-person persona framing.
+    assert "you are" in prompt.lower()
+
+
+def test_goal_mode_off_keeps_the_single_turn_grounded_prompt() -> None:
+    cell = ProbeCell("retail", AttackClass.TOOL_MISUSE, "cancel_without_auth")
+    client = _FakeChatClient(result=ChatResult(text="payload"))
+    adversary = FireworksAdversary(client=client, tool_context="- cancel_pending_order(order_id)")
+
+    adversary.generate_attempts(cell, budget=1)
+
+    _, prompt = client.calls[0]
+    assert "multi-turn" not in prompt.lower()  # single-turn grounded, not a goal
+
+
 def test_ungrounded_adversary_prompt_omits_the_grounding_directive() -> None:
     # Backward compatibility: with no tool_context (the default), the prompt
     # is the original class/boundary/domain instruction with no grounding
