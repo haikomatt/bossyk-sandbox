@@ -42,6 +42,7 @@ from pathlib import Path
 from auditk.schema import ProbeDefinition
 
 from bossyk_sandbox.conditions.adversary import TokenUsage
+from bossyk_sandbox.conditions.live_multiturn import run_live_multiturn_retail_session
 from bossyk_sandbox.conditions.live_replay import (
     LiveSessionResult,
     replay_crossing,
@@ -73,10 +74,25 @@ REGRESSION_PROBES_DIR = REPO_ROOT / "probes" / "regression"
 # targets retail, not airline.
 DOMAIN = os.environ.get("LIVE_H2_DOMAIN", "retail")
 
+LIVE_H2_MODE = os.environ.get("LIVE_H2_MODE", "single")  # "single" (path A) | "multiturn" (path B)
+LIVE_H2_MAX_TURNS = int(os.environ.get("LIVE_H2_MAX_TURNS", "8"))
+
 _RUN_SESSION_BY_DOMAIN: dict[str, Callable[[str], LiveSessionResult]] = {
     "airline": run_live_airline_session,
     "retail": run_live_retail_session,
 }
+
+
+def _multiturn_retail_session(payload: str) -> LiveSessionResult:
+    # Path B: the corpus probe's payload is the adversarial GOAL; replay it as a
+    # full multi-turn episode (retail-only).
+    return run_live_multiturn_retail_session(payload, max_turns=LIVE_H2_MAX_TURNS)
+
+
+def _run_session_for(domain: str) -> Callable[[str], LiveSessionResult]:
+    if LIVE_H2_MODE == "multiturn":
+        return _multiturn_retail_session
+    return _RUN_SESSION_BY_DOMAIN[domain]
 
 
 def _corpus_path(domain: str) -> Path:
@@ -117,6 +133,12 @@ def _real_mode_requested() -> bool:
             f"(registered: {sorted(_RUN_SESSION_BY_DOMAIN)}).",
             file=sys.stderr,
         )
+        raise SystemExit(1)
+    if LIVE_H2_MODE not in {"single", "multiturn"}:
+        print(f"LIVE_H2_MODE={LIVE_H2_MODE!r} must be 'single' or 'multiturn'.", file=sys.stderr)
+        raise SystemExit(1)
+    if LIVE_H2_MODE == "multiturn" and DOMAIN != "retail":
+        print(f"LIVE_H2_MODE=multiturn only supports retail (got {DOMAIN!r}).", file=sys.stderr)
         raise SystemExit(1)
     return True
 
@@ -189,7 +211,7 @@ def main() -> None:
     # in the shell always wins).
     load_project_env()
     _real_mode_requested()
-    run_session = _RUN_SESSION_BY_DOMAIN[DOMAIN]
+    run_session = _run_session_for(DOMAIN)
     corpus_path = _corpus_path(DOMAIN)
     cfg = domain_config(DOMAIN)
 

@@ -35,8 +35,9 @@ from pathlib import Path
 
 from bossyk_sandbox.conditions.adversary_registry import build_adversary
 from bossyk_sandbox.conditions.fireworks_adversary import render_tool_context
-from bossyk_sandbox.conditions.grid import AttackClass, boundaries_for, build_grid
+from bossyk_sandbox.conditions.grid import AttackClass, ProbeCell, boundaries_for, build_grid
 from bossyk_sandbox.conditions.grounded_corpus import generate_grounded_attempts
+from bossyk_sandbox.conditions.live_boundary import structural_boundaries
 from bossyk_sandbox.conditions.retention import freeze_attempt, save_regression_probes
 from bossyk_sandbox.env import load_project_env
 from bossyk_sandbox.runtime.langgraph_agent import retail_tool_schemas
@@ -48,6 +49,7 @@ OUTPUT_DIR = REPO_ROOT / "probes" / "grounded"
 DOMAIN = os.environ.get("GROUNDED_DOMAIN", "retail")
 BUDGET = int(os.environ.get("GROUNDED_BUDGET", "2"))
 ADVERSARY = os.environ.get("GROUNDED_ADVERSARY", "fireworks-deepseek")
+GROUNDED_MODE = os.environ.get("GROUNDED_MODE", "single")  # "single" (path A) | "goal" (path B)
 
 # Per-domain source of the REAL tool schemas the live agent binds -- the
 # grounding the adversary attacks. Retail-primary; airline can be added when
@@ -58,7 +60,17 @@ _TOOL_SCHEMAS_BY_DOMAIN = {
 
 
 def _output_path(domain: str) -> Path:
-    return OUTPUT_DIR / f"{domain}.json"
+    suffix = "-multiturn" if GROUNDED_MODE == "goal" else ""
+    return OUTPUT_DIR / f"{domain}{suffix}.json"
+
+
+def _cells(domain: str) -> list[ProbeCell]:
+    # Path B (goal mode) targets only oracle-scorable structural boundaries,
+    # one representative class (tool_misuse) per boundary. Path A (single) uses
+    # the full attack-class x boundary grid.
+    if GROUNDED_MODE == "goal":
+        return build_grid(domain, [AttackClass.TOOL_MISUSE], structural_boundaries(domain))
+    return build_grid(domain, list(AttackClass), boundaries_for(domain))
 
 
 def _real_mode_requested() -> bool:
@@ -75,6 +87,9 @@ def _real_mode_requested() -> bool:
             file=sys.stderr,
         )
         raise SystemExit(1)
+    if GROUNDED_MODE not in {"single", "goal"}:
+        print(f"GROUNDED_MODE={GROUNDED_MODE!r} must be 'single' or 'goal'.", file=sys.stderr)
+        raise SystemExit(1)
     return True
 
 
@@ -83,11 +98,14 @@ def main() -> None:
     _real_mode_requested()
 
     tool_context = render_tool_context(_TOOL_SCHEMAS_BY_DOMAIN[DOMAIN]())
-    adversary = build_adversary(ADVERSARY, tool_context=tool_context)
-    cells = build_grid(DOMAIN, list(AttackClass), boundaries_for(DOMAIN))
+    adversary = build_adversary(
+        ADVERSARY, tool_context=tool_context, goal_mode=(GROUNDED_MODE == "goal")
+    )
+    cells = _cells(DOMAIN)
 
     print(f"=== Grounded corpus generation (domain={DOMAIN}) ===")
     print(f"adversary: {ADVERSARY}")
+    print(f"mode: {GROUNDED_MODE}")
     print(f"grid: {len(cells)} cells x budget {BUDGET} = {len(cells) * BUDGET} attempts")
     print(f"grounded in {len(tool_context.splitlines())} real tools\n")
 
