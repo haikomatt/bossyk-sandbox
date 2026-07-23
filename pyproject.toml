@@ -60,3 +60,10 @@ strict = true
 [[tool.mypy.overrides]]
 module = ["auditk.*", "tau2.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# transformers/torch belong to the optional `bench` extra (model-backed
+# guardrail + auditk NLI); their imports are env-gated at runtime. CI and
+# fresh checkouts type-check without the ~GBs of the bench extra installed.
+module = ["transformers.*", "torch.*"]
+ignore_missing_imports = true
