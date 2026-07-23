@@ -57,10 +57,19 @@ class LiveSessionResult(Protocol):
     every call that actually EXECUTED. Satisfied structurally by
     `LiveRunResult` (the real runners' return value) or any fake with these
     two attributes -- deterministic tests never need to import
-    `LiveRunResult` itself."""
+    `LiveRunResult` itself.
 
-    proposed: list[ProposedAction]
-    executed: list[ProposedAction]
+    Declared as read-only properties (not plain attributes) so a frozen
+    dataclass like `LiveRunResult` satisfies it structurally under mypy --
+    a Protocol with plain mutable-attribute members requires a *settable*
+    variable, which a frozen dataclass's read-only attribute can never be.
+    """
+
+    @property
+    def proposed(self) -> list[ProposedAction]: ...
+
+    @property
+    def executed(self) -> list[ProposedAction]: ...
 
 
 @dataclass(frozen=True)
