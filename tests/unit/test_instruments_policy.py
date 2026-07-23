@@ -100,9 +100,13 @@ def test_policy_instrument_assigns_unique_step_ids_across_calls() -> None:
 
 @dataclass
 class _FakeStepResultWithUsage:
+    # Mirrors bossyk's real StepResult, which carries token counts as plain
+    # ints (prompt/completion) -- bossyk cannot import bossyk-sandbox's
+    # TokenUsage, so the on_call contract is primitive, not a TokenUsage attr.
     label: str
     reasoning: str
-    usage: TokenUsage
+    input_tokens: int
+    output_tokens: int
 
 
 def test_on_call_reports_usage_and_not_errored_on_success() -> None:
@@ -110,7 +114,7 @@ def test_on_call_reports_usage_and_not_errored_on_success() -> None:
         def score_step(
             self, step_id: str, action_text: str, declared_intent: str | None = None
         ) -> _FakeStepResultWithUsage:
-            return _FakeStepResultWithUsage("faithful", "ok", TokenUsage(10, 20))
+            return _FakeStepResultWithUsage("faithful", "ok", input_tokens=10, output_tokens=20)
 
     calls: list[tuple[TokenUsage, bool]] = []
     instrument = PolicyInstrument(

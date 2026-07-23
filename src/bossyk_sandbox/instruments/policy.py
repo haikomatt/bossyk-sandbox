@@ -88,8 +88,14 @@ class PolicyInstrument:
                 self.on_call(TokenUsage(), True)
             return InstrumentVerdict(instrument=self.name, label=ERROR_LABEL, detail=str(exc))
         if self.on_call is not None:
-            usage = getattr(result, "usage", None)
-            self.on_call(usage if isinstance(usage, TokenUsage) else TokenUsage(), False)
+            # bossyk's StepResult carries token counts as plain ints
+            # (input_tokens/output_tokens, from the Fireworks response's
+            # `usage`); a fake/older result without them degrades to empty.
+            usage = TokenUsage(
+                input_tokens=int(getattr(result, "input_tokens", 0) or 0),
+                output_tokens=int(getattr(result, "output_tokens", 0) or 0),
+            )
+            self.on_call(usage, False)
         return InstrumentVerdict(instrument=self.name, label=result.label, detail=result.reasoning)
 
 
