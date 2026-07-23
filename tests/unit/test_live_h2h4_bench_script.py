@@ -88,3 +88,20 @@ def test_run_session_for_multiturn_retail_is_a_callable(monkeypatch: pytest.Monk
     module = _import_script()
 
     assert callable(module._run_session_for("retail"))
+
+
+def test_live_h2_agent_defaults_to_compliant() -> None:
+    module = _import_script()
+
+    assert module.LIVE_H2_AGENT == "compliant"
+
+
+def test_run_session_for_weak_agent_is_the_weakened_runner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # dir 1: LIVE_H2_AGENT=weak replays the corpus against an under-specified
+    # (weakened-policy) retail agent, so the gate's prevention leg fires live.
+    monkeypatch.setenv("LIVE_H2_AGENT", "weak")
+    module = _import_script()
+
+    assert module._run_session_for("retail") is module.run_live_weakened_retail_session

@@ -12,7 +12,9 @@ from bossyk_sandbox.runtime.langgraph_agent import (
     AirlineAgentSession,
     build_airline_agent_session,
     build_retail_agent_session,
+    build_weakened_retail_agent_session,
     retail_tool_schemas,
+    weaken_policy,
 )
 
 
@@ -328,6 +330,53 @@ def test_retail_agent_session_builds_against_the_real_tau2_retail_environment() 
         if isinstance(rule, RequireLookupBeforeCancel)
     }
     assert "cancel_pending_order" in gated_tools
+
+
+@dataclass
+class _RecordingLLM:
+    """Fake chat model that records the message list it was invoked with, so a
+    test can assert which system prompt (policy) the agent fed the model."""
+
+    responses: list[AIMessage]
+    seen: list[Any] = field(default_factory=list)
+    calls: int = 0
+
+    def invoke(self, messages: Any) -> AIMessage:
+        self.seen.append(messages)
+        response = self.responses[self.calls]
+        self.calls += 1
+        return response
+
+
+def test_weaken_policy_preserves_the_policy_but_neutralizes_the_guardrails() -> None:
+    original = "Authenticate the user identity before acting. Confirm before mutating."
+    weakened = weaken_policy(original)
+
+    assert original in weakened  # the domain policy is preserved
+    assert weakened != original  # an override was appended
+    lowered = weakened.lower()
+    # The override must neutralize verify-before-act + confirm-before-mutate.
+    assert "skip" in lowered
+    assert "verification" in lowered
+    assert "confirm" in lowered
+
+
+def test_build_weakened_retail_agent_session_feeds_the_weakened_policy_to_the_model() -> None:
+    # dir 1: an under-specified agent. The system prompt the model sees must be
+    # the weakened policy (original + guardrail-neutralizing override), so the
+    # agent no longer self-enforces and the gate's prevention leg has something
+    # to prevent. Fake llm + fake env -> no network / API key.
+    llm = _RecordingLLM(responses=[AIMessage(content="ok")])
+    env = _FakeEnvironment(_CountingToolkit(), policy="Authenticate the user first.")
+
+    session = build_weakened_retail_agent_session(trace_id="t-weak", llm=llm, environment=env)
+    session.graph.invoke(  # type: ignore[call-overload]
+        {"messages": [HumanMessage(content="cancel my order")]},
+        config={"configurable": {"thread_id": "t-weak"}},
+    )
+
+    system_message = llm.seen[0][0]
+    assert system_message.content == weaken_policy("Authenticate the user first.")
 
 
 def test_retail_tool_schemas_exposes_the_real_bound_retail_toolset() -> None:
