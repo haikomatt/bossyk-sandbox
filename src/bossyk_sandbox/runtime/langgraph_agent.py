@@ -68,6 +68,18 @@ class AirlineAgentSession:
 AgentSession = AirlineAgentSession
 
 
+def _tool_schemas(toolkit: Any) -> list[dict[str, Any]]:
+    return [tool.openai_schema for tool in toolkit.get_tools().values()]
+
+
+def retail_tool_schemas() -> list[dict[str, Any]]:
+    """The 16 real tau2 retail tool schemas the live retail agent binds
+    (`build_retail_agent_session`), exposed so the grounded adversary
+    (conditions.fireworks_adversary) grounds attacks in the agent's actual
+    toolset. Local tau2 env load -- no network / API key."""
+    return _tool_schemas(get_retail_environment().tools)
+
+
 def _build_agent_session(
     *,
     trace_id: str,
@@ -115,7 +127,7 @@ def _build_agent_session(
                 "FIREWORKS_API_KEY is required to run the live agent "
                 "(set it in .env, matching auditk-constellaration-experiment's convention)."
             )
-        tool_schemas = [tool.openai_schema for tool in toolkit.get_tools().values()]
+        tool_schemas = _tool_schemas(toolkit)
         llm = ChatOpenAI(
             model=resolved_model,
             base_url=base_url,
