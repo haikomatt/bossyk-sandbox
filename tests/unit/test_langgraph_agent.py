@@ -12,6 +12,7 @@ from bossyk_sandbox.runtime.langgraph_agent import (
     AirlineAgentSession,
     build_airline_agent_session,
     build_retail_agent_session,
+    retail_tool_schemas,
 )
 
 
@@ -327,3 +328,16 @@ def test_retail_agent_session_builds_against_the_real_tau2_retail_environment() 
         if isinstance(rule, RequireLookupBeforeCancel)
     }
     assert "cancel_pending_order" in gated_tools
+
+
+def test_retail_tool_schemas_exposes_the_real_bound_retail_toolset() -> None:
+    # The grounded adversary (conditions.fireworks_adversary) must ground
+    # its attacks in the SAME tools the live retail agent binds -- so this
+    # exposes the exact `openai_schema` list `_build_agent_session` binds.
+    # No network / API key: tau2's retail env is a local JSON load.
+    schemas = retail_tool_schemas()
+
+    names = {schema["function"]["name"] for schema in schemas}
+    # The 16 real retail tools (see runtime/langgraph_agent.py's binding).
+    assert len(schemas) == 16
+    assert {"cancel_pending_order", "modify_user_address", "get_user_details"} <= names
