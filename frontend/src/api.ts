@@ -31,11 +31,41 @@ export interface StoryClaim {
   artifact_refs: string[];
   figure_ids: string[];
   numeric_checks: NumericCheck[];
+  // Compliance controls this claim is evidence FOR, each "<framework>:<control>".
+  // Orthogonal to evidence_grade (how good the number is) -- see the frameworks
+  // catalogue below for the human-readable names.
+  control_refs: string[];
+}
+
+export type FrameworkType =
+  | "regulation"
+  | "sector-regulation"
+  | "certification"
+  | "attestation";
+
+export interface FrameworkControl {
+  id: string;
+  ref: string;
+  title: string;
+}
+
+export interface Framework {
+  id: string;
+  name: string;
+  type: FrameworkType;
+  controls: FrameworkControl[];
+}
+
+export interface FrameworkRegistry {
+  disclaimer: string;
+  entries: Framework[];
 }
 
 export interface Story {
   acts: StoryAct[];
   claims: StoryClaim[];
+  // Absent (null) on a story with no compliance mapping declared.
+  frameworks: FrameworkRegistry | null;
 }
 
 export type ArtifactCategory = "bench_output" | "probes" | "figures" | "docs" | "packs";

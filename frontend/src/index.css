@@ -259,6 +259,36 @@ button {
   margin-bottom: 8px;
 }
 
+/* Compliance tags: secondary to the evidence chip. The chip says how good
+   the number is; these say which control it is evidence for. */
+.framework-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.framework-tag {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  color: var(--ink-faint);
+}
+
+.framework-tag__name {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.framework-tag__ref {
+  font-variant-numeric: tabular-nums;
+}
+
 .claim-card__exec {
   font-size: 16px;
   font-weight: 600;

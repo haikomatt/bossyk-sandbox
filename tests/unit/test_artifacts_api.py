@@ -33,8 +33,29 @@ def test_story_endpoint_returns_full_story() -> None:
         "artifact_refs",
         "figure_ids",
         "numeric_checks",
+        "control_refs",
     ):
         assert field in claim
+
+
+def test_story_endpoint_serves_the_frameworks_catalogue() -> None:
+    # The compliance axis must survive serialization so the SPA and the deck
+    # can render framework tags and coverage from one source of truth.
+    resp = client.get("/api/story")
+    body = resp.json()
+
+    frameworks = body["frameworks"]
+    assert frameworks is not None
+    assert "disclaimer" in frameworks
+    ids = [entry["id"] for entry in frameworks["entries"]]
+    assert {"eu-ai-act", "hipaa", "soc2"} <= set(ids)
+    eu = next(entry for entry in frameworks["entries"] if entry["id"] == "eu-ai-act")
+    assert {"id", "ref", "title"} <= set(eu["controls"][0])
+
+    # At least one claim carries a resolvable control_ref into that catalogue.
+    tagged = [claim for claim in body["claims"] if claim["control_refs"]]
+    assert tagged
+    assert ":" in tagged[0]["control_refs"][0]
 
 
 # --- listing ------------------------------------------------------------------

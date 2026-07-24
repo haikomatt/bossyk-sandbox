@@ -1,17 +1,21 @@
 import { fetchStory } from "../api";
 import type { StoryClaim } from "../api";
 import { useAsync } from "../hooks";
+import { buildControlIndex } from "../frameworkIndex";
+import type { ControlIndex } from "../frameworkIndex";
 import { LoadingPane, ErrorPane } from "../components/StatusPane";
 import { EvidenceChip } from "../components/EvidenceChip";
+import { FrameworkTags } from "../components/FrameworkTags";
 import { ArtifactRefLink } from "../components/ArtifactRefLink";
 import { navigate } from "../router";
 
-function ClaimCard({ claim }: { claim: StoryClaim }) {
+function ClaimCard({ claim, controlIndex }: { claim: StoryClaim; controlIndex: ControlIndex }) {
   return (
     <article className="claim-card" id={`claim-${claim.id}`}>
       <div className="claim-card__head">
         <EvidenceChip grade={claim.evidence_grade} />
       </div>
+      <FrameworkTags controlRefs={claim.control_refs} index={controlIndex} />
       <p className="claim-card__exec">{claim.exec_copy}</p>
       <p className="claim-card__tech">{claim.tech_copy}</p>
       {claim.verdict && <p className="claim-card__verdict">verdict: {claim.verdict}</p>}
@@ -74,7 +78,8 @@ export function StoryView() {
   if (state.status === "loading") return <LoadingPane label="Loading story…" />;
   if (state.status === "error") return <ErrorPane error={state.error} />;
 
-  const { acts, claims } = state.data;
+  const { acts, claims, frameworks } = state.data;
+  const controlIndex = buildControlIndex(frameworks);
 
   return (
     <div className="story-view">
@@ -89,7 +94,7 @@ export function StoryView() {
             </header>
             <div className="act-section__claims">
               {actClaims.map((claim) => (
-                <ClaimCard key={claim.id} claim={claim} />
+                <ClaimCard key={claim.id} claim={claim} controlIndex={controlIndex} />
               ))}
             </div>
           </section>
