@@ -492,6 +492,40 @@ claims:
   - fca:consumer-duty
   - iso-42001:operational-controls
   - soc2:cc7-3
+- id: attested-action-log-is-the-substrate
+  act: 4
+  exec_copy: Every governed action is written to a signed, tamper-evident log -- the same
+    record a regulator or auditor would ask to see, produced automatically.
+  tech_copy: 'The observe/attest/interrupt substrate emits a signed evidence pack: each agent
+    action becomes an attested step (declared intent, the tool call, the gate verdict, and whether
+    a human overrode it), the trace is Ed25519-signed, and it verifies offline against the issuer''s
+    public key. A committed sample pack (two steps -- a benign lookup allowed, an unauthorised cancel
+    blocked) is the concrete artifact behind the logging and attestation controls above. Caveat:
+    auditk stamps a fresh pack_id and issue-time per build, so the pack regenerates byte-identically
+    except those two fields (verified by test); the framework-clause mapping is directional, not a
+    compliance certification.'
+  verdict: null
+  evidence_grade: deterministic-recompute
+  artifact_refs:
+  - docs/bench_output/evidence_pack_sample.json
+  figure_ids: []
+  numeric_checks:
+  - artifact: docs/bench_output/evidence_pack_sample.json
+    json_path: trace_summary.step_count
+    expected: 2
+  - artifact: docs/bench_output/evidence_pack_sample.json
+    json_path: trace_summary.trace_count
+    expected: 1
+  - artifact: docs/bench_output/evidence_pack_sample.json
+    json_path: subject.agent_version
+    expected: sample-0.1
+  control_refs:
+  - eu-ai-act:art-12
+  - iso-27001:a-8-15
+  - hipaa:audit-controls
+  - hipaa:access-logging
+  - iso-42001:records
+  - soc2:cc7-2
 frameworks:
   disclaimer: >-
     Directional mapping, not legal advice. Clause references are indicative of

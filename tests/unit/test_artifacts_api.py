@@ -19,7 +19,9 @@ def test_story_endpoint_returns_full_story() -> None:
     assert resp.status_code == 200
     body = resp.json()
     assert len(body["acts"]) == 6
-    assert len(body["claims"]) == 19
+    # 20 since P3 added attested-action-log-is-the-substrate (the sample
+    # evidence pack claim that anchors the logging/attestation controls).
+    assert len(body["claims"]) == 20
     claim = body["claims"][0]
     for field in (
         "id",
