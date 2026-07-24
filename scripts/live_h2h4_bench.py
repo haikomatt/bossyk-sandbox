@@ -57,6 +57,11 @@ from bossyk_sandbox.env import load_project_env
 from bossyk_sandbox.instruments.policy import build_default_policy_instrument
 from bossyk_sandbox.scoring.cost import JudgeCallRecord, JudgeLedgerEntry, build_judge_token_ledger
 from bossyk_sandbox.scoring.latency import LatencyRecord, LatencySummary, summarize_latency
+from bossyk_sandbox.scoring.latency_budget import (
+    DEFAULT_UX_BUDGETS_S,
+    BudgetComparison,
+    latency_budget,
+)
 from bossyk_sandbox.scoring.live_h2 import (
     CrossingScore,
     GroupSummary,
@@ -201,6 +206,28 @@ def _latency_summary_to_dict(summaries: dict[str, LatencySummary]) -> dict[str, 
     return {instrument: asdict(summary) for instrument, summary in summaries.items()}
 
 
+def _mean_action_exec_s(records: list[LatencyRecord]) -> float | None:
+    """Mean wall-clock of the tau2 tool calls the run actually executed --
+    the measured action-exec budget floor. `None` when no action executed
+    (every proposed action gate-blocked pre-execution), so the latency budget
+    reports the UX sweep alone rather than a fabricated floor."""
+    if not records:
+        return None
+    return sum(record.elapsed_s for record in records) / len(records)
+
+
+def _latency_budget_to_dict(
+    budget: dict[str, list[BudgetComparison]],
+) -> dict[str, list[dict[str, object]]]:
+    """Serialize the per-detector speedup targets (the §15C number to beat)
+    for the results JSON. Deterministic recompute from the `latency` block --
+    detection latency vs each hold budget."""
+    return {
+        instrument: [asdict(comparison) for comparison in comparisons]
+        for instrument, comparisons in budget.items()
+    }
+
+
 def _print_group_summaries(label: str, groups: dict[str, GroupSummary]) -> None:
     print(f"\n-- live-H2 by {label} --")
     for key in sorted(groups):
@@ -242,9 +269,11 @@ def main() -> None:
 
     scores: list[CrossingScore] = []
     all_latency: list[LatencyRecord] = []
+    all_action_latency: list[LatencyRecord] = []
     for index, probe in enumerate(probes, start=1):
         print(f"[{index}/{len(probes)}] replaying {probe.probe_id} ...")
         replay = replay_crossing(probe, run_session)
+        all_action_latency.extend(replay.tool_latency)
 
         policy = build_default_policy_instrument(cfg.policy_path)
         policy.on_call = _on_policy_call
@@ -260,6 +289,11 @@ def main() -> None:
 
     judge_ledger = build_judge_token_ledger(usage_records)
     latency_summary = summarize_latency(all_latency)
+    action_exec_summary = summarize_latency(all_action_latency)
+    action_exec_s = _mean_action_exec_s(all_action_latency)
+    budget = latency_budget(
+        latency_summary, action_exec_s=action_exec_s, ux_budgets_s=DEFAULT_UX_BUDGETS_S
+    )
 
     boundary_groups = by_boundary(scores)
     class_groups = by_attack_class(scores)
@@ -289,6 +323,24 @@ def main() -> None:
             f"p50={summary.p50_s:.3f} p95={summary.p95_s:.3f} max={summary.max_s:.3f}"
         )
 
+    print("\n-- latency budget (§15B+: detection latency vs hold budget) --")
+    if action_exec_s is None:
+        print("  action-exec floor: n/a (no tool executed -- all actions gate-blocked)")
+    else:
+        print(
+            f"  action-exec floor: {action_exec_s * 1000:.3f}ms "
+            "(mean tau2 tool-call cost -- an in-process floor, not real-world action I/O)"
+        )
+    for instrument, comparisons in budget.items():
+        for comparison in comparisons:
+            print(
+                f"  {instrument} vs {comparison.budget_label} "
+                f"({comparison.budget_s:.3f}s): needs "
+                f"{comparison.speedup_needed_mean:.1f}x (mean) / "
+                f"{comparison.speedup_needed_p95:.1f}x (p95) faster; "
+                f"prevented_in_time={comparison.prevented_in_time_at_mean}"
+            )
+
     output = {
         "generated_at": datetime.now(UTC).isoformat(),
         "domain": DOMAIN,
@@ -304,6 +356,8 @@ def main() -> None:
         "live_h4": asdict(h4),
         "judge_token_ledger": _judge_ledger_to_dict(judge_ledger),
         "latency": _latency_summary_to_dict(latency_summary),
+        "action_exec_latency": _latency_summary_to_dict(action_exec_summary),
+        "latency_budget": _latency_budget_to_dict(budget),
     }
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     output_path = _output_path(DOMAIN)
