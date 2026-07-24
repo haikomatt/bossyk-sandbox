@@ -27,6 +27,7 @@ def _claim(
     artifact_refs: list[str] | None = None,
     figure_ids: list[str] | None = None,
     numeric_checks: list[dict[str, Any]] | None = None,
+    control_refs: list[str] | None = None,
 ) -> dict[str, Any]:
     return {
         "id": id,
@@ -38,6 +39,41 @@ def _claim(
         "artifact_refs": artifact_refs or [],
         "figure_ids": figure_ids or [],
         "numeric_checks": numeric_checks or [],
+        "control_refs": control_refs or [],
+    }
+
+
+def _control(
+    id: str = "art-12",
+    ref: str = "Art. 12",
+    title: str = "Automatic event logging",
+) -> dict[str, Any]:
+    return {"id": id, "ref": ref, "title": title}
+
+
+def _framework(
+    *,
+    id: str = "eu-ai-act",
+    name: str = "EU AI Act",
+    type: str = "regulation",
+    controls: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    return {
+        "id": id,
+        "name": name,
+        "type": type,
+        "controls": controls if controls is not None else [_control()],
+    }
+
+
+def _frameworks(
+    *,
+    entries: list[dict[str, Any]] | None = None,
+    disclaimer: str = "Directional mapping, not legal advice.",
+) -> dict[str, Any]:
+    return {
+        "disclaimer": disclaimer,
+        "entries": entries if entries is not None else [_framework()],
     }
 
 
@@ -324,6 +360,328 @@ def test_lint_string_expected_mismatch_is_reported(tmp_path: Path) -> None:
 
     assert len(failures) == 1
     assert "string-mismatch-claim" in failures[0]
+
+
+# --- compliance frameworks -------------------------------------------
+#
+# The second, orthogonal axis: evidence_grade says how good a number is,
+# control_refs say which regulatory control it is evidence FOR. The two
+# must never collapse into one another -- see the coverage tests below,
+# where an `open`-graded claim deliberately does NOT cover its control.
+
+
+def test_frameworks_block_loads_with_its_controls(tmp_path: Path) -> None:
+    from bossyk_sandbox.story import FrameworkType
+
+    story_dict = {
+        "acts": _six_acts(),
+        "frameworks": _frameworks(
+            entries=[
+                _framework(
+                    id="eu-ai-act",
+                    controls=[_control("art-12"), _control("art-14", "Art. 14", "Human oversight")],
+                ),
+                _framework(id="soc2", name="SOC 2", type="attestation"),
+            ]
+        ),
+        "claims": [_claim(id="claim-one", act=1)],
+    }
+    path = _write_story(tmp_path, story_dict)
+
+    story = load_story(path)
+
+    assert story.frameworks is not None
+    assert [f.id for f in story.frameworks.entries] == ["eu-ai-act", "soc2"]
+    assert story.frameworks.entries[0].type == FrameworkType.REGULATION
+    assert story.frameworks.entries[1].type == FrameworkType.ATTESTATION
+    assert [c.id for c in story.frameworks.entries[0].controls] == ["art-12", "art-14"]
+    assert story.frameworks.entries[0].controls[1].title == "Human oversight"
+    assert "not legal advice" in story.frameworks.disclaimer
+
+
+def test_claim_control_refs_resolve_against_the_frameworks_block(tmp_path: Path) -> None:
+    story_dict = {
+        "acts": _six_acts(),
+        "frameworks": _frameworks(
+            entries=[
+                _framework(id="eu-ai-act", controls=[_control("art-12"), _control("art-14")]),
+            ]
+        ),
+        "claims": [_claim(id="tagged-claim", act=1, control_refs=["eu-ai-act:art-14"])],
+    }
+    path = _write_story(tmp_path, story_dict)
+
+    story = load_story(path)
+
+    assert story.claims[0].control_refs == ["eu-ai-act:art-14"]
+
+
+def test_control_ref_to_unknown_framework_raises_naming_the_claim_and_ref(tmp_path: Path) -> None:
+    story_dict = {
+        "acts": _six_acts(),
+        "frameworks": _frameworks(),
+        "claims": [_claim(id="bad-framework-claim", act=1, control_refs=["nist-ai-rmf:govern"])],
+    }
+    path = _write_story(tmp_path, story_dict)
+
+    with pytest.raises(ValueError, match="bad-framework-claim.*nist-ai-rmf:govern"):
+        load_story(path)
+
+
+def test_control_ref_to_unknown_control_raises_naming_the_claim_and_ref(tmp_path: Path) -> None:
+    story_dict = {
+        "acts": _six_acts(),
+        "frameworks": _frameworks(
+            entries=[_framework(id="eu-ai-act", controls=[_control("art-12")])]
+        ),
+        "claims": [_claim(id="bad-control-claim", act=1, control_refs=["eu-ai-act:art-99"])],
+    }
+    path = _write_story(tmp_path, story_dict)
+
+    with pytest.raises(ValueError, match="bad-control-claim.*eu-ai-act:art-99"):
+        load_story(path)
+
+
+def test_control_ref_without_a_framework_block_raises(tmp_path: Path) -> None:
+    # A story may omit `frameworks` entirely (backward compatible), but then
+    # no claim may carry a control_ref -- there is nothing to resolve against.
+    story_dict = {
+        "acts": _six_acts(),
+        "claims": [_claim(id="unresolvable-claim", act=1, control_refs=["eu-ai-act:art-12"])],
+    }
+    path = _write_story(tmp_path, story_dict)
+
+    with pytest.raises(ValueError, match="unresolvable-claim"):
+        load_story(path)
+
+
+def test_story_without_a_frameworks_block_still_loads(tmp_path: Path) -> None:
+    story_dict = {
+        "acts": _six_acts(),
+        "claims": [_claim(id="untagged-claim", act=1)],
+    }
+    path = _write_story(tmp_path, story_dict)
+
+    story = load_story(path)
+
+    assert story.frameworks is None
+    assert story.claims[0].control_refs == []
+
+
+@pytest.mark.parametrize("malformed", ["eu-ai-act", "eu-ai-act:", ":art-12", "a:b:c"])
+def test_malformed_control_ref_raises(tmp_path: Path, malformed: str) -> None:
+    story_dict = {
+        "acts": _six_acts(),
+        "frameworks": _frameworks(),
+        "claims": [_claim(id="malformed-ref-claim", act=1, control_refs=[malformed])],
+    }
+    path = _write_story(tmp_path, story_dict)
+
+    with pytest.raises(ValueError):
+        load_story(path)
+
+
+def test_duplicate_control_refs_on_one_claim_raises(tmp_path: Path) -> None:
+    story_dict = {
+        "acts": _six_acts(),
+        "frameworks": _frameworks(),
+        "claims": [
+            _claim(
+                id="repeated-ref-claim",
+                act=1,
+                control_refs=["eu-ai-act:art-12", "eu-ai-act:art-12"],
+            )
+        ],
+    }
+    path = _write_story(tmp_path, story_dict)
+
+    with pytest.raises(ValueError, match="eu-ai-act:art-12"):
+        load_story(path)
+
+
+def test_duplicate_framework_ids_raise(tmp_path: Path) -> None:
+    story_dict = {
+        "acts": _six_acts(),
+        "frameworks": _frameworks(entries=[_framework(id="soc2"), _framework(id="soc2")]),
+        "claims": [_claim(id="claim-one", act=1)],
+    }
+    path = _write_story(tmp_path, story_dict)
+
+    with pytest.raises(ValueError, match="soc2"):
+        load_story(path)
+
+
+def test_duplicate_control_ids_within_a_framework_raise(tmp_path: Path) -> None:
+    story_dict = {
+        "acts": _six_acts(),
+        "frameworks": _frameworks(
+            entries=[_framework(id="eu-ai-act", controls=[_control("art-12"), _control("art-12")])]
+        ),
+        "claims": [_claim(id="claim-one", act=1)],
+    }
+    path = _write_story(tmp_path, story_dict)
+
+    with pytest.raises(ValueError, match="art-12"):
+        load_story(path)
+
+
+def test_framework_and_control_ids_must_be_kebab_slugs(tmp_path: Path) -> None:
+    story_dict = {
+        "acts": _six_acts(),
+        "frameworks": _frameworks(entries=[_framework(id="EU_AI_Act")]),
+        "claims": [_claim(id="claim-one", act=1)],
+    }
+    path = _write_story(tmp_path, story_dict)
+
+    with pytest.raises(ValueError):
+        load_story(path)
+
+
+def test_unknown_framework_type_raises(tmp_path: Path) -> None:
+    story_dict = {
+        "acts": _six_acts(),
+        "frameworks": _frameworks(entries=[_framework(id="eu-ai-act", type="guideline")]),
+        "claims": [_claim(id="claim-one", act=1)],
+    }
+    path = _write_story(tmp_path, story_dict)
+
+    with pytest.raises(ValueError):
+        load_story(path)
+
+
+# --- coverage_by_framework -------------------------------------------
+
+
+def test_coverage_reports_backing_claims_per_control_in_declaration_order(tmp_path: Path) -> None:
+    from bossyk_sandbox.story import coverage_by_framework
+
+    story_dict = {
+        "acts": _six_acts(),
+        "frameworks": _frameworks(
+            entries=[
+                _framework(id="eu-ai-act", controls=[_control("art-12"), _control("art-14")]),
+                _framework(
+                    id="soc2", name="SOC 2", type="attestation", controls=[_control("cc7-3")]
+                ),
+            ]
+        ),
+        "claims": [
+            _claim(id="first-claim", act=1, control_refs=["eu-ai-act:art-12", "soc2:cc7-3"]),
+            _claim(id="second-claim", act=2, control_refs=["eu-ai-act:art-12"]),
+        ],
+    }
+    story = load_story(_write_story(tmp_path, story_dict))
+
+    coverage = coverage_by_framework(story)
+
+    assert [c.framework.id for c in coverage] == ["eu-ai-act", "soc2"]
+    eu_controls = coverage[0].controls
+    assert [c.control_id for c in eu_controls] == ["art-12", "art-14"]
+    assert [b.claim_id for b in eu_controls[0].backing] == ["first-claim", "second-claim"]
+    assert eu_controls[1].backing == []
+    assert [b.claim_id for b in coverage[1].controls[0].backing] == ["first-claim"]
+
+
+def test_coverage_carries_the_evidence_grade_of_each_backing_claim(tmp_path: Path) -> None:
+    from bossyk_sandbox.story import EvidenceGrade, coverage_by_framework
+
+    story_dict = {
+        "acts": _six_acts(),
+        "frameworks": _frameworks(),
+        "claims": [
+            _claim(
+                id="recompute-claim",
+                act=1,
+                evidence_grade="deterministic-recompute",
+                control_refs=["eu-ai-act:art-12"],
+            )
+        ],
+    }
+    story = load_story(_write_story(tmp_path, story_dict))
+
+    coverage = coverage_by_framework(story)
+
+    backing = coverage[0].controls[0].backing[0]
+    assert backing.claim_id == "recompute-claim"
+    assert backing.evidence_grade == EvidenceGrade.DETERMINISTIC_RECOMPUTE
+
+
+def test_a_control_backed_only_by_an_open_claim_is_not_covered(tmp_path: Path) -> None:
+    # The anti-coverage-theatre rule: an open claim is a promise, not evidence.
+    from bossyk_sandbox.story import coverage_by_framework
+
+    story_dict = {
+        "acts": _six_acts(),
+        "frameworks": _frameworks(),
+        "claims": [
+            _claim(id="open-claim", act=1, evidence_grade="open", control_refs=["eu-ai-act:art-12"])
+        ],
+    }
+    story = load_story(_write_story(tmp_path, story_dict))
+
+    control = coverage_by_framework(story)[0].controls[0]
+
+    assert [b.claim_id for b in control.backing] == ["open-claim"]
+    assert control.is_covered is False
+
+
+def test_a_control_with_one_graded_claim_among_open_ones_is_covered(tmp_path: Path) -> None:
+    from bossyk_sandbox.story import coverage_by_framework
+
+    story_dict = {
+        "acts": _six_acts(),
+        "frameworks": _frameworks(),
+        "claims": [
+            _claim(
+                id="open-claim", act=1, evidence_grade="open", control_refs=["eu-ai-act:art-12"]
+            ),
+            _claim(
+                id="measured-claim",
+                act=2,
+                evidence_grade="live-measurement",
+                control_refs=["eu-ai-act:art-12"],
+            ),
+        ],
+    }
+    story = load_story(_write_story(tmp_path, story_dict))
+
+    assert coverage_by_framework(story)[0].controls[0].is_covered is True
+
+
+def test_coverage_names_the_uncovered_controls(tmp_path: Path) -> None:
+    from bossyk_sandbox.story import coverage_by_framework
+
+    story_dict = {
+        "acts": _six_acts(),
+        "frameworks": _frameworks(
+            entries=[
+                _framework(
+                    id="eu-ai-act",
+                    controls=[_control("art-12"), _control("art-14"), _control("art-15")],
+                )
+            ]
+        ),
+        "claims": [
+            _claim(id="measured-claim", act=1, control_refs=["eu-ai-act:art-12"]),
+            _claim(
+                id="open-claim", act=2, evidence_grade="open", control_refs=["eu-ai-act:art-14"]
+            ),
+        ],
+    }
+    story = load_story(_write_story(tmp_path, story_dict))
+
+    uncovered = coverage_by_framework(story)[0].uncovered
+
+    assert [c.control_id for c in uncovered] == ["art-14", "art-15"]
+
+
+def test_coverage_of_a_story_without_frameworks_is_empty(tmp_path: Path) -> None:
+    from bossyk_sandbox.story import coverage_by_framework
+
+    story_dict = {"acts": _six_acts(), "claims": [_claim(id="untagged-claim", act=1)]}
+    story = load_story(_write_story(tmp_path, story_dict))
+
+    assert coverage_by_framework(story) == []
 
 
 # --- CLI acceptance check (written last, after story/story.yaml + figures exist) --
