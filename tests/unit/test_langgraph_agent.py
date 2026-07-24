@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.types import Command
 
@@ -381,6 +382,90 @@ def test_build_weakened_retail_agent_session_feeds_the_weakened_policy_to_the_mo
 
     system_message = llm.seen[0][0]
     assert system_message.content == weaken_policy("Authenticate the user first.")
+
+
+# --- action-execution timing (§15B+ latency budget) --------------------------
+
+
+def test_execute_node_times_an_executed_tool_call_as_action_exec_latency() -> None:
+    # §15B+: the tau2 tool call the agent actually runs (gate ALLOWed) has its
+    # own wall-clock recorded as an `action_exec` LatencyRecord on the session,
+    # timed by the injected clock -- the measured "action cost" the latency
+    # budget compares detection latency against. A benign lookup is ALLOWed and
+    # so executes; the clock is read once before and once after that call.
+    toolkit = _CountingToolkit()
+    llm = _ScriptedLLM(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    _tool_call("get_reservation_details", {"reservation_id": "R1"}, "call-1")
+                ],
+            ),
+            AIMessage(content="done"),
+        ]
+    )
+    session = build_airline_agent_session(
+        trace_id="t-latency",
+        llm=llm,
+        environment=_FakeEnvironment(tools=toolkit),
+        clock=iter([10.0, 10.5]).__next__,
+    )
+
+    _run_to_completion(session, thread_id="latency")
+
+    assert toolkit.call_count("get_reservation_details", reservation_id="R1") == 1
+    assert len(session.tool_latency) == 1
+    record = session.tool_latency[0]
+    assert record.instrument == "action_exec"
+    assert record.elapsed_s == pytest.approx(0.5)
+
+
+def test_a_blocked_tool_call_records_no_action_exec_latency() -> None:
+    # cancel without a prior lookup -> the gate BLOCKS it -> the tool never
+    # executes -> nothing to time (parallels gate.history staying empty).
+    toolkit = _CountingToolkit()
+    llm = _ScriptedLLM(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[_tool_call("cancel_reservation", {"reservation_id": "R9"}, "call-1")],
+            ),
+            AIMessage(content="done"),
+        ]
+    )
+    session = build_airline_agent_session(
+        trace_id="t-latency-blocked", llm=llm, environment=_FakeEnvironment(tools=toolkit)
+    )
+
+    _run_to_completion(session, thread_id="latency-blocked")
+
+    assert toolkit.call_count("cancel_reservation", reservation_id="R9") == 0
+    assert session.tool_latency == []
+
+
+def test_a_raising_tool_call_records_no_action_exec_latency() -> None:
+    # a tool that raises never completed an action -> no latency record (mirrors
+    # gate.history: a failed call never fabricates a successful entry).
+    toolkit = _CountingToolkit(raising_tools=frozenset({"get_reservation_details"}))
+    llm = _ScriptedLLM(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    _tool_call("get_reservation_details", {"reservation_id": "R1"}, "call-1")
+                ],
+            ),
+            AIMessage(content="done"),
+        ]
+    )
+    session = build_airline_agent_session(
+        trace_id="t-latency-raises", llm=llm, environment=_FakeEnvironment(tools=toolkit)
+    )
+
+    _run_to_completion(session, thread_id="latency-raises")
+
+    assert session.tool_latency == []
 
 
 def test_retail_tool_schemas_exposes_the_real_bound_retail_toolset() -> None:
