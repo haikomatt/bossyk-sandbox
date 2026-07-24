@@ -201,6 +201,35 @@ claims:
   - artifact: docs/bench_output/phase3_h4.json
     json_path: per_domain.retail.prevention_rate
     expected: 0.16666666666666666
+- id: live-latency-budget
+  act: 4
+  exec_copy: We now measure exactly how much faster detection would have to be to stop a problem
+    instead of only noticing it.
+  tech_copy: 'The "detected too late" split above is modeled from labels; this prices it. A live weakened-agent
+    run timed the slow policy judge over 21 calls at ~19s mean (~57s p95). Against a 500ms hold budget it
+    must run 38x faster (mean) / 114x (p95) to convert a detected-too-late into a prevention -- the concrete
+    target the fast hot-path detector has to beat. The budget is a chosen parameter, so the sweep reports
+    250ms / 500ms / 1s; the tau2 action''s own cost is ~0.03ms (an in-process floor, not real-world I/O).
+    The prevention leg reproduced live: 5 of 5 structural crossings prevented, harm 5 to 0.'
+  verdict: measured -- detection latency is a quantified speedup target, not a qualitative limit
+  evidence_grade: live-measurement
+  artifact_refs:
+  - docs/bench_output/live_h2h4_retail_weak_latency.json
+  - docs/phase-latency-budget-results.md
+  figure_ids: []
+  numeric_checks:
+  - artifact: docs/bench_output/live_h2h4_retail_weak_latency.json
+    json_path: latency.policy.count
+    expected: 21
+  - artifact: docs/bench_output/live_h2h4_retail_weak_latency.json
+    json_path: latency_budget.policy[1].speedup_needed_mean
+    expected: 38.32176286370738
+  - artifact: docs/bench_output/live_h2h4_retail_weak_latency.json
+    json_path: latency_budget.policy[1].speedup_needed_p95
+    expected: 113.8986470020609
+  - artifact: docs/bench_output/live_h2h4_retail_weak_latency.json
+    json_path: live_h4.prevented
+    expected: 5
 - id: evidence-grading-is-explicit
   act: 4
   exec_copy: Every claim in this story says out loud how solid the number behind it actually is.
