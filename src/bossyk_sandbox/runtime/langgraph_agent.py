@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Annotated, Any, TypedDict
@@ -21,6 +22,7 @@ from bossyk_sandbox.evidence.trace import make_attested_step
 from bossyk_sandbox.gate import Gate
 from bossyk_sandbox.instruments.base import Decision, Instrument, ProposedAction, Verdict
 from bossyk_sandbox.scenarios.runner import default_fast_rules, retail_fast_rules
+from bossyk_sandbox.scoring.latency import Clock, LatencyRecord, timed
 
 # Fireworks exposes an OpenAI-compatible endpoint, so the same ChatOpenAI
 # client used elsewhere in this codebase (e.g. no separate SDK) works here
@@ -63,6 +65,11 @@ class AirlineAgentSession:
     trace_id: str
     steps: list[Step] = field(default_factory=list)
     gate: Gate | None = None
+    # §15B+: wall-clock of each tau2 tool call the agent actually EXECUTED
+    # (gate ALLOWed, ran without raising), appended in place as the graph runs.
+    # The measured "action cost" the latency budget compares detection latency
+    # against; empty for a session whose calls were all blocked/raised.
+    tool_latency: list[LatencyRecord] = field(default_factory=list)
 
 
 AgentSession = AirlineAgentSession
@@ -112,6 +119,7 @@ def _build_agent_session(
     llm: Any | None,
     environment: Any | None,
     policy_override: str | None = None,
+    clock: Clock = time.perf_counter,
 ) -> AgentSession:
     """Domain-parameterized live LangGraph agent with in-graph tool-call
     interception, shared by `build_airline_agent_session` and
@@ -160,6 +168,7 @@ def _build_agent_session(
 
     gate = Gate(instruments=fast_rules)
     steps: list[Step] = []
+    tool_latency: list[LatencyRecord] = []
 
     def agent_node(state: AgentState) -> dict[str, Any]:
         messages = [SystemMessage(content=policy), *state["messages"]]
@@ -216,10 +225,19 @@ def _build_agent_session(
 
         if final is Verdict.ALLOW:
             try:
-                result = toolkit.use_tool(call["name"], **call["args"])
+                # Time the tau2 tool call itself (§15B+): only a completed
+                # execution yields a LatencyRecord -- a raising tool leaves
+                # `timed` before it returns, so `tool_latency` never gains a
+                # spurious entry, exactly as `gate.record` runs only on success.
+                result, record = timed(
+                    "action_exec",
+                    lambda: toolkit.use_tool(call["name"], **call["args"]),
+                    clock=clock,
+                )
             except Exception as exc:  # tau2 tool raised — surface as an error, not a crash
                 tool_message = ToolMessage(content=f"error: {exc}", tool_call_id=call["id"])
             else:
+                tool_latency.append(record)
                 gate.record(proposed)
                 tool_message = ToolMessage(content=str(result), tool_call_id=call["id"])
         else:
@@ -263,7 +281,9 @@ def _build_agent_session(
     )
 
     compiled = graph.compile(checkpointer=MemorySaver())
-    return AgentSession(graph=compiled, trace_id=trace_id, steps=steps, gate=gate)
+    return AgentSession(
+        graph=compiled, trace_id=trace_id, steps=steps, gate=gate, tool_latency=tool_latency
+    )
 
 
 def build_airline_agent_session(
@@ -274,6 +294,7 @@ def build_airline_agent_session(
     base_url: str = FIREWORKS_BASE_URL,
     llm: Any | None = None,
     environment: Any | None = None,
+    clock: Clock = time.perf_counter,
 ) -> AgentSession:
     """Live LangGraph airline agent. See `_build_agent_session` for the
     shared mechanics. Fast-path gate wired to `default_fast_rules()`
@@ -291,6 +312,7 @@ def build_airline_agent_session(
         base_url=base_url,
         llm=llm,
         environment=environment,
+        clock=clock,
     )
 
 
