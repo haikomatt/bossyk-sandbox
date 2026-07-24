@@ -103,9 +103,9 @@ current latency, the method does not.
 ## Reproducibility manifest
 
 ```yaml
+script: scripts/live_h2h4_bench.py  # emits latency_budget + action_exec_latency blocks
 scorer: src/bossyk_sandbox/scoring/latency_budget.py
-seam: src/bossyk_sandbox/runtime/langgraph_agent.py (execute_node action_exec timing)
-bench: scripts/live_h2h4_bench.py (latency_budget + action_exec_latency blocks)
+seam: src/bossyk_sandbox/runtime/langgraph_agent.py  # execute_node action_exec timing
 commit: 8f2e9dd  # Phase 3 GREEN (bench wiring)
 env:
   - RUN_LIVE_H2_E2E=1
