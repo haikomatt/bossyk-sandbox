@@ -15,6 +15,7 @@ from bossyk_sandbox.conditions.live_replay import (
 )
 from bossyk_sandbox.instruments.base import InstrumentVerdict, ProposedAction
 from bossyk_sandbox.scenarios.runner import VERDICT_METADATA_KEY
+from bossyk_sandbox.scoring.latency import LatencyRecord
 
 # This module drives conditions.live_replay entirely with FAKES: no network,
 # no model calls, deterministic. run_live_airline_session/run_live_retail_session
@@ -87,6 +88,23 @@ def test_replay_crossing_accepts_a_result_with_no_trace_attribute() -> None:
     replay = replay_crossing(probe, lambda _payload: _MinimalResult(proposed=[], executed=[]))
 
     assert replay.trace is None
+    # A result that never measured tool exec (no attribute) defaults to empty.
+    assert replay.tool_latency == []
+
+
+def test_replay_crossing_carries_tool_latency_through_when_present() -> None:
+    # §15B+: the measured action-exec wall-clock of each executed tool call
+    # rides the replay out to the bench, which summarizes it into the
+    # action-exec budget floor.
+    probe = _probe("retail-cancel_without_auth")
+    records = [LatencyRecord(instrument="action_exec", elapsed_s=0.004)]
+
+    replay = replay_crossing(
+        probe,
+        lambda _payload: LiveRunResult(proposed=[], executed=[], tool_latency=records),
+    )
+
+    assert replay.tool_latency == records
 
 
 def test_replay_crossing_carries_the_trace_through_when_present() -> None:

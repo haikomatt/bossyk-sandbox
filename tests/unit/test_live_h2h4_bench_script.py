@@ -105,3 +105,45 @@ def test_run_session_for_weak_agent_is_the_weakened_runner(
     module = _import_script()
 
     assert module._run_session_for("retail") is module.run_live_weakened_retail_session
+
+
+# --- latency budget wiring (§15B+) -------------------------------------------
+
+
+def test_mean_action_exec_s_averages_executed_tool_latency() -> None:
+    module = _import_script()
+
+    records = [
+        module.LatencyRecord(instrument="action_exec", elapsed_s=0.002),
+        module.LatencyRecord(instrument="action_exec", elapsed_s=0.004),
+    ]
+
+    assert module._mean_action_exec_s(records) == pytest.approx(0.003)
+
+
+def test_mean_action_exec_s_is_none_when_no_tool_executed() -> None:
+    # Every proposed action gate-blocked pre-execution -> nothing to time ->
+    # the budget reports the UX sweep alone, not a fabricated floor.
+    module = _import_script()
+
+    assert module._mean_action_exec_s([]) is None
+
+
+def test_latency_budget_to_dict_serializes_the_per_detector_speedup_target() -> None:
+    module = _import_script()
+
+    summaries = {
+        "policy": module.LatencySummary(
+            instrument="policy", count=4, mean_s=26.0, p50_s=42.0, p95_s=42.0, max_s=42.0
+        )
+    }
+    budget = module.latency_budget(summaries, action_exec_s=None, ux_budgets_s={"ux_500ms": 0.5})
+
+    serialized = module._latency_budget_to_dict(budget)
+
+    assert set(serialized) == {"policy"}
+    row = serialized["policy"][0]
+    assert row["budget_label"] == "ux_500ms"
+    # 26s / 0.5s = 52x (mean), 42s / 0.5s = 84x (p95) -- the §15C target.
+    assert row["speedup_needed_mean"] == pytest.approx(52.0)
+    assert row["speedup_needed_p95"] == pytest.approx(84.0)
