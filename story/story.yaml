@@ -40,6 +40,10 @@ claims:
   - artifact: docs/bench_output/phase2b_crossdomain_h1.json
     json_path: domains.retail.h1_overall.n_attempts
     expected: 160
+  control_refs:
+  - eu-ai-act:art-15
+  - fca:model-risk
+  - iso-42001:ai-risk-assessment
 - id: threat-surface-boundaries-and-guardrail
   act: 1
   exec_copy: The attacks aren't scored on how sneaky they sound -- they're scored on whether the agent
@@ -61,6 +65,10 @@ claims:
   - artifact: docs/bench_output/phase2b_crossdomain_h1.json
     json_path: guardrail_backend
     expected: model-backed
+  control_refs:
+  - eu-ai-act:art-9
+  - iso-42001:ai-risk-assessment
+  - hipaa:minimum-necessary
 - id: h1-guardrail-bypass-nontrivial
   act: 2
   exec_copy: The input filter lets through roughly one in five attacks on a real booking system, and about
@@ -85,6 +93,9 @@ claims:
   - artifact: docs/bench_output/phase2b_crossdomain_h1.json
     json_path: domains.retail.h1_overall.rate
     expected: 0.15625
+  control_refs:
+  - eu-ai-act:art-15
+  - fca:model-risk
 - id: h1-blindspot-profile-domain-invariant
   act: 2
   exec_copy: The filter is excellent at spotting messages that sound like attacks, and almost blind to
@@ -112,6 +123,9 @@ claims:
   - artifact: docs/bench_output/phase2b_crossdomain_h1.json
     json_path: domains.retail.h1_by_class.prompt_injection.rate
     expected: 0.0
+  control_refs:
+  - eu-ai-act:art-15
+  - iso-42001:ai-risk-assessment
 - id: agent-layer-is-the-backstop-by-design
   act: 2
   exec_copy: Because the front-door filter can't judge intent, a second layer watches what the agent actually
@@ -128,6 +142,10 @@ claims:
   - docs/phase2c-h3-crossdomain-results.md
   figure_ids: []
   numeric_checks: []
+  control_refs:
+  - soc2:cc7-2
+  - iso-27001:a-8-16
+  - eu-ai-act:art-15
 - id: h3-three-legged-orthogonality-scripted-set
   act: 3
   exec_copy: No single detector catches every bad action, but the three together caught all of them in
@@ -154,6 +172,9 @@ claims:
   - artifact: docs/bench_output/phase3_h4.json
     json_path: combined.prevented
     expected: 5
+  control_refs:
+  - eu-ai-act:art-14
+  - soc2:cc7-3
 - id: h4-counterfactual-method
   act: 3
   exec_copy: To test whether catching a problem actually stops it, we replay real detection decisions
@@ -169,6 +190,10 @@ claims:
   - docs/phase3-h4-interrupt-results.md
   figure_ids: []
   numeric_checks: []
+  control_refs:
+  - eu-ai-act:art-14
+  - fca:sysc
+  - soc2:cc7-3
 - id: h4-detection-outruns-prevention
   act: 4
   exec_copy: You can see far more problems than you can actually stop before they happen.
@@ -201,6 +226,10 @@ claims:
   - artifact: docs/bench_output/phase3_h4.json
     json_path: per_domain.retail.prevention_rate
     expected: 0.16666666666666666
+  control_refs:
+  - eu-ai-act:art-14
+  - fca:sysc
+  - soc2:cc7-3
 - id: live-latency-budget
   act: 4
   exec_copy: We now measure exactly how much faster detection would have to be to stop a problem
@@ -230,6 +259,10 @@ claims:
   - artifact: docs/bench_output/live_h2h4_retail_weak_latency.json
     json_path: live_h4.prevented
     expected: 5
+  control_refs:
+  - eu-ai-act:art-14
+  - fca:sysc
+  - soc2:cc7-2
 - id: evidence-grading-is-explicit
   act: 4
   exec_copy: Every claim in this story says out loud how solid the number behind it actually is.
@@ -244,6 +277,9 @@ claims:
   - docs/phase5-h1-h5-synthesis.md
   figure_ids: []
   numeric_checks: []
+  control_refs:
+  - eu-ai-act:art-11
+  - iso-42001:records
 - id: reproducibility-manifests-are-byte-checked
   act: 4
   exec_copy: Every deterministic number in this repo can be regenerated from scratch and comes out byte-for-byte
@@ -259,6 +295,10 @@ claims:
   - docs/phase4-smactr-results.md
   figure_ids: []
   numeric_checks: []
+  control_refs:
+  - eu-ai-act:art-11
+  - iso-42001:records
+  - soc2:pi1
 - id: h2-open-not-yet-measured
   act: 5
   exec_copy: We still don't know if the agent-layer watchdogs actually catch the attacks that got past
@@ -340,6 +380,9 @@ claims:
   - artifact: docs/bench_output/phase2c_orthogonality.json
     json_path: steps[2].policy.label
     expected: error
+  control_refs:
+  - soc2:pi1
+  - iso-42001:monitoring-and-measurement
 - id: smactr-loop-closes
   act: 6
   exec_copy: A failure we only caught after the fact became a rule that stops it before it happens.
@@ -371,6 +414,10 @@ claims:
   - artifact: docs/bench_output/phase4_smactr.json
     json_path: prevented_gain
     expected: 1
+  control_refs:
+  - eu-ai-act:art-9
+  - iso-42001:continual-improvement
+  - soc2:cc7-4
 - id: threat-model-grows-not-just-alerts
   act: 6
   exec_copy: A caught failure becomes a permanent, replayable rule -- not a one-off alert that gets forgotten.
@@ -388,6 +435,9 @@ claims:
   - artifact: docs/bench_output/threat_model.json
     json_path: '[0].severity'
     expected: high
+  control_refs:
+  - eu-ai-act:art-9
+  - iso-42001:continual-improvement
 - id: h5-ceiling-still-open
   act: 6
   exec_copy: We haven't yet tested against an attacker specifically trying to slip past every layer at
@@ -436,3 +486,111 @@ claims:
   - artifact: docs/bench_output/live_h2h4_retail_weak_structural.json
     json_path: live_h4.harm_on
     expected: 0
+  control_refs:
+  - eu-ai-act:art-14
+  - eu-ai-act:art-9
+  - fca:consumer-duty
+  - iso-42001:operational-controls
+  - soc2:cc7-3
+frameworks:
+  disclaimer: >-
+    Directional mapping, not legal advice. Clause references are indicative of
+    where the evidence pack contributes and need compliance and legal validation
+    before any external use.
+  entries:
+  - id: eu-ai-act
+    name: EU AI Act
+    type: regulation
+    controls:
+    - id: art-9
+      ref: Art. 9
+      title: Risk management system
+    - id: art-11
+      ref: Art. 11 / Annex IV
+      title: Technical documentation
+    - id: art-12
+      ref: Art. 12
+      title: Automatic event logging
+    - id: art-14
+      ref: Art. 14
+      title: Human oversight
+    - id: art-15
+      ref: Art. 15
+      title: Accuracy, robustness, cybersecurity
+  - id: fca
+    name: FCA (UK)
+    type: sector-regulation
+    controls:
+    - id: sysc
+      ref: SYSC
+      title: Systems and controls
+    - id: consumer-duty
+      ref: PRIN 2A
+      title: Consumer Duty evidencing
+    - id: smcr
+      ref: SM&CR
+      title: Senior-manager accountability
+    - id: model-risk
+      ref: SS1/23
+      title: Model risk management
+  - id: hipaa
+    name: HIPAA (US)
+    type: regulation
+    controls:
+    - id: audit-controls
+      ref: "\xA7 164.312(b)"
+      title: Audit controls
+    - id: minimum-necessary
+      ref: "\xA7 164.502(b)"
+      title: Minimum necessary use and disclosure
+    - id: access-logging
+      ref: "\xA7 164.312(a)"
+      title: PHI access logging
+  - id: iso-42001
+    name: ISO/IEC 42001
+    type: certification
+    controls:
+    - id: ai-risk-assessment
+      ref: Clause 6.1 / A.5
+      title: AI risk assessment
+    - id: operational-controls
+      ref: Clause 8
+      title: Operational planning and control
+    - id: monitoring-and-measurement
+      ref: Clause 9.1
+      title: Monitoring and measurement
+    - id: records
+      ref: Clause 7.5
+      title: Documented information
+    - id: continual-improvement
+      ref: Clause 10
+      title: Continual improvement
+  - id: iso-27001
+    name: ISO/IEC 27001
+    type: certification
+    controls:
+    - id: a-5-15
+      ref: A.5.15
+      title: Access control
+    - id: a-8-15
+      ref: A.8.15
+      title: Logging
+    - id: a-8-16
+      ref: A.8.16
+      title: Monitoring activities
+  - id: soc2
+    name: SOC 2 (Type II)
+    type: attestation
+    controls:
+    - id: cc7-2
+      ref: CC7.2
+      title: Anomaly detection and monitoring
+    - id: cc7-3
+      ref: CC7.3
+      title: Security-event evaluation
+    - id: cc7-4
+      ref: CC7.4
+      title: Incident response and remediation
+    - id: pi1
+      ref: PI1
+      title: Processing integrity

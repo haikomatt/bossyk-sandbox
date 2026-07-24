@@ -698,3 +698,26 @@ def test_cli_exits_zero_on_the_real_committed_story(tmp_path: Path) -> None:
         text=True,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_cli_prints_the_framework_coverage_report(tmp_path: Path) -> None:
+    # The coverage report is the whole point of P2: story_lint must show
+    # which regulatory controls the story's claims actually back, and name
+    # the uncovered ones rather than hiding a thin mapping behind a tick.
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "scripts/story_lint.py"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    output = result.stdout + result.stderr
+
+    assert "EU AI Act" in output
+    assert "SOC 2" in output
+    # A control the evidence pack does not discharge must be named as
+    # uncovered, not silently omitted -- the anti-coverage-theatre rule.
+    assert "uncovered" in output.lower()
+    assert "smcr" in output
