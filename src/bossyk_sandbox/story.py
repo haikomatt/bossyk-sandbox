@@ -27,6 +27,17 @@ _PATH_SEGMENT_RE = re.compile(r"^([^\[\]]*)((?:\[\d+\])*)$")
 _INDEX_RE = re.compile(r"\[(\d+)\]")
 
 
+def _require_kebab_slug(value: str, label: str) -> str:
+    """Validates a stable identifier (claim id, framework id, control id)
+    is a kebab-case slug, raising with `label` naming which kind it is.
+    One rule, shared by every id in this module -- they all end up in a
+    `<framework>:<control>` style reference where a stray underscore or
+    capital would silently fail to resolve."""
+    if not _KEBAB_SLUG_RE.match(value):
+        raise ValueError(f"{label} {value!r} is not a kebab-case slug")
+    return value
+
+
 class EvidenceGrade(StrEnum):
     """How a claim's numbers were produced -- the honesty axis carried
     over from the corrected phase5 synthesis: a claim must say whether it
@@ -66,9 +77,7 @@ class FrameworkControl(BaseModel):
     @field_validator("id")
     @classmethod
     def _id_is_kebab_slug(cls, value: str) -> str:
-        if not _KEBAB_SLUG_RE.match(value):
-            raise ValueError(f"control id {value!r} is not a kebab-case slug")
-        return value
+        return _require_kebab_slug(value, "control id")
 
 
 class Framework(BaseModel):
@@ -85,9 +94,7 @@ class Framework(BaseModel):
     @field_validator("id")
     @classmethod
     def _id_is_kebab_slug(cls, value: str) -> str:
-        if not _KEBAB_SLUG_RE.match(value):
-            raise ValueError(f"framework id {value!r} is not a kebab-case slug")
-        return value
+        return _require_kebab_slug(value, "framework id")
 
     @model_validator(mode="after")
     def _control_ids_unique(self) -> Framework:
@@ -148,9 +155,7 @@ class StoryClaim(BaseModel):
     @field_validator("id")
     @classmethod
     def _id_is_kebab_slug(cls, value: str) -> str:
-        if not _KEBAB_SLUG_RE.match(value):
-            raise ValueError(f"claim id {value!r} is not a kebab-case slug")
-        return value
+        return _require_kebab_slug(value, "claim id")
 
     @field_validator("act")
     @classmethod
@@ -251,16 +256,6 @@ def _first_duplicate(values: Iterable[str]) -> str | None:
     return None
 
 
-def _find_duplicate_ids(claims: list[StoryClaim]) -> list[str]:
-    seen: set[str] = set()
-    dupes: list[str] = []
-    for claim in claims:
-        if claim.id in seen and claim.id not in dupes:
-            dupes.append(claim.id)
-        seen.add(claim.id)
-    return dupes
-
-
 def load_story(path: Path | str) -> Story:
     """Parses + pydantic-validates a story YAML file, then runs the
     cross-referential checks that need the filesystem:
@@ -273,11 +268,11 @@ def load_story(path: Path | str) -> Story:
     - every `artifact_refs` path exists on disk, relative to the repo
       root;
     - every `figure_ids` entry has a corresponding
-      `docs/figures/<id>.svg`.
+      `docs/figures/<id>.svg`;
     - every `control_refs` entry parses as `<framework-id>:<control-id>`
       and resolves to a defined framework and control in `frameworks`
-      (a claim may carry no `control_refs` when `frameworks` is absent,
-      but not any).
+      (an absent `frameworks` block is fine, but then no claim may carry
+      a `control_ref` -- there would be nothing to resolve it against).
 
     Assumes the standard layout `<repo_root>/story/<name>.yaml` --
     the repo root used to resolve artifact_refs/figure_ids is
@@ -292,9 +287,9 @@ def load_story(path: Path | str) -> Story:
 
     repo_root = path.resolve().parent.parent
 
-    dupes = _find_duplicate_ids(story.claims)
-    if dupes:
-        raise ValueError(f"duplicate claim id(s): {', '.join(sorted(dupes))}")
+    dupe_claim_id = _first_duplicate(claim.id for claim in story.claims)
+    if dupe_claim_id is not None:
+        raise ValueError(f"duplicate claim id: {dupe_claim_id!r}")
 
     defined_acts = {act.act for act in story.acts}
     for claim in story.claims:
@@ -320,46 +315,53 @@ def load_story(path: Path | str) -> Story:
                     f"corresponding file at {figure_path}"
                 )
 
-        if claim.control_refs:
-            if story.frameworks is None:
-                raise ValueError(
-                    f"claim {claim.id!r} references control_refs {claim.control_refs!r}, "
-                    f"but the story defines no frameworks block to resolve them against"
-                )
-            frameworks = story.frameworks
-
-            seen_control_refs: set[str] = set()
-            for ref in claim.control_refs:
-                if ref in seen_control_refs:
-                    raise ValueError(
-                        f"claim {claim.id!r} references control_ref {ref!r} more than once"
-                    )
-                seen_control_refs.add(ref)
-
-                parts = ref.split(":")
-                if len(parts) != 2 or not parts[0] or not parts[1]:
-                    raise ValueError(
-                        f"claim {claim.id!r} references control_ref {ref!r}, which is not "
-                        f"in '<framework-id>:<control-id>' form"
-                    )
-                framework_id, control_id = parts
-
-                framework = next((f for f in frameworks.entries if f.id == framework_id), None)
-                if framework is None:
-                    raise ValueError(
-                        f"claim {claim.id!r} references control_ref {ref!r}, whose "
-                        f"framework {framework_id!r} is not defined"
-                    )
-
-                control = next((c for c in framework.controls if c.id == control_id), None)
-                if control is None:
-                    raise ValueError(
-                        f"claim {claim.id!r} references control_ref {ref!r}, whose "
-                        f"control {control_id!r} is not defined in framework "
-                        f"{framework_id!r}"
-                    )
+        _resolve_control_refs(claim, story.frameworks)
 
     return story
+
+
+def _resolve_control_refs(claim: StoryClaim, frameworks: FrameworkRegistry | None) -> None:
+    """Checks every `control_ref` on `claim` parses as
+    `<framework-id>:<control-id>`, is not repeated, and resolves to a
+    framework and control actually defined in `frameworks`. Raises
+    `ValueError` naming the claim first, then the offending ref. A claim
+    with no `control_refs` is a no-op; a claim that carries them when
+    `frameworks` is None is an error (nothing to resolve against)."""
+    if not claim.control_refs:
+        return
+
+    if frameworks is None:
+        raise ValueError(
+            f"claim {claim.id!r} references control_refs {claim.control_refs!r}, "
+            f"but the story defines no frameworks block to resolve them against"
+        )
+
+    seen: set[str] = set()
+    for ref in claim.control_refs:
+        if ref in seen:
+            raise ValueError(f"claim {claim.id!r} references control_ref {ref!r} more than once")
+        seen.add(ref)
+
+        parts = ref.split(":")
+        if len(parts) != 2 or not parts[0] or not parts[1]:
+            raise ValueError(
+                f"claim {claim.id!r} references control_ref {ref!r}, which is not "
+                f"in '<framework-id>:<control-id>' form"
+            )
+        framework_id, control_id = parts
+
+        framework = next((f for f in frameworks.entries if f.id == framework_id), None)
+        if framework is None:
+            raise ValueError(
+                f"claim {claim.id!r} references control_ref {ref!r}, whose "
+                f"framework {framework_id!r} is not defined"
+            )
+
+        if not any(control.id == control_id for control in framework.controls):
+            raise ValueError(
+                f"claim {claim.id!r} references control_ref {ref!r}, whose "
+                f"control {control_id!r} is not defined in framework {framework_id!r}"
+            )
 
 
 def _resolve_json_path(data: Any, json_path: str) -> Any:
