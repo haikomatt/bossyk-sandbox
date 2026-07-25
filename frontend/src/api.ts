@@ -68,6 +68,40 @@ export interface Story {
   frameworks: FrameworkRegistry | null;
 }
 
+// --- signed trace sidecar (the evidence pack's browsable steps) ---
+
+export interface ControlTag {
+  ref: string; // "<framework>:<control>"
+  basis: string; // substrate | verdict:gated | verdict:blocked | verdict:overridden | ...
+}
+
+export interface TraceStep {
+  step_id: string;
+  declared_intent: string | null;
+  action: {
+    payload: {
+      tool_name: string;
+      arguments: Record<string, unknown>;
+      gate_verdict: string;
+    };
+  };
+  metadata: {
+    bossyk_sandbox_controls?: ControlTag[];
+    overridden?: boolean;
+  };
+}
+
+export interface SignedTrace {
+  trace: {
+    trace_id: string;
+    agent_config_ref: string;
+    steps: TraceStep[];
+  };
+  // control ref -> ids of the steps that discharge it
+  coverage: Record<string, string[]>;
+  signatures: unknown[];
+}
+
 export type ArtifactCategory = "bench_output" | "probes" | "figures" | "docs" | "packs";
 
 export type ArtifactsIndex = Record<ArtifactCategory, string[]>;
@@ -115,6 +149,14 @@ export function fetchArtifactsIndex(): Promise<ArtifactsIndex> {
 
 export function fetchManifests(): Promise<ManifestSet[]> {
   return getJson<ManifestSet[]>("/api/manifests");
+}
+
+export function fetchFrameworks(): Promise<FrameworkRegistry> {
+  return getJson<FrameworkRegistry>("/api/frameworks");
+}
+
+export function fetchSignedTrace(name: string): Promise<SignedTrace> {
+  return getJson<SignedTrace>(`/api/artifacts/bench_output/${encodeURIComponent(name)}`);
 }
 
 /** For bench_output/probes/packs this is parsed JSON; for docs it is

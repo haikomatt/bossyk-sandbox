@@ -3,6 +3,7 @@ import { navigate } from "../router";
 
 const NAV_ITEMS: Array<{ category: ViewCategory; label: string }> = [
   { category: "story", label: "Story claims" },
+  { category: "evidence", label: "Evidence packs" },
   { category: "bench_output", label: "Benchmark artifacts" },
   { category: "figures", label: "Figures" },
   { category: "probes", label: "Regression probes" },

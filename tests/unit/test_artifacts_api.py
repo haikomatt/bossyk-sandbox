@@ -58,6 +58,19 @@ def test_story_endpoint_serves_the_frameworks_catalogue() -> None:
     assert ":" in tagged[0]["control_refs"][0]
 
 
+def test_frameworks_endpoint_serves_the_catalogue() -> None:
+    # The evidence-browser trace view resolves control refs to human names
+    # through this endpoint, independently of the story.
+    resp = client.get("/api/frameworks")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert "not legal advice" in body["disclaimer"].lower()
+    ids = [entry["id"] for entry in body["entries"]]
+    assert {"eu-ai-act", "hipaa", "soc2"} <= set(ids)
+    assert {"id", "ref", "title"} <= set(body["entries"][0]["controls"][0])
+
+
 # --- listing ------------------------------------------------------------------
 
 

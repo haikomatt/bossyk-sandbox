@@ -31,6 +31,7 @@ import yaml
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
+from bossyk_sandbox.compliance.frameworks import load_frameworks
 from bossyk_sandbox.story import load_story
 
 router = APIRouter()
@@ -100,6 +101,14 @@ def _manifest_section(text: str) -> str | None:
 async def get_story() -> dict[str, Any]:
     story = load_story(_repo_root() / "story" / "story.yaml")
     return story.model_dump(mode="json")
+
+
+@router.get("/api/frameworks")
+async def get_frameworks() -> dict[str, Any]:
+    """The compliance-framework catalogue, so the evidence-browser trace view
+    can resolve `<framework>:<control>` refs to human names independently of
+    the story."""
+    return load_frameworks().model_dump(mode="json")
 
 
 @router.get("/api/artifacts")
