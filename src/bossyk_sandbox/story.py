@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -20,22 +19,37 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-_KEBAB_SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+from bossyk_sandbox.compliance.frameworks import (
+    Framework,
+    FrameworkControl,
+    FrameworkRegistry,
+    FrameworkType,
+    first_duplicate,
+    load_frameworks,
+    require_kebab_slug,
+)
+
+# The framework catalogue models used to live here; they now belong to the
+# story-independent `compliance` layer and are re-exported so existing
+# `from bossyk_sandbox.story import Framework...` imports keep working.
+__all__ = [
+    "EvidenceGrade",
+    "Framework",
+    "FrameworkControl",
+    "FrameworkRegistry",
+    "FrameworkType",
+    "Story",
+    "StoryAct",
+    "StoryClaim",
+    "coverage_by_framework",
+    "lint_story",
+    "load_story",
+]
+
 # A json_path segment is a (possibly empty) dict key followed by zero or
 # more `[int]` index chains, e.g. "domains", "steps[3]", "steps[3][0]".
 _PATH_SEGMENT_RE = re.compile(r"^([^\[\]]*)((?:\[\d+\])*)$")
 _INDEX_RE = re.compile(r"\[(\d+)\]")
-
-
-def _require_kebab_slug(value: str, label: str) -> str:
-    """Validates a stable identifier (claim id, framework id, control id)
-    is a kebab-case slug, raising with `label` naming which kind it is.
-    One rule, shared by every id in this module -- they all end up in a
-    `<framework>:<control>` style reference where a stray underscore or
-    capital would silently fail to resolve."""
-    if not _KEBAB_SLUG_RE.match(value):
-        raise ValueError(f"{label} {value!r} is not a kebab-case slug")
-    return value
 
 
 class EvidenceGrade(StrEnum):
@@ -50,76 +64,6 @@ class EvidenceGrade(StrEnum):
     MODELED_COUNTERFACTUAL = "modeled-counterfactual"
     DETERMINISTIC_RECOMPUTE = "deterministic-recompute"
     OPEN = "open"
-
-
-class FrameworkType(StrEnum):
-    """What kind of thing a compliance framework actually is -- a binding
-    regulation, a sector-specific regulation, a certification a business
-    chooses to pursue, or an attestation a third party performs. Kept
-    separate from `EvidenceGrade`: this describes the framework itself,
-    not how well any given claim proves compliance with it."""
-
-    REGULATION = "regulation"
-    SECTOR_REGULATION = "sector-regulation"
-    CERTIFICATION = "certification"
-    ATTESTATION = "attestation"
-
-
-class FrameworkControl(BaseModel):
-    """One control within a compliance framework -- e.g. "Art. 14, Human
-    oversight" inside the EU AI Act. `id` is the stable slug a claim's
-    `control_refs` points at; `ref` and `title` are what a human reads."""
-
-    id: str
-    ref: str
-    title: str
-
-    @field_validator("id")
-    @classmethod
-    def _id_is_kebab_slug(cls, value: str) -> str:
-        return _require_kebab_slug(value, "control id")
-
-
-class Framework(BaseModel):
-    """One compliance framework and the controls within it a claim can be
-    evidence for. Control ids must be unique within the framework -- a
-    story claim resolves a control_ref by (framework id, control id), and
-    a duplicate would make that lookup ambiguous."""
-
-    id: str
-    name: str
-    type: FrameworkType
-    controls: list[FrameworkControl]
-
-    @field_validator("id")
-    @classmethod
-    def _id_is_kebab_slug(cls, value: str) -> str:
-        return _require_kebab_slug(value, "framework id")
-
-    @model_validator(mode="after")
-    def _control_ids_unique(self) -> Framework:
-        dupe = _first_duplicate(control.id for control in self.controls)
-        if dupe is not None:
-            raise ValueError(f"framework {self.id!r} has duplicate control id {dupe!r}")
-        return self
-
-
-class FrameworkRegistry(BaseModel):
-    """The story's whole compliance-framework catalogue: a disclaimer
-    (this is a directional mapping, not legal advice) plus the frameworks
-    themselves. Framework ids must be unique across entries for the same
-    reason control ids must be unique within a framework -- a control_ref
-    resolves against this registry by framework id."""
-
-    disclaimer: str
-    entries: list[Framework]
-
-    @model_validator(mode="after")
-    def _framework_ids_unique(self) -> FrameworkRegistry:
-        dupe = _first_duplicate(framework.id for framework in self.entries)
-        if dupe is not None:
-            raise ValueError(f"duplicate framework id: {dupe!r}")
-        return self
 
 
 class NumericCheck(BaseModel):
@@ -155,7 +99,7 @@ class StoryClaim(BaseModel):
     @field_validator("id")
     @classmethod
     def _id_is_kebab_slug(cls, value: str) -> str:
-        return _require_kebab_slug(value, "claim id")
+        return require_kebab_slug(value, "claim id")
 
     @field_validator("act")
     @classmethod
@@ -242,21 +186,7 @@ class FrameworkCoverage(BaseModel):
         return [control for control in self.controls if not control.is_covered]
 
 
-def _first_duplicate(values: Iterable[str]) -> str | None:
-    """Returns the first value seen twice in an iterable of strings, or
-    None if all values are distinct. Shared by every uniqueness check in
-    this module (claim ids, framework ids, control ids within a
-    framework) that only needs to name one offender to raise a useful
-    error."""
-    seen: set[str] = set()
-    for value in values:
-        if value in seen:
-            return value
-        seen.add(value)
-    return None
-
-
-def load_story(path: Path | str) -> Story:
+def load_story(path: Path | str, *, frameworks_path: Path | str | None = None) -> Story:
     """Parses + pydantic-validates a story YAML file, then runs the
     cross-referential checks that need the filesystem:
 
@@ -270,9 +200,14 @@ def load_story(path: Path | str) -> Story:
     - every `figure_ids` entry has a corresponding
       `docs/figures/<id>.svg`;
     - every `control_refs` entry parses as `<framework-id>:<control-id>`
-      and resolves to a defined framework and control in `frameworks`
-      (an absent `frameworks` block is fine, but then no claim may carry
-      a `control_ref` -- there would be nothing to resolve it against).
+      and resolves to a defined framework and control in the catalogue.
+
+    The compliance catalogue is story-independent: a story normally omits
+    any inline `frameworks` block, and `load_story` attaches the shared
+    catalogue (`compliance/frameworks.yaml`, or `frameworks_path` if given)
+    so every story resolves its control_refs against the one source of
+    truth. A story that does inline a `frameworks` block keeps it (used in
+    tests); there is always a catalogue by the time refs are resolved.
 
     Assumes the standard layout `<repo_root>/story/<name>.yaml` --
     the repo root used to resolve artifact_refs/figure_ids is
@@ -285,9 +220,14 @@ def load_story(path: Path | str) -> Story:
     raw: Any = yaml.safe_load(path.read_text())
     story = Story.model_validate(raw)
 
+    catalogue = (
+        story.frameworks if story.frameworks is not None else load_frameworks(frameworks_path)
+    )
+    story.frameworks = catalogue
+
     repo_root = path.resolve().parent.parent
 
-    dupe_claim_id = _first_duplicate(claim.id for claim in story.claims)
+    dupe_claim_id = first_duplicate(claim.id for claim in story.claims)
     if dupe_claim_id is not None:
         raise ValueError(f"duplicate claim id: {dupe_claim_id!r}")
 
@@ -315,26 +255,21 @@ def load_story(path: Path | str) -> Story:
                     f"corresponding file at {figure_path}"
                 )
 
-        _resolve_control_refs(claim, story.frameworks)
+        _resolve_control_refs(claim, catalogue)
 
     return story
 
 
-def _resolve_control_refs(claim: StoryClaim, frameworks: FrameworkRegistry | None) -> None:
+def _resolve_control_refs(claim: StoryClaim, frameworks: FrameworkRegistry) -> None:
     """Checks every `control_ref` on `claim` parses as
     `<framework-id>:<control-id>`, is not repeated, and resolves to a
-    framework and control actually defined in `frameworks`. Raises
+    framework and control actually defined in the catalogue. Raises
     `ValueError` naming the claim first, then the offending ref. A claim
-    with no `control_refs` is a no-op; a claim that carries them when
-    `frameworks` is None is an error (nothing to resolve against)."""
+    with no `control_refs` is a no-op. `load_story` always attaches a
+    catalogue before calling this, so there is always one to resolve
+    against."""
     if not claim.control_refs:
         return
-
-    if frameworks is None:
-        raise ValueError(
-            f"claim {claim.id!r} references control_refs {claim.control_refs!r}, "
-            f"but the story defines no frameworks block to resolve them against"
-        )
 
     seen: set[str] = set()
     for ref in claim.control_refs:

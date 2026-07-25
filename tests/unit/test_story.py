@@ -668,12 +668,17 @@ def test_coverage_names_the_uncovered_controls(tmp_path: Path) -> None:
     assert [c.control_id for c in uncovered] == ["art-14", "art-15"]
 
 
-def test_coverage_of_a_story_without_frameworks_is_empty(tmp_path: Path) -> None:
-    from bossyk_sandbox.story import coverage_by_framework
+def test_coverage_of_a_story_with_no_catalogue_attached_is_empty() -> None:
+    # coverage_by_framework's None-guard, tested at the unit level: a Story
+    # constructed directly (not via load_story, which always attaches the
+    # shared catalogue) has frameworks=None and therefore empty coverage.
+    from bossyk_sandbox.story import Story, coverage_by_framework
 
-    story_dict = {"acts": _six_acts(), "claims": [_claim(id="untagged-claim", act=1)]}
-    story = load_story(_write_story(tmp_path, story_dict))
+    story = Story.model_validate(
+        {"acts": _six_acts(), "claims": [_claim(id="untagged-claim", act=1)]}
+    )
 
+    assert story.frameworks is None
     assert coverage_by_framework(story) == []
 
 
