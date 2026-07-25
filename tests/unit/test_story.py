@@ -442,30 +442,23 @@ def test_control_ref_to_unknown_control_raises_naming_the_claim_and_ref(tmp_path
         load_story(path)
 
 
-def test_control_ref_without_a_framework_block_raises(tmp_path: Path) -> None:
-    # A story may omit `frameworks` entirely (backward compatible), but then
-    # no claim may carry a control_ref -- there is nothing to resolve against.
+def test_story_without_inline_frameworks_uses_the_shared_catalogue(tmp_path: Path) -> None:
+    # The catalogue now lives in compliance/frameworks.yaml, not the story;
+    # a story with no inline `frameworks` block gets the shared catalogue
+    # attached, so its control_refs resolve against that single source.
+    # (The obsolete "no frameworks block to resolve against" state is gone:
+    # there is always a catalogue.)
     story_dict = {
         "acts": _six_acts(),
-        "claims": [_claim(id="unresolvable-claim", act=1, control_refs=["eu-ai-act:art-12"])],
-    }
-    path = _write_story(tmp_path, story_dict)
-
-    with pytest.raises(ValueError, match="unresolvable-claim"):
-        load_story(path)
-
-
-def test_story_without_a_frameworks_block_still_loads(tmp_path: Path) -> None:
-    story_dict = {
-        "acts": _six_acts(),
-        "claims": [_claim(id="untagged-claim", act=1)],
+        "claims": [_claim(id="tagged-claim", act=1, control_refs=["eu-ai-act:art-12"])],
     }
     path = _write_story(tmp_path, story_dict)
 
     story = load_story(path)
 
-    assert story.frameworks is None
-    assert story.claims[0].control_refs == []
+    assert story.frameworks is not None
+    assert any(f.id == "eu-ai-act" for f in story.frameworks.entries)
+    assert story.claims[0].control_refs == ["eu-ai-act:art-12"]
 
 
 @pytest.mark.parametrize("malformed", ["eu-ai-act", "eu-ai-act:", ":art-12", "a:b:c"])
