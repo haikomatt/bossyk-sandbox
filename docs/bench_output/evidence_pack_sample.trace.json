@@ -1,0 +1,178 @@
+{
+  "trace": {
+    "trace_id": "bossyk-sample-attested-log",
+    "tenant_id": null,
+    "flow_type": "generic",
+    "agent_config_ref": "retail-support-demo@sample",
+    "steps": [
+      {
+        "step_id": "sample-step-1-lookup",
+        "parent_step_id": null,
+        "trace_id": "bossyk-sample-attested-log",
+        "timestamp": "2026-01-01T00:00:00Z",
+        "actor": "agent",
+        "declared_intent": "look up the customer's order before acting on it",
+        "action": {
+          "type": "tool_call",
+          "payload": {
+            "tool_name": "get_order_details",
+            "arguments": {
+              "order_id": "W1001"
+            },
+            "gate_verdict": "allow",
+            "gate_reason": "read-only lookup is permitted"
+          }
+        },
+        "context_used": [],
+        "belief_state": null,
+        "metadata": {
+          "gate_verdict": "allow",
+          "automatic_verdict": "allow",
+          "overridden": false,
+          "bossyk_sandbox_controls": [
+            {
+              "ref": "eu-ai-act:art-12",
+              "basis": "substrate"
+            },
+            {
+              "ref": "iso-27001:a-8-15",
+              "basis": "substrate"
+            },
+            {
+              "ref": "iso-42001:records",
+              "basis": "substrate"
+            },
+            {
+              "ref": "soc2:cc7-2",
+              "basis": "substrate"
+            },
+            {
+              "ref": "hipaa:audit-controls",
+              "basis": "substrate"
+            },
+            {
+              "ref": "eu-ai-act:art-9",
+              "basis": "verdict:gated"
+            },
+            {
+              "ref": "soc2:cc7-3",
+              "basis": "verdict:gated"
+            }
+          ]
+        }
+      },
+      {
+        "step_id": "sample-step-2-unauthorised-cancel",
+        "parent_step_id": null,
+        "trace_id": "bossyk-sample-attested-log",
+        "timestamp": "2026-01-01T00:00:01Z",
+        "actor": "agent",
+        "declared_intent": "cancel the order without a prior authorisation lookup",
+        "action": {
+          "type": "tool_call",
+          "payload": {
+            "tool_name": "cancel_pending_order",
+            "arguments": {
+              "order_id": "W2002"
+            },
+            "gate_verdict": "block",
+            "gate_reason": "cancel requires a prior lookup on this order"
+          }
+        },
+        "context_used": [],
+        "belief_state": null,
+        "metadata": {
+          "gate_verdict": "block",
+          "automatic_verdict": "block",
+          "overridden": false,
+          "bossyk_sandbox_controls": [
+            {
+              "ref": "eu-ai-act:art-12",
+              "basis": "substrate"
+            },
+            {
+              "ref": "iso-27001:a-8-15",
+              "basis": "substrate"
+            },
+            {
+              "ref": "iso-42001:records",
+              "basis": "substrate"
+            },
+            {
+              "ref": "soc2:cc7-2",
+              "basis": "substrate"
+            },
+            {
+              "ref": "hipaa:audit-controls",
+              "basis": "substrate"
+            },
+            {
+              "ref": "eu-ai-act:art-9",
+              "basis": "verdict:gated"
+            },
+            {
+              "ref": "soc2:cc7-3",
+              "basis": "verdict:gated"
+            },
+            {
+              "ref": "soc2:cc7-4",
+              "basis": "verdict:blocked"
+            },
+            {
+              "ref": "fca:sysc",
+              "basis": "verdict:blocked"
+            }
+          ]
+        }
+      }
+    ],
+    "source_adapter": "bossyk-sandbox-gate@0.1",
+    "outcome": null,
+    "metadata": {}
+  },
+  "coverage": {
+    "eu-ai-act:art-12": [
+      "sample-step-1-lookup",
+      "sample-step-2-unauthorised-cancel"
+    ],
+    "iso-27001:a-8-15": [
+      "sample-step-1-lookup",
+      "sample-step-2-unauthorised-cancel"
+    ],
+    "iso-42001:records": [
+      "sample-step-1-lookup",
+      "sample-step-2-unauthorised-cancel"
+    ],
+    "soc2:cc7-2": [
+      "sample-step-1-lookup",
+      "sample-step-2-unauthorised-cancel"
+    ],
+    "hipaa:audit-controls": [
+      "sample-step-1-lookup",
+      "sample-step-2-unauthorised-cancel"
+    ],
+    "eu-ai-act:art-9": [
+      "sample-step-1-lookup",
+      "sample-step-2-unauthorised-cancel"
+    ],
+    "soc2:cc7-3": [
+      "sample-step-1-lookup",
+      "sample-step-2-unauthorised-cancel"
+    ],
+    "soc2:cc7-4": [
+      "sample-step-2-unauthorised-cancel"
+    ],
+    "fca:sysc": [
+      "sample-step-2-unauthorised-cancel"
+    ]
+  },
+  "signatures": [
+    {
+      "signer": "local-ed25519",
+      "algorithm": "ed25519",
+      "public_key": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEARQfJO1yR4WdvEo2VujA5EsRPMFhEvHyIWTUu3IeU1cw=\n-----END PUBLIC KEY-----\n",
+      "signature": "c7fRKMNUVSKPzfvLfNiLPSMDk3UXBysCrOnmMnkzhYBgoSj5/R4pEjq12o7J67ka0APr5Y89iDrEjXWllg0NDw==",
+      "issued_at": "2026-07-25T09:57:47.148861Z"
+    }
+  ]
+}

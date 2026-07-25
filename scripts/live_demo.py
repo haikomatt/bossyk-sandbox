@@ -22,6 +22,11 @@ from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 
 from bossyk_sandbox.evidence.pack import build_and_sign, verify_offline, write_pack
+from bossyk_sandbox.evidence.signed_trace import (
+    build_signed_trace,
+    verify_signed_trace,
+    write_signed_trace,
+)
 from bossyk_sandbox.evidence.trace import build_trace
 from bossyk_sandbox.runtime.langgraph_agent import build_airline_agent_session
 
@@ -79,9 +84,19 @@ def main() -> None:
     pack_path = out_dir / f"{trace_id}.pack.json"
     write_pack(pack, pack_path)
 
-    verified = verify_offline(pack, pub_path.read_text())
+    # The signed trace sidecar carries the steps (and their per-step control
+    # tags) the pack's summary cannot, signed by the same key.
+    signed_trace = build_signed_trace(trace, signer_key_path=priv_path)
+    trace_path = out_dir / f"{trace_id}.trace.json"
+    write_signed_trace(signed_trace, trace_path)
+
+    public_key_pem = pub_path.read_text()
+    verified = verify_offline(pack, public_key_pem)
+    trace_verified = verify_signed_trace(signed_trace, public_key_pem)
     print(f"\nEvidencePack written to {pack_path}")
-    print(f"Offline verification: {'PASSED' if verified else 'FAILED'}")
+    print(f"Signed trace sidecar written to {trace_path}")
+    print(f"Offline verification: pack {'PASSED' if verified else 'FAILED'}, ", end="")
+    print(f"trace {'PASSED' if trace_verified else 'FAILED'}")
 
 
 if __name__ == "__main__":

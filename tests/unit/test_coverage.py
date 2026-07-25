@@ -7,12 +7,14 @@ actions behind each."
 
 from __future__ import annotations
 
+from auditk.schema import Trace
+
 from bossyk_sandbox.compliance.coverage import trace_control_coverage
 from bossyk_sandbox.evidence.trace import build_trace, make_attested_step
 from bossyk_sandbox.instruments.base import Decision, ProposedAction, Verdict
 
 
-def _sample_trace():
+def _sample_trace() -> Trace:
     allow = make_attested_step(
         "t-1",
         ProposedAction("get_order", {"order_id": "W1"}),

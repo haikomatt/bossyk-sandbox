@@ -19,6 +19,7 @@ from auditk.attestation.signer import generate_keypair
 
 from bossyk_sandbox.evidence.sample import build_sample_trace
 from bossyk_sandbox.evidence.signed_trace import (
+    SignedTrace,
     build_signed_trace,
     read_signed_trace,
     stable_trace_manifest,
@@ -32,7 +33,7 @@ SAMPLE_TRACE = BENCH_OUTPUT / "evidence_pack_sample.trace.json"
 SAMPLE_PUBKEY = BENCH_OUTPUT / "evidence_pack_sample.pub"
 
 
-def _build(signer_key_path: Path):
+def _build(signer_key_path: Path) -> SignedTrace:
     return build_signed_trace(build_sample_trace(), signer_key_path=signer_key_path)
 
 

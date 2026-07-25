@@ -508,6 +508,7 @@ claims:
   evidence_grade: deterministic-recompute
   artifact_refs:
   - docs/bench_output/evidence_pack_sample.json
+  - docs/bench_output/evidence_pack_sample.trace.json
   figure_ids: []
   numeric_checks:
   - artifact: docs/bench_output/evidence_pack_sample.json
