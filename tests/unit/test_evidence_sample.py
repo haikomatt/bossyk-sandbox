@@ -73,10 +73,22 @@ def test_stable_manifest_strips_the_volatile_fields_and_keeps_the_rest() -> None
     assert manifest["subject"]["agent_version"] == SAMPLE_AGENT_VERSION
 
 
-def test_committed_sample_pack_verifies_offline() -> None:
-    pack = read_pack(SAMPLE_PACK)
+def test_a_built_sample_pack_verifies_offline() -> None:
+    # Verify the PIPELINE produces verifiable packs, building and verifying
+    # under whatever auditk is installed -- not the committed pack's bytes
+    # against an arbitrary auditk. An EvidencePack's signed manifest is
+    # auditk-schema-shaped, so a pack signed under one auditk version cannot
+    # portably verify under another (a schema field present at sign time is
+    # dropped on load by an older auditk, breaking the signature). The
+    # committed *trace* sidecar (below) uses the stable Trace schema and IS
+    # verified from its committed bytes; that is the feature's browsable
+    # evidence. See the phase doc's auditk-version note.
+    with tempfile.TemporaryDirectory() as tmp:
+        priv, pub = generate_keypair(Path(tmp) / "k")
+        pack = _sign_sample(priv)
+        public_key_pem = pub.read_text()
 
-    assert verify_offline(pack, SAMPLE_PUBKEY.read_text()) is True
+    assert verify_offline(pack, public_key_pem) is True
 
 
 def test_committed_sample_pack_content_regenerates_bar_the_volatile_fields() -> None:
