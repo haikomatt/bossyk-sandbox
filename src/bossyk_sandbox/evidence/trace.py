@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from auditk.schema import Action, ActionType, Actor, FlowType, Step, Trace
 
+from bossyk_sandbox.compliance.attribution import CONTROLS_METADATA_KEY, controls_for_step
 from bossyk_sandbox.instruments.base import Decision, ProposedAction, Verdict
 
 
@@ -71,6 +72,9 @@ def make_attested_step(
     )
     step.metadata["automatic_verdict"] = auto_decision.verdict.value
     step.metadata["overridden"] = overridden
+    step.metadata[CONTROLS_METADATA_KEY] = [
+        tag.model_dump() for tag in controls_for_step(final_verdict, overridden=overridden)
+    ]
     return step
 
 
