@@ -122,3 +122,44 @@ def test_make_attested_step_manual_block_over_automatic_allow_attests_the_block(
     assert step.metadata["overridden"] is True
     assert auto_decision.reason in step.action.payload["gate_reason"]
     assert "manual override of automatic allow" in step.action.payload["gate_reason"]
+
+
+def test_attested_step_carries_compliance_control_tags_in_metadata() -> None:
+    from bossyk_sandbox.compliance.attribution import CONTROLS_METADATA_KEY
+
+    proposed = ProposedAction("get_reservation_details", {"reservation_id": "R1"})
+    auto_decision = Decision(Verdict.ALLOW, "no instrument blocked")
+
+    step = make_attested_step(
+        trace_id="t-1",
+        proposed=proposed,
+        auto_decision=auto_decision,
+        final_verdict=Verdict.ALLOW,
+    )
+
+    controls = step.metadata[CONTROLS_METADATA_KEY]
+    # serialized as a list of {ref, basis} dicts (json-friendly for the pack)
+    assert isinstance(controls, list)
+    refs = {entry["ref"] for entry in controls}
+    assert "eu-ai-act:art-12" in refs  # substrate
+    assert "eu-ai-act:art-9" in refs  # verdict:gated
+    bases = {entry["basis"] for entry in controls}
+    assert "substrate" in bases and "verdict:gated" in bases
+
+
+def test_attested_step_control_tags_reflect_a_blocked_override() -> None:
+    from bossyk_sandbox.compliance.attribution import CONTROLS_METADATA_KEY
+
+    proposed = ProposedAction("cancel_reservation", {"reservation_id": "R9"})
+    auto_decision = Decision(Verdict.ALLOW, "no instrument blocked")
+
+    step = make_attested_step(
+        trace_id="t-1",
+        proposed=proposed,
+        auto_decision=auto_decision,
+        final_verdict=Verdict.BLOCK,  # human blocked an auto-allow
+    )
+
+    by_ref = {entry["ref"]: entry["basis"] for entry in step.metadata[CONTROLS_METADATA_KEY]}
+    assert by_ref["soc2:cc7-4"] == "verdict:blocked"
+    assert by_ref["eu-ai-act:art-14"] == "verdict:overridden"
