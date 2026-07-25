@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from bossyk_sandbox.instruments.base import Verdict
+from bossyk_sandbox.instruments.base import ProposedAction, Verdict
 
 # Namespaced like `bossyk_sandbox_verdict` (scenarios/runner.py): the tags
 # ride in the auditk Step's free-form metadata dict, no schema change.
@@ -54,6 +54,31 @@ _BLOCKED_CONTROLS = (
 # Overridden: a human made the final call on the automatic verdict.
 _OVERRIDDEN_CONTROLS = ("eu-ai-act:art-14",)  # human oversight
 
+# Tier C -- action-specific controls, keyed by the tool's structural purpose,
+# NOT a content heuristic on its arguments. Each entry is a defensible fact
+# about what the tool is: a cancellation tool is a consumer-facing mutation;
+# a user-lookup tool accesses personal data by design. Content-based PII
+# detection (inspecting arguments or results) would be fuzzy and
+# over-claim-prone, so it is deliberately NOT done here -- see the phase doc.
+# `basis` names the reason (boundary:<kind> / data-class:<kind>) so a reader
+# sees exactly why the control applies.
+_ACTION_CONTROLS: dict[str, tuple[str, tuple[str, ...]]] = {
+    # cancellation tools -- an unauthorised or mistaken cancellation is the
+    # consumer harm FCA Consumer Duty is about.
+    "cancel_reservation": ("boundary:cancellation", ("fca:consumer-duty",)),
+    "cancel_pending_order": ("boundary:cancellation", ("fca:consumer-duty",)),
+    # user-lookup tools access personal data by design, so any call is a
+    # PHI/PII access event.
+    "get_user_details": (
+        "data-class:personal-data",
+        ("hipaa:access-logging", "hipaa:minimum-necessary", "iso-27001:a-5-15"),
+    ),
+    "find_user_id": (
+        "data-class:personal-data",
+        ("hipaa:access-logging", "iso-27001:a-5-15"),
+    ),
+}
+
 
 class ControlTag(BaseModel):
     """One compliance control an attested action discharges, with the
@@ -65,17 +90,33 @@ class ControlTag(BaseModel):
     basis: str
 
 
-def controls_for_step(verdict: Verdict, *, overridden: bool) -> list[ControlTag]:
-    """The compliance controls a gated, attested step discharges, from what
-    is known at attestation time: that it is a signed log entry (substrate)
-    and its final verdict / override (verdict-derived). Deterministic order
-    -- substrate, then gated, then blocked, then overridden -- and free of
-    duplicate refs. Nothing here inspects the tool call; action-specific
-    (boundary / PII) tags are a later phase."""
+def controls_for_step(
+    proposed: ProposedAction, verdict: Verdict, *, overridden: bool
+) -> list[ControlTag]:
+    """The compliance controls a gated, attested step discharges: the
+    record-keeping substrate (always), the verdict-derived controls (from
+    the final verdict / override), and any action-specific controls the
+    tool's structural purpose implies (Tier C). Deterministic order --
+    substrate, gated, blocked, overridden, then action-specific -- and free
+    of duplicate refs (an action-specific ref already present in an earlier
+    tier keeps its first, stronger basis)."""
     tags = [ControlTag(ref=ref, basis="substrate") for ref in _SUBSTRATE_CONTROLS]
     tags += [ControlTag(ref=ref, basis="verdict:gated") for ref in _GATED_CONTROLS]
     if verdict is Verdict.BLOCK:
         tags += [ControlTag(ref=ref, basis="verdict:blocked") for ref in _BLOCKED_CONTROLS]
     if overridden:
         tags += [ControlTag(ref=ref, basis="verdict:overridden") for ref in _OVERRIDDEN_CONTROLS]
-    return tags
+
+    action = _ACTION_CONTROLS.get(proposed.tool_name)
+    if action is not None:
+        basis, refs = action
+        tags += [ControlTag(ref=ref, basis=basis) for ref in refs]
+
+    seen: set[str] = set()
+    deduped: list[ControlTag] = []
+    for tag in tags:
+        if tag.ref in seen:
+            continue
+        seen.add(tag.ref)
+        deduped.append(tag)
+    return deduped

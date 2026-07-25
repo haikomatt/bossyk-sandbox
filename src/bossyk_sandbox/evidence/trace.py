@@ -73,7 +73,8 @@ def make_attested_step(
     step.metadata["automatic_verdict"] = auto_decision.verdict.value
     step.metadata["overridden"] = overridden
     step.metadata[CONTROLS_METADATA_KEY] = [
-        tag.model_dump() for tag in controls_for_step(final_verdict, overridden=overridden)
+        tag.model_dump()
+        for tag in controls_for_step(proposed, final_verdict, overridden=overridden)
     ]
     return step
 
