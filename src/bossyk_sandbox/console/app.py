@@ -6,10 +6,13 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from auditk.schema import Step
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from bossyk_sandbox.compliance.attribution import CONTROLS_METADATA_KEY
+from bossyk_sandbox.compliance.frameworks import load_frameworks
 from bossyk_sandbox.console.artifacts import router as artifacts_router
 from bossyk_sandbox.evidence.trace import build_trace, make_attested_step
 from bossyk_sandbox.gate import Gate
@@ -19,6 +22,33 @@ from bossyk_sandbox.runtime.stub_agent import SCRIPTED_TOOL_CALLS
 
 app = FastAPI(title="bossyk-sandbox console")
 app.include_router(artifacts_router)
+
+# Resolve control refs to human framework/control names once, so each
+# broadcast step can carry displayable compliance tags without the console
+# page having to fetch and index the catalogue itself.
+_CONTROL_LABELS: dict[str, dict[str, str]] = {
+    f"{framework.id}:{control.id}": {
+        "framework": framework.name,
+        "control": control.ref,
+        "title": control.title,
+    }
+    for framework in load_frameworks().entries
+    for control in framework.controls
+}
+
+
+def _display_controls(step: Step) -> list[dict[str, str]]:
+    """The step's compliance control tags, each resolved to its human
+    framework/control names alongside its ref and basis. An unresolved ref
+    (should not happen -- the tagger only emits catalogue refs) is dropped."""
+    display: list[dict[str, str]] = []
+    for tag in step.metadata.get(CONTROLS_METADATA_KEY, []):
+        label = _CONTROL_LABELS.get(tag["ref"])
+        if label is None:
+            continue
+        display.append({"ref": tag["ref"], "basis": tag["basis"], **label})
+    return display
+
 
 # F1 evidence-browser SPA (frontend/). Build output is not committed, so
 # this mount is conditional: absent a build, `/app` simply 404s and every
@@ -124,6 +154,7 @@ async def _run_stub_session(session: ConsoleSession, hold_timeout_s: float = 5.0
                     "arguments": call.arguments,
                     "verdict": final_verdict.value,
                     "overridden": final_verdict is not auto_decision.verdict,
+                    "controls": _display_controls(step),
                 }
             )
 

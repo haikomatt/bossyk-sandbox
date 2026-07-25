@@ -137,6 +137,37 @@ def test_untouched_session_attests_automatic_verdicts(monkeypatch: pytest.Monkey
     assert automatic_verdicts == verdicts
 
 
+def test_step_broadcast_carries_resolved_compliance_control_tags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The console renders each attested action's compliance controls, so the
+    # step broadcast carries them resolved to human framework/control names
+    # (not just refs), each with its basis.
+    events, _ = _patch_broadcast_events_and_trace(monkeypatch)
+
+    async def _drive() -> None:
+        start = await console_app.start_session(hold_timeout_s=0.01)
+        task = console_app._sessions[start["session_id"]].task
+        assert task is not None
+        await task
+
+    asyncio.run(_drive())
+
+    step_events = [e for e in events if e.get("type") == "step"]
+    assert len(step_events) == 3
+
+    first = step_events[0]["controls"]
+    assert first, "step event should carry compliance control tags"
+    assert {"ref", "basis", "framework", "control", "title"} <= set(first[0])
+    assert "eu-ai-act:art-12" in {c["ref"] for c in first}
+    assert "EU AI Act" in {c["framework"] for c in first}
+    assert "substrate" in {c["basis"] for c in first}
+
+    # the 3rd scripted call is blocked -> incident-response control appears
+    blocked = step_events[-1]["controls"]
+    assert any(c["ref"] == "soc2:cc7-4" and c["basis"] == "verdict:blocked" for c in blocked)
+
+
 # --- Finding 6: console sessions must be scoped by session_id/action_id,
 # not process-global module state --------------------------------------------
 

@@ -31,6 +31,13 @@ ws.onmessage = (event) => {
   } else if (msg.type === "step") {
     held.innerHTML = "";
     append(`${msg.verdict.toUpperCase()} ${msg.tool_name}(${JSON.stringify(msg.arguments)})${msg.overridden ? " [overridden]" : ""}`);
+    const controls = msg.controls || [];
+    if (controls.length) {
+      const tags = controls
+        .map((c) => `${c.framework} ${c.control} [${c.basis}]`)
+        .join("  ·  ");
+      append(`    discharges: ${tags}`);
+    }
   } else if (msg.type === "session_complete") {
     append(`--- session complete: ${msg.step_count} steps ---`);
     currentSessionId = null;
