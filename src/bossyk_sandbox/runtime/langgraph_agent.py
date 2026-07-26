@@ -70,6 +70,11 @@ class AirlineAgentSession:
     # The measured "action cost" the latency budget compares detection latency
     # against; empty for a session whose calls were all blocked/raised.
     tool_latency: list[LatencyRecord] = field(default_factory=list)
+    # Voice-model sweep: wall-clock of each agent LLM inference (the model's
+    # own response latency), appended per agent turn. The voice-viability
+    # metric -- a model too slow here is unusable in a live voice pipeline,
+    # regardless of how robust it is.
+    agent_latency: list[LatencyRecord] = field(default_factory=list)
 
 
 AgentSession = AirlineAgentSession
@@ -108,6 +113,32 @@ def weaken_policy(policy: str) -> str:
     return policy + POLICY_WEAKENING_OVERRIDE
 
 
+def _resolve_agent_config(
+    *, model_name: str | None, api_key: str | None, base_url: str | None
+) -> tuple[str, str, str]:
+    """Resolve the agent's (model, api_key, base_url), letting the `AGENT_*`
+    env vars override the Fireworks defaults so a provider sweep can point the
+    same runners at a different OpenAI-compatible endpoint (e.g. NVIDIA NIM)
+    without threading args through the bench -> runner -> builder chain.
+    Precedence: explicit arg, then `AGENT_MODEL`/`AGENT_API_KEY`/`AGENT_BASE_URL`,
+    then `FIREWORKS_MODEL`/`FIREWORKS_API_KEY`/the Fireworks defaults. Raises if
+    no key is resolvable (whichever provider)."""
+    model = (
+        model_name
+        or os.environ.get("AGENT_MODEL")
+        or os.environ.get("FIREWORKS_MODEL")
+        or DEFAULT_FIREWORKS_MODEL
+    )
+    key = api_key or os.environ.get("AGENT_API_KEY") or os.environ.get("FIREWORKS_API_KEY")
+    if not key:
+        raise RuntimeError(
+            "No agent API key: set AGENT_API_KEY (e.g. a NVIDIA NIM key for the "
+            "voice-model sweep) or FIREWORKS_API_KEY."
+        )
+    resolved_base_url = base_url or os.environ.get("AGENT_BASE_URL") or FIREWORKS_BASE_URL
+    return model, key, resolved_base_url
+
+
 def _build_agent_session(
     *,
     trace_id: str,
@@ -115,7 +146,7 @@ def _build_agent_session(
     fast_rules: list[Instrument],
     model_name: str | None,
     api_key: str | None,
-    base_url: str,
+    base_url: str | None,
     llm: Any | None,
     environment: Any | None,
     policy_override: str | None = None,
@@ -151,17 +182,13 @@ def _build_agent_session(
     toolkit = env.tools
 
     if llm is None:
-        resolved_model = model_name or os.environ.get("FIREWORKS_MODEL", DEFAULT_FIREWORKS_MODEL)
-        resolved_api_key = api_key or os.environ.get("FIREWORKS_API_KEY")
-        if not resolved_api_key:
-            raise RuntimeError(
-                "FIREWORKS_API_KEY is required to run the live agent "
-                "(set it in .env, matching auditk-constellaration-experiment's convention)."
-            )
+        resolved_model, resolved_api_key, resolved_base_url = _resolve_agent_config(
+            model_name=model_name, api_key=api_key, base_url=base_url
+        )
         tool_schemas = _tool_schemas(toolkit)
         llm = ChatOpenAI(
             model=resolved_model,
-            base_url=base_url,
+            base_url=resolved_base_url,
             api_key=SecretStr(resolved_api_key),
             temperature=0,
         ).bind_tools(tool_schemas)
@@ -169,10 +196,12 @@ def _build_agent_session(
     gate = Gate(instruments=fast_rules)
     steps: list[Step] = []
     tool_latency: list[LatencyRecord] = []
+    agent_latency: list[LatencyRecord] = []
 
     def agent_node(state: AgentState) -> dict[str, Any]:
         messages = [SystemMessage(content=policy), *state["messages"]]
-        response = llm.invoke(messages)
+        response, record = timed("agent_inference", lambda: llm.invoke(messages), clock=clock)
+        agent_latency.append(record)
         return {"messages": [response]}
 
     def plan_calls_node(state: AgentState) -> dict[str, Any]:
@@ -282,7 +311,12 @@ def _build_agent_session(
 
     compiled = graph.compile(checkpointer=MemorySaver())
     return AgentSession(
-        graph=compiled, trace_id=trace_id, steps=steps, gate=gate, tool_latency=tool_latency
+        graph=compiled,
+        trace_id=trace_id,
+        steps=steps,
+        gate=gate,
+        tool_latency=tool_latency,
+        agent_latency=agent_latency,
     )
 
 
@@ -291,7 +325,7 @@ def build_airline_agent_session(
     trace_id: str = "live-airline-session",
     model_name: str | None = None,
     api_key: str | None = None,
-    base_url: str = FIREWORKS_BASE_URL,
+    base_url: str | None = None,
     llm: Any | None = None,
     environment: Any | None = None,
     clock: Clock = time.perf_counter,
@@ -321,7 +355,7 @@ def build_retail_agent_session(
     trace_id: str = "live-retail-session",
     model_name: str | None = None,
     api_key: str | None = None,
-    base_url: str = FIREWORKS_BASE_URL,
+    base_url: str | None = None,
     llm: Any | None = None,
     environment: Any | None = None,
     policy_override: str | None = None,
@@ -351,7 +385,7 @@ def build_weakened_retail_agent_session(
     trace_id: str = "live-retail-weak-session",
     model_name: str | None = None,
     api_key: str | None = None,
-    base_url: str = FIREWORKS_BASE_URL,
+    base_url: str | None = None,
     llm: Any | None = None,
     environment: Any | None = None,
 ) -> AgentSession:

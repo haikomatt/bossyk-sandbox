@@ -392,7 +392,16 @@ def test_execute_node_times_an_executed_tool_call_as_action_exec_latency() -> No
     # own wall-clock recorded as an `action_exec` LatencyRecord on the session,
     # timed by the injected clock -- the measured "action cost" the latency
     # budget compares detection latency against. A benign lookup is ALLOWed and
-    # so executes; the clock is read once before and once after that call.
+    # so executes.
+    #
+    # The injected clock is a 0.5-step counter (not a fixed 2-value list),
+    # because `agent_node` also times its llm.invoke as `agent_inference` on the
+    # SAME clock now (voice-model sweep). Every `timed` span reads two
+    # consecutive values, so each span (agent_inference AND action_exec) is
+    # exactly 0.5 regardless of how many spans run -- keeping this assertion
+    # about action_exec robust to the added agent timing.
+    import itertools
+
     toolkit = _CountingToolkit()
     llm = _ScriptedLLM(
         responses=[
@@ -409,7 +418,7 @@ def test_execute_node_times_an_executed_tool_call_as_action_exec_latency() -> No
         trace_id="t-latency",
         llm=llm,
         environment=_FakeEnvironment(tools=toolkit),
-        clock=iter([10.0, 10.5]).__next__,
+        clock=itertools.count(0.0, 0.5).__next__,
     )
 
     _run_to_completion(session, thread_id="latency")
@@ -479,3 +488,97 @@ def test_retail_tool_schemas_exposes_the_real_bound_retail_toolset() -> None:
     # The 16 real retail tools (see runtime/langgraph_agent.py's binding).
     assert len(schemas) == 16
     assert {"cancel_pending_order", "modify_user_address", "get_user_details"} <= names
+
+
+# --- voice-model sweep: provider env seam + agent-inference latency ---------
+
+
+def _clear_agent_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for var in (
+        "AGENT_MODEL",
+        "AGENT_API_KEY",
+        "AGENT_BASE_URL",
+        "FIREWORKS_MODEL",
+        "FIREWORKS_API_KEY",
+    ):
+        monkeypatch.delenv(var, raising=False)
+
+
+def test_resolve_agent_config_prefers_agent_env_then_fireworks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from bossyk_sandbox.runtime.langgraph_agent import _resolve_agent_config
+
+    _clear_agent_env(monkeypatch)
+    monkeypatch.setenv("AGENT_MODEL", "meta/llama-3.1-8b-instruct")
+    monkeypatch.setenv("AGENT_API_KEY", "nvidia-key")
+    monkeypatch.setenv("AGENT_BASE_URL", "https://integrate.api.nvidia.com/v1")
+    monkeypatch.setenv("FIREWORKS_MODEL", "fw-model")
+    monkeypatch.setenv("FIREWORKS_API_KEY", "fw-key")
+
+    model, key, base_url = _resolve_agent_config(model_name=None, api_key=None, base_url=None)
+
+    assert model == "meta/llama-3.1-8b-instruct"
+    assert key == "nvidia-key"
+    assert base_url == "https://integrate.api.nvidia.com/v1"
+
+
+def test_resolve_agent_config_falls_back_to_fireworks(monkeypatch: pytest.MonkeyPatch) -> None:
+    from bossyk_sandbox.runtime.langgraph_agent import (
+        FIREWORKS_BASE_URL,
+        _resolve_agent_config,
+    )
+
+    _clear_agent_env(monkeypatch)
+    monkeypatch.setenv("FIREWORKS_API_KEY", "fw-key")
+
+    model, key, base_url = _resolve_agent_config(model_name=None, api_key=None, base_url=None)
+
+    assert key == "fw-key"
+    assert base_url == FIREWORKS_BASE_URL  # no AGENT_BASE_URL -> Fireworks default
+    assert model  # DEFAULT_FIREWORKS_MODEL when neither model env is set
+
+
+def test_resolve_agent_config_explicit_args_win(monkeypatch: pytest.MonkeyPatch) -> None:
+    from bossyk_sandbox.runtime.langgraph_agent import _resolve_agent_config
+
+    _clear_agent_env(monkeypatch)
+    monkeypatch.setenv("AGENT_MODEL", "env-model")
+    monkeypatch.setenv("AGENT_API_KEY", "env-key")
+
+    model, key, base_url = _resolve_agent_config(
+        model_name="explicit-model", api_key="explicit-key", base_url="https://explicit/v1"
+    )
+
+    assert (model, key, base_url) == ("explicit-model", "explicit-key", "https://explicit/v1")
+
+
+def test_resolve_agent_config_raises_without_any_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    from bossyk_sandbox.runtime.langgraph_agent import _resolve_agent_config
+
+    _clear_agent_env(monkeypatch)
+
+    with pytest.raises(RuntimeError, match="AGENT_API_KEY"):
+        _resolve_agent_config(model_name="m", api_key=None, base_url=None)
+
+
+def test_agent_inference_latency_is_recorded_per_turn() -> None:
+    toolkit = _CountingToolkit()
+    llm = _ScriptedLLM(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[_tool_call("get_reservation_details", {"reservation_id": "R1"}, "c1")],
+            ),
+            AIMessage(content="done"),
+        ]
+    )
+    session = build_airline_agent_session(
+        trace_id="t-agent-latency", llm=llm, environment=_FakeEnvironment(tools=toolkit)
+    )
+
+    _run_to_completion(session, thread_id="agent-latency")
+
+    assert session.agent_latency, "expected an agent_inference latency record per turn"
+    assert all(r.instrument == "agent_inference" for r in session.agent_latency)
+    assert all(r.elapsed_s >= 0.0 for r in session.agent_latency)
