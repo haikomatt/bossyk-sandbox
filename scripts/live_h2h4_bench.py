@@ -71,6 +71,7 @@ from bossyk_sandbox.scoring.live_h2 import (
     live_h4,
     score_crossing,
 )
+from bossyk_sandbox.scoring.orthogonality import wilson_interval
 
 REPO_ROOT = Path(__file__).parent.parent
 OUTPUT_DIR = REPO_ROOT / "docs" / "bench_output"
@@ -270,10 +271,18 @@ def main() -> None:
     scores: list[CrossingScore] = []
     all_latency: list[LatencyRecord] = []
     all_action_latency: list[LatencyRecord] = []
+    all_agent_latency: list[LatencyRecord] = []
+    n_engaged = 0
     for index, probe in enumerate(probes, start=1):
         print(f"[{index}/{len(probes)}] replaying {probe.probe_id} ...")
         replay = replay_crossing(probe, run_session)
         all_action_latency.extend(replay.tool_latency)
+        all_agent_latency.extend(replay.agent_latency)
+        # ENGAGEMENT: the agent proposed >=1 tool call this attempt. The
+        # voice-model sweep reads this to tell a robust 0-reach (engaged but
+        # policy-compliant) from an incapable one (never drove the tools).
+        if replay.proposed:
+            n_engaged += 1
 
         policy = build_default_policy_instrument(cfg.policy_path)
         policy.on_call = _on_policy_call
@@ -288,8 +297,19 @@ def main() -> None:
         )
 
     judge_ledger = build_judge_token_ledger(usage_records)
-    latency_summary = summarize_latency(all_latency)
+    # Combine policy (judge) + agent-inference records so the `latency` block
+    # carries both -- agent_inference is the voice-viability metric.
+    latency_summary = summarize_latency(all_latency + all_agent_latency)
     action_exec_summary = summarize_latency(all_action_latency)
+    n_attempts = len(probes)
+    engaged_low, engaged_high = wilson_interval(n_engaged, n_attempts) if n_attempts else (0.0, 0.0)
+    engagement = RateWithCI(
+        n=n_attempts,
+        successes=n_engaged,
+        rate=(n_engaged / n_attempts if n_attempts else 0.0),
+        ci_low=engaged_low,
+        ci_high=engaged_high,
+    )
     action_exec_s = _mean_action_exec_s(all_action_latency)
     budget = latency_budget(
         latency_summary, action_exec_s=action_exec_s, ux_budgets_s=DEFAULT_UX_BUDGETS_S
@@ -301,6 +321,13 @@ def main() -> None:
 
     _print_group_summaries("boundary", boundary_groups)
     _print_group_summaries("attack class", class_groups)
+
+    print("\n-- engagement (agent proposed >=1 tool call) --")
+    print(
+        f"  engaged={engagement.successes}/{engagement.n}={engagement.rate:.3f} "
+        f"[{engagement.ci_low:.3f}, {engagement.ci_high:.3f}]  "
+        "(0-reach is only robustness if engagement is high)"
+    )
 
     print("\n-- live-H4 (prevented vs detected-too-late) --")
     print(f"n_violations={h4.n_violations}")
@@ -346,6 +373,7 @@ def main() -> None:
         "domain": DOMAIN,
         "corpus": str(corpus_path),
         "n_crossings": len(scores),
+        "engagement": _rate_to_dict(engagement),
         "crossings": [_score_to_dict(score) for score in scores],
         "live_h2_by_boundary": {
             key: _group_summary_to_dict(value) for key, value in boundary_groups.items()

@@ -88,6 +88,9 @@ class LiveRunResult:
     # §15B+: wall-clock of each tau2 tool call the session actually executed
     # (empty when every proposed action was gate-blocked pre-execution).
     tool_latency: list[LatencyRecord] = field(default_factory=list)
+    # Voice-model sweep: wall-clock of each agent LLM inference this run (the
+    # model's own response latency -- the voice-viability metric).
+    agent_latency: list[LatencyRecord] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -95,7 +98,9 @@ class CrossingReplay:
     """One frozen crossing (`ProbeDefinition`), replayed live: the probe
     itself, its domain + boundary (parsed from `probe.family`, e.g.
     `"airline-cancel_without_lookup"` -> `("airline", "cancel_without_lookup")`),
-    and what the live session proposed/executed."""
+    and what the live session proposed/executed. `proposed` non-empty means
+    the agent ENGAGED (proposed >=1 tool call) -- the voice-model sweep reads
+    that to tell a robust 0-reach from an incapable one."""
 
     probe: ProbeDefinition
     domain: str
@@ -104,6 +109,7 @@ class CrossingReplay:
     executed: list[ProposedAction]
     trace: Trace | None = None
     tool_latency: list[LatencyRecord] = field(default_factory=list)
+    agent_latency: list[LatencyRecord] = field(default_factory=list)
 
 
 def replay_crossing(
@@ -138,6 +144,7 @@ def replay_crossing(
         executed=list(result.executed),
         trace=getattr(result, "trace", None),
         tool_latency=list(getattr(result, "tool_latency", [])),
+        agent_latency=list(getattr(result, "agent_latency", [])),
     )
 
 
@@ -166,7 +173,11 @@ def _live_run_result(session: AgentSession, trace_id: str, agent_config_ref: str
     executed = session.gate.history
     trace = build_trace(trace_id=trace_id, agent_config_ref=agent_config_ref, steps=session.steps)
     return LiveRunResult(
-        proposed=proposed, executed=executed, trace=trace, tool_latency=list(session.tool_latency)
+        proposed=proposed,
+        executed=executed,
+        trace=trace,
+        tool_latency=list(session.tool_latency),
+        agent_latency=list(session.agent_latency),
     )
 
 

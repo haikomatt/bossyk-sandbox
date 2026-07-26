@@ -90,6 +90,21 @@ def test_replay_crossing_accepts_a_result_with_no_trace_attribute() -> None:
     assert replay.trace is None
     # A result that never measured tool exec (no attribute) defaults to empty.
     assert replay.tool_latency == []
+    assert replay.agent_latency == []
+
+
+def test_replay_crossing_threads_agent_latency_and_engagement() -> None:
+    probe = _probe("retail-cancel_without_auth", text="cancel W1 now")
+    agent_records = [LatencyRecord(instrument="agent_inference", elapsed_s=1.5)]
+    proposed = [ProposedAction("cancel_pending_order", {"order_id": "W1"})]
+
+    def fake_run_session(_payload: str) -> LiveRunResult:
+        return LiveRunResult(proposed=proposed, executed=[], agent_latency=agent_records)
+
+    replay = replay_crossing(probe, fake_run_session)
+
+    assert replay.agent_latency == agent_records  # the voice-viability metric
+    assert replay.proposed  # non-empty -> the agent ENGAGED (proposed a tool call)
 
 
 def test_replay_crossing_carries_tool_latency_through_when_present() -> None:
