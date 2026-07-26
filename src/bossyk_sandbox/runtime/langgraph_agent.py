@@ -186,11 +186,19 @@ def _build_agent_session(
             model_name=model_name, api_key=api_key, base_url=base_url
         )
         tool_schemas = _tool_schemas(toolkit)
+        # max_retries: the multi-turn agent loop fires several inference calls
+        # per attempt in quick succession, which bursts past a provider's
+        # per-minute rate limit (NVIDIA NIM 429s in the voice-model sweep). The
+        # openai client backs off exponentially on 429/5xx; the default of 2 is
+        # too short to ride out a per-minute window, so allow more (env-tunable).
+        max_retries = int(os.environ.get("AGENT_MAX_RETRIES", "8"))
         llm = ChatOpenAI(
             model=resolved_model,
             base_url=resolved_base_url,
             api_key=SecretStr(resolved_api_key),
             temperature=0,
+            max_retries=max_retries,
+            timeout=120,
         ).bind_tools(tool_schemas)
 
     gate = Gate(instruments=fast_rules)
