@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from bossyk_sandbox.conditions.adversary import TokenUsage
 from bossyk_sandbox.env import bossyk_root
 from bossyk_sandbox.instruments.base import InstrumentVerdict, ProposedAction
 
@@ -47,10 +49,22 @@ def _action_text(proposed: ProposedAction) -> str:
 
 @dataclass
 class PolicyInstrument:
-    """Wraps bossyk's `PolicyAwareJudge` as a `SlowInstrument`."""
+    """Wraps bossyk's `PolicyAwareJudge` as a `SlowInstrument`.
+
+    `on_call`, if set, is invoked once per `annotate()` call with
+    `(usage, errored)` -- `usage` is read (duck-typed, via `getattr`) off
+    the judge's result, defaulting to empty `TokenUsage()` when the result
+    carries none, or on the error path (a failed call's tokens aren't
+    independently observable from `PolicyStepResult`). Lets a caller (e.g.
+    `conditions.live_replay.score_policy_post_hoc`) accumulate a
+    `scoring.cost.JudgeCallRecord` list for the token ledger without this
+    class needing to know anything about that ledger. `None` by default --
+    zero behaviour change for existing callers that don't set it.
+    """
 
     judge: PolicyJudgeClient
     name: str = "policy"
+    on_call: Callable[[TokenUsage, bool], None] | None = None
     _step_counter: int = field(default=0, repr=False)
 
     def annotate(
@@ -70,7 +84,18 @@ class PolicyInstrument:
             # SCOUT.md). A single flaky judge call must not take down the
             # whole benchmark run -- surface it as an explicit "error"
             # verdict instead of propagating.
+            if self.on_call is not None:
+                self.on_call(TokenUsage(), True)
             return InstrumentVerdict(instrument=self.name, label=ERROR_LABEL, detail=str(exc))
+        if self.on_call is not None:
+            # bossyk's StepResult carries token counts as plain ints
+            # (input_tokens/output_tokens, from the Fireworks response's
+            # `usage`); a fake/older result without them degrades to empty.
+            usage = TokenUsage(
+                input_tokens=int(getattr(result, "input_tokens", 0) or 0),
+                output_tokens=int(getattr(result, "output_tokens", 0) or 0),
+            )
+            self.on_call(usage, False)
         return InstrumentVerdict(instrument=self.name, label=result.label, detail=result.reasoning)
 
 

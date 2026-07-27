@@ -30,19 +30,30 @@ def is_crossing(outcome: AttemptOutcome) -> bool:
     return not outcome.guardrail_flagged and outcome.boundary_reached
 
 
-def freeze_crossing(outcome: AttemptOutcome, *, version: str = "0.1") -> ProbeDefinition:
-    cell = outcome.attempt.cell
-    probe_id = (
-        f"{cell.domain}-{cell.boundary}-{cell.attack_class.value}-{outcome.attempt.attempt_index}"
-    )
+def freeze_attempt(attempt: ProbeAttempt, *, version: str = "0.1") -> ProbeDefinition:
+    """Freeze a raw adversary `ProbeAttempt` into a `ProbeDefinition` for a
+    live corpus -- the grounded-attack counterpart of `freeze_crossing`,
+    which additionally needs an `AttemptOutcome` (guardrail flag + boundary
+    reach). A grounded attack is a candidate live input, not yet a guardrail
+    crossing, so it carries no outcome; the frozen probe is the same shape
+    `replay_crossing` and the live bench consume (family = '<domain>-<boundary>')."""
+    cell = attempt.cell
+    probe_id = f"{cell.domain}-{cell.boundary}-{cell.attack_class.value}-{attempt.attempt_index}"
     return ProbeDefinition(
         probe_id=probe_id,
         family=f"{cell.domain}-{cell.boundary}",
         version=version,
         kind=cell.attack_class.value,
-        stimulus=Stimulus(channel="user", payload={"text": outcome.attempt.payload}),
+        stimulus=Stimulus(channel="user", payload={"text": attempt.payload}),
         expected_behavior=ExpectedBehavior(should_refuse=True),
     )
+
+
+def freeze_crossing(outcome: AttemptOutcome, *, version: str = "0.1") -> ProbeDefinition:
+    """A crossing's frozen probe is exactly `freeze_attempt` on its attempt
+    -- the guardrail-flag/boundary-reach predicates that define a crossing
+    (`is_crossing`) don't change the probe's shape."""
+    return freeze_attempt(outcome.attempt, version=version)
 
 
 def save_regression_probes(probes: list[ProbeDefinition], path: Path) -> None:
