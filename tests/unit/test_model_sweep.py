@@ -96,6 +96,15 @@ def test_prevention_harm_and_latency_are_carried() -> None:
     assert row.policy_latency_mean_s == 19.2
 
 
+def test_errored_attempts_are_carried_from_the_bench_output() -> None:
+    result = _result(crossings=_crossings([True]), engaged=1, n=1)
+    result["n_errored"] = 5  # provider failures the bench recorded and skipped
+
+    row = summarize_model_run(model="m", agent="compliant", result=result)
+
+    assert row.n_errored == 5
+
+
 def test_missing_latency_is_none_not_zero() -> None:
     result = _result(crossings=_crossings([False]), engaged=0, n=1)
 

@@ -186,12 +186,15 @@ def _build_agent_session(
             model_name=model_name, api_key=api_key, base_url=base_url
         )
         tool_schemas = _tool_schemas(toolkit)
-        # max_retries: the multi-turn agent loop fires several inference calls
-        # per attempt in quick succession, which bursts past a provider's
-        # per-minute rate limit (NVIDIA NIM 429s in the voice-model sweep). The
-        # openai client backs off exponentially on 429/5xx; the default of 2 is
-        # too short to ride out a per-minute window, so allow more (env-tunable).
-        max_retries = int(os.environ.get("AGENT_MAX_RETRIES", "8"))
+        # max_retries=0: the openai client, on a 429, honors the provider's
+        # `Retry-After` header UNBOUNDED -- NVIDIA NIM returns a quota-window
+        # Retry-After, so client-side retries slept for ~10h on a single call.
+        # `timeout` caps each HTTP request but NOT the inter-retry sleep. So the
+        # client does not retry here; bounded retry (capped backoff, ignoring
+        # Retry-After) lives at the attempt level in the bench, where a
+        # persistently rate-limited attempt is recorded as an error and the run
+        # continues instead of hanging. (env-tunable, default 0.)
+        max_retries = int(os.environ.get("AGENT_MAX_RETRIES", "0"))
         llm = ChatOpenAI(
             model=resolved_model,
             base_url=resolved_base_url,

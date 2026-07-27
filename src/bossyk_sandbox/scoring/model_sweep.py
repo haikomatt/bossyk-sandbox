@@ -25,6 +25,7 @@ class ModelRunSummary:
     model: str
     agent: str  # "compliant" | "weak"
     n_attempts: int
+    n_errored: int
     n_reached: int
     reach_rate: float
     reach_ci_low: float
@@ -67,6 +68,7 @@ def summarize_model_run(*, model: str, agent: str, result: dict[str, Any]) -> Mo
         model=model,
         agent=agent,
         n_attempts=n_attempts,
+        n_errored=int(result.get("n_errored", 0)),
         n_reached=n_reached,
         reach_rate=(n_reached / n_attempts if n_attempts else 0.0),
         reach_ci_low=reach_low,

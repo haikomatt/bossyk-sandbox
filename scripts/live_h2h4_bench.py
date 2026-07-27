@@ -34,16 +34,19 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from collections.abc import Callable
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
 from auditk.schema import ProbeDefinition
+from openai import APIError
 
 from bossyk_sandbox.conditions.adversary import TokenUsage
 from bossyk_sandbox.conditions.live_multiturn import run_live_multiturn_retail_session
 from bossyk_sandbox.conditions.live_replay import (
+    CrossingReplay,
     LiveSessionResult,
     replay_crossing,
     run_live_airline_session,
@@ -244,6 +247,31 @@ def _print_group_summaries(label: str, groups: dict[str, GroupSummary]) -> None:
         )
 
 
+def replay_with_retry(
+    probe: ProbeDefinition,
+    run_session: Callable[[str], LiveSessionResult],
+    *,
+    max_tries: int = 3,
+    backoffs_s: tuple[float, ...] = (5.0, 10.0, 20.0),
+    sleeper: Callable[[float], None] = time.sleep,
+) -> CrossingReplay | None:
+    """Replay one crossing with BOUNDED retry on provider API errors (rate
+    limits, timeouts, connection). Backoff is capped and IGNORES any
+    `Retry-After` -- the sweep must never sleep for a provider's quota window
+    (an unbounded client-side Retry-After hung a run ~10h). Returns None if the
+    attempt still fails after `max_tries`, so the caller records it as an error
+    and the sweep continues instead of crashing."""
+    for attempt in range(max_tries):
+        try:
+            return replay_crossing(probe, run_session)
+        except APIError as exc:
+            if attempt == max_tries - 1:
+                print(f"    ERRORED after {max_tries} tries: {type(exc).__name__}: {str(exc)[:80]}")
+                return None
+            sleeper(backoffs_s[min(attempt, len(backoffs_s) - 1)])
+    return None
+
+
 def main() -> None:
     # Load .env before the gate check (non-overriding -- an exported value
     # in the shell always wins).
@@ -268,14 +296,27 @@ def main() -> None:
     def _on_policy_call(usage: TokenUsage, errored: bool) -> None:
         usage_records.append(JudgeCallRecord(instrument="policy", usage=usage, errored=errored))
 
+    # Pace between attempts to stay under the provider's per-minute limit
+    # proactively (env-tunable; 0 disables). Bounded retry (above) is the
+    # backstop, pacing is the avoidance.
+    inter_attempt_delay_s = float(os.environ.get("LIVE_H2_PACE_S", "2"))
+
     scores: list[CrossingScore] = []
     all_latency: list[LatencyRecord] = []
     all_action_latency: list[LatencyRecord] = []
     all_agent_latency: list[LatencyRecord] = []
     n_engaged = 0
+    n_errored = 0
     for index, probe in enumerate(probes, start=1):
         print(f"[{index}/{len(probes)}] replaying {probe.probe_id} ...")
-        replay = replay_crossing(probe, run_session)
+        if index > 1 and inter_attempt_delay_s > 0:
+            time.sleep(inter_attempt_delay_s)
+        replay = replay_with_retry(probe, run_session)
+        if replay is None:
+            # Persistent provider error -- recorded, excluded from the rate
+            # denominators (like the judge error accounting), sweep continues.
+            n_errored += 1
+            continue
         all_action_latency.extend(replay.tool_latency)
         all_agent_latency.extend(replay.agent_latency)
         # ENGAGEMENT: the agent proposed >=1 tool call this attempt. The
@@ -301,12 +342,14 @@ def main() -> None:
     # carries both -- agent_inference is the voice-viability metric.
     latency_summary = summarize_latency(all_latency + all_agent_latency)
     action_exec_summary = summarize_latency(all_action_latency)
-    n_attempts = len(probes)
-    engaged_low, engaged_high = wilson_interval(n_engaged, n_attempts) if n_attempts else (0.0, 0.0)
+    # Denominators over SUCCESSFUL attempts (errored attempts excluded, counted
+    # separately in n_errored) so rates aren't diluted by provider failures.
+    n_scored = len(scores)
+    engaged_low, engaged_high = wilson_interval(n_engaged, n_scored) if n_scored else (0.0, 0.0)
     engagement = RateWithCI(
-        n=n_attempts,
+        n=n_scored,
         successes=n_engaged,
-        rate=(n_engaged / n_attempts if n_attempts else 0.0),
+        rate=(n_engaged / n_scored if n_scored else 0.0),
         ci_low=engaged_low,
         ci_high=engaged_high,
     )
@@ -326,6 +369,7 @@ def main() -> None:
     print(
         f"  engaged={engagement.successes}/{engagement.n}={engagement.rate:.3f} "
         f"[{engagement.ci_low:.3f}, {engagement.ci_high:.3f}]  "
+        f"(errored attempts excluded: {n_errored}/{len(probes)}) "
         "(0-reach is only robustness if engagement is high)"
     )
 
@@ -373,6 +417,8 @@ def main() -> None:
         "domain": DOMAIN,
         "corpus": str(corpus_path),
         "n_crossings": len(scores),
+        "n_attempts": len(probes),
+        "n_errored": n_errored,
         "engagement": _rate_to_dict(engagement),
         "crossings": [_score_to_dict(score) for score in scores],
         "live_h2_by_boundary": {

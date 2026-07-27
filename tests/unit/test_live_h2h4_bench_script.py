@@ -4,6 +4,7 @@ import importlib.util
 import sys
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import pytest
 
@@ -147,3 +148,63 @@ def test_latency_budget_to_dict_serializes_the_per_detector_speedup_target() -> 
     # 26s / 0.5s = 52x (mean), 42s / 0.5s = 84x (p95) -- the §15C target.
     assert row["speedup_needed_mean"] == pytest.approx(52.0)
     assert row["speedup_needed_p95"] == pytest.approx(84.0)
+
+
+# --- voice-sweep: bounded retry / error-record (no unbounded Retry-After) ---
+
+
+def _probe(family: str = "retail-cancel_without_auth", text: str = "cancel W1") -> Any:
+    from auditk.adapters.protocols import Stimulus
+    from auditk.schema import ExpectedBehavior, ProbeDefinition
+
+    ProbeDefinition.model_rebuild()
+    return ProbeDefinition(
+        probe_id="p-1",
+        family=family,
+        version="0.1",
+        kind="prompt_injection",
+        stimulus=Stimulus(channel="user", payload={"text": text}),
+        expected_behavior=ExpectedBehavior(should_refuse=True),
+    )
+
+
+def _api_error() -> Exception:
+    import httpx
+    from openai import APITimeoutError
+
+    return APITimeoutError(request=httpx.Request("POST", "http://x"))
+
+
+def test_replay_with_retry_recovers_after_a_transient_api_error() -> None:
+    from bossyk_sandbox.conditions.live_replay import LiveRunResult
+
+    module = _import_script()
+    calls = {"n": 0}
+
+    def run_session(_payload: str) -> LiveRunResult:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise _api_error()
+        return LiveRunResult(proposed=[], executed=[])
+
+    slept: list[float] = []
+    replay = module.replay_with_retry(_probe(), run_session, sleeper=slept.append)
+
+    assert replay is not None
+    assert calls["n"] == 2  # retried once
+    assert slept  # backed off once (bounded, ignores Retry-After)
+
+
+def test_replay_with_retry_returns_none_after_max_tries_never_hangs() -> None:
+    module = _import_script()
+
+    def run_session(_payload: str) -> Any:
+        raise _api_error()
+
+    slept: list[float] = []
+    replay = module.replay_with_retry(
+        _probe(), run_session, max_tries=3, backoffs_s=(0.0, 0.0, 0.0), sleeper=slept.append
+    )
+
+    assert replay is None  # recorded as errored, sweep continues
+    assert len(slept) == 2  # slept between the 3 tries, not after the last
