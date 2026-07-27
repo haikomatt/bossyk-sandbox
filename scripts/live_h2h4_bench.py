@@ -58,6 +58,7 @@ from bossyk_sandbox.conditions.retention import load_regression_probes
 from bossyk_sandbox.domains import domain_config
 from bossyk_sandbox.env import load_project_env
 from bossyk_sandbox.instruments.policy import build_default_policy_instrument
+from bossyk_sandbox.runtime.langgraph_agent import _resolve_agent_config
 from bossyk_sandbox.scoring.cost import JudgeCallRecord, JudgeLedgerEntry, build_judge_token_ledger
 from bossyk_sandbox.scoring.latency import LatencyRecord, LatencySummary, summarize_latency
 from bossyk_sandbox.scoring.latency_budget import (
@@ -160,6 +161,18 @@ def _real_mode_requested() -> bool:
         print(f"LIVE_H2_AGENT=weak only supports retail (got {DOMAIN!r}).", file=sys.stderr)
         raise SystemExit(1)
     return True
+
+
+def _agent_banner() -> str:
+    """The bench's agent banner, resolved from the SAME `AGENT_*`/
+    `FIREWORKS_*` env seam `_build_agent_session` uses
+    (`runtime.langgraph_agent._resolve_agent_config`) -- so it reflects
+    whichever provider/model is actually driving the run (a self-hosted
+    RunPod model, Fireworks, ...) instead of a hardcoded, stale label
+    (it used to always print "Fireworks kimi-k2p6" regardless of AGENT_*).
+    Prints `model @ base_url`; NEVER the key."""
+    model, _api_key, base_url = _resolve_agent_config(model_name=None, api_key=None, base_url=None)
+    return f"agent: {model} @ {base_url}"
 
 
 def _rate_to_dict(rate: RateWithCI) -> dict[str, object]:
@@ -284,7 +297,7 @@ def main() -> None:
     print(f"=== Live H2/H4 real run (domain={DOMAIN}) ===")
     print(f"corpus: {corpus_path}")
     print(f"policy: {cfg.policy_path}")
-    print("agent: live LangGraph session (Fireworks kimi-k2p6)")
+    print(_agent_banner())
     print("drift: SKIPPED (L1 scope -- see conditions/live_boundary.py)")
     print()
 

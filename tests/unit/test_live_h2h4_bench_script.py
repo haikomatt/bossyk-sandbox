@@ -208,3 +208,43 @@ def test_replay_with_retry_returns_none_after_max_tries_never_hangs() -> None:
 
     assert replay is None  # recorded as errored, sweep continues
     assert len(slept) == 2  # slept between the 3 tries, not after the last
+
+
+# --- agent banner (voice-model sweep: the banner must reflect AGENT_*, not a
+# stale hardcoded label) -----------------------------------------------------
+
+
+def test_agent_banner_reflects_the_resolved_agent_env_not_a_hardcoded_label(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The banner used to hardcode "Fireworks kimi-k2p6" regardless of which
+    # provider AGENT_* actually pointed at (misleading once the sweep moved
+    # to self-hosted RunPod models) -- it must print the REAL resolved
+    # model @ base_url, from the same _resolve_agent_config seam
+    # runtime.langgraph_agent uses to build the live agent.
+    module = _import_script()
+    monkeypatch.setenv("AGENT_MODEL", "Qwen/Qwen2.5-7B-Instruct")
+    monkeypatch.setenv("AGENT_API_KEY", "super-secret-runpod-key")
+    monkeypatch.setenv("AGENT_BASE_URL", "https://api.runpod.ai/v2/wkdqe0qef23jy2/openai/v1")
+
+    banner = module._agent_banner()
+
+    assert banner == "agent: Qwen/Qwen2.5-7B-Instruct @ https://api.runpod.ai/v2/wkdqe0qef23jy2/openai/v1"
+    assert "super-secret-runpod-key" not in banner  # the key is NEVER printed
+
+
+def test_agent_banner_falls_back_to_fireworks_defaults_when_agent_env_is_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from bossyk_sandbox.runtime.langgraph_agent import FIREWORKS_BASE_URL
+
+    module = _import_script()
+    for var in ("AGENT_MODEL", "AGENT_API_KEY", "AGENT_BASE_URL", "FIREWORKS_MODEL"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("FIREWORKS_API_KEY", "fw-key")
+
+    banner = module._agent_banner()
+
+    assert banner.startswith("agent: ")
+    assert FIREWORKS_BASE_URL in banner
+    assert "fw-key" not in banner

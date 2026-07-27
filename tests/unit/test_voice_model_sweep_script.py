@@ -1,6 +1,7 @@
 """The voice-model sweep orchestrator's pure parts: the per-run env it builds
-(agent provider via AGENT_*, judge stays on Fireworks) and the model x agent
-loop (bench call injected, so no network / no billable run)."""
+(agent provider resolved from the shared `runtime.agent_models` registry,
+judge stays on Fireworks) and the model x agent loop (bench call injected,
+so no network / no billable run)."""
 
 from __future__ import annotations
 
@@ -11,6 +12,8 @@ from types import ModuleType
 from typing import Any
 
 import pytest
+
+from bossyk_sandbox.runtime.agent_models import agent_model
 
 SCRIPT_PATH = Path(__file__).parents[2] / "scripts" / "voice_model_sweep.py"
 
@@ -27,21 +30,25 @@ def _import_script() -> ModuleType:
 sweep = _import_script()
 
 
-def test_build_run_env_points_the_agent_at_its_provider_and_gates_e2e() -> None:
-    model = sweep.SweepModel("meta/llama-3.1-8b-instruct", sweep.NIM_BASE_URL, "NVIDIA_API_KEY")
-    base_env = {"NVIDIA_API_KEY": "nv", "FIREWORKS_API_KEY": "fw", "PATH": "/bin"}
+# --- registry-driven env resolution ------------------------------------------
+
+
+def test_build_run_env_resolves_a_runpod_model_via_its_live_endpoint_id() -> None:
+    spec = agent_model("qwen2.5-7b")
+    base_env = {"RUNPOD_API_KEY": "rp", "FIREWORKS_API_KEY": "fw", "PATH": "/bin"}
 
     env = sweep.build_run_env(
         base_env,
-        model=model,
+        spec=spec,
         agent="compliant",
         output_path=Path("/o.json"),
         corpus_path=Path("/c"),
+        endpoints={"qwen2.5-7b": "wkdqe0qef23jy2"},
     )
 
-    assert env["AGENT_MODEL"] == "meta/llama-3.1-8b-instruct"
-    assert env["AGENT_BASE_URL"] == sweep.NIM_BASE_URL
-    assert env["AGENT_API_KEY"] == "nv"  # from the model's key_env
+    assert env["AGENT_MODEL"] == "Qwen/Qwen2.5-7B-Instruct"
+    assert env["AGENT_BASE_URL"] == "https://api.runpod.ai/v2/wkdqe0qef23jy2/openai/v1"
+    assert env["AGENT_API_KEY"] == "rp"  # from the model's key_env
     assert env["FIREWORKS_API_KEY"] == "fw"  # judge key preserved
     assert env["LIVE_H2_AGENT"] == "compliant"
     assert env["LIVE_H2_OUTPUT"] == "/o.json"
@@ -50,42 +57,78 @@ def test_build_run_env_points_the_agent_at_its_provider_and_gates_e2e() -> None:
     assert env["LIVE_H2_DOMAIN"] == "retail"
 
 
-def test_kimi_baseline_runs_on_fireworks() -> None:
-    model = sweep.SweepModel(
-        "accounts/fireworks/models/kimi-k2p6", sweep.FIREWORKS_BASE_URL, "FIREWORKS_API_KEY"
-    )
+def test_kimi_baseline_runs_on_its_fireworks_static_base_url() -> None:
+    spec = agent_model("kimi")
+
     env = sweep.build_run_env(
         {"FIREWORKS_API_KEY": "fw"},
-        model=model,
+        spec=spec,
         agent="weak",
         output_path=Path("/o.json"),
         corpus_path=Path("/c"),
+        endpoints={},
     )
 
-    assert env["AGENT_BASE_URL"] == sweep.FIREWORKS_BASE_URL
+    assert env["AGENT_BASE_URL"] == "https://api.fireworks.ai/inference/v1"
     assert env["AGENT_API_KEY"] == "fw"
+    assert env["AGENT_MODEL"] == "accounts/fireworks/models/kimi-k2p6"
 
 
 def test_build_run_env_raises_when_provider_key_missing() -> None:
-    model = sweep.SweepModel("meta/llama-3.1-8b-instruct", sweep.NIM_BASE_URL, "NVIDIA_API_KEY")
+    spec = agent_model("qwen2.5-7b")
 
-    with pytest.raises(RuntimeError, match="NVIDIA_API_KEY"):
+    with pytest.raises(RuntimeError, match="RUNPOD_API_KEY"):
         sweep.build_run_env(
             {"FIREWORKS_API_KEY": "fw"},
-            model=model,
+            spec=spec,
             agent="compliant",
             output_path=Path("/o"),
             corpus_path=Path("/c"),
+            endpoints={"qwen2.5-7b": "ep-1"},
         )
 
 
+def test_build_run_env_raises_loudly_when_a_runpod_model_has_no_endpoint_id() -> None:
+    # A RunPod entry with no live endpoint id must never run against a
+    # guessed/stale URL -- raise instead.
+    spec = agent_model("qwen2.5-7b")
+
+    with pytest.raises(RuntimeError, match="endpoint"):
+        sweep.build_run_env(
+            {"RUNPOD_API_KEY": "rp"},
+            spec=spec,
+            agent="compliant",
+            output_path=Path("/o"),
+            corpus_path=Path("/c"),
+            endpoints={},  # no entry for qwen2.5-7b
+        )
+
+
+# --- endpoint-id env-var seam -------------------------------------------------
+
+
+def test_endpoint_env_var_uppercases_and_normalizes_the_registry_name() -> None:
+    assert sweep._endpoint_env_var("qwen2.5-7b") == "RUNPOD_ENDPOINT_QWEN2_5_7B"
+    assert sweep._endpoint_env_var("llama-3.1-8b") == "RUNPOD_ENDPOINT_LLAMA_3_1_8B"
+
+
+def test_endpoints_from_env_only_picks_up_runpod_models_that_are_set() -> None:
+    base_env = {
+        "RUNPOD_ENDPOINT_QWEN2_5_7B": "ep-qwen",
+        # llama-3.1-8b's var deliberately absent
+        "RUNPOD_ENDPOINT_KIMI": "should-be-ignored",  # kimi is fireworks, not runpod
+    }
+
+    endpoints = sweep.endpoints_from_env(base_env, ["qwen2.5-7b", "llama-3.1-8b", "kimi"])
+
+    assert endpoints == {"qwen2.5-7b": "ep-qwen"}
+
+
+# --- the model x agent loop ---------------------------------------------------
+
+
 def test_run_sweep_runs_each_model_x_agent_and_tabulates(tmp_path: Path) -> None:
-    models = [
-        sweep.SweepModel("meta/llama-3.1-8b-instruct", sweep.NIM_BASE_URL, "NVIDIA_API_KEY"),
-        sweep.SweepModel(
-            "accounts/fireworks/models/kimi-k2p6", sweep.FIREWORKS_BASE_URL, "FIREWORKS_API_KEY"
-        ),
-    ]
+    names = ["qwen2.5-7b", "kimi"]
     agents = ["compliant", "weak"]
     seen_envs: list[dict[str, str]] = []
 
@@ -101,11 +144,12 @@ def test_run_sweep_runs_each_model_x_agent_and_tabulates(tmp_path: Path) -> None
         }
 
     combined = sweep.run_sweep(
-        models,
+        names,
         agents,
-        base_env={"NVIDIA_API_KEY": "nv", "FIREWORKS_API_KEY": "fw"},
+        base_env={"RUNPOD_API_KEY": "rp", "FIREWORKS_API_KEY": "fw"},
         output_dir=tmp_path,
         corpus_path=Path("/c"),
+        endpoints={"qwen2.5-7b": "ep-1"},
         run_bench=fake_run_bench,
         load_result=fake_load_result,
     )
@@ -114,10 +158,37 @@ def test_run_sweep_runs_each_model_x_agent_and_tabulates(tmp_path: Path) -> None
     assert len(seen_envs) == 4
     rows = combined["models"]
     assert [(r["model"], r["agent"]) for r in rows] == [
-        ("meta/llama-3.1-8b-instruct", "compliant"),
-        ("meta/llama-3.1-8b-instruct", "weak"),
-        ("accounts/fireworks/models/kimi-k2p6", "compliant"),
-        ("accounts/fireworks/models/kimi-k2p6", "weak"),
+        ("qwen2.5-7b", "compliant"),
+        ("qwen2.5-7b", "weak"),
+        ("kimi", "compliant"),
+        ("kimi", "weak"),
     ]
-    # each run got a distinct output path
-    assert len({env["LIVE_H2_OUTPUT"] for env in seen_envs}) == 4
+    # each run got a distinct output path, named from the registry name (no
+    # separate _slug() -- spec.name is already slug-safe)
+    output_paths = {env["LIVE_H2_OUTPUT"] for env in seen_envs}
+    assert len(output_paths) == 4
+    assert str(tmp_path / "voice_sweep_compliant_qwen2.5-7b.json") in output_paths
+    assert str(tmp_path / "voice_sweep_weak_kimi.json") in output_paths
+
+
+def test_run_sweep_raises_if_any_included_runpod_model_has_no_endpoint_id() -> None:
+    with pytest.raises(RuntimeError, match="endpoint"):
+        sweep.run_sweep(
+            ["llama-3.1-8b"],
+            ["compliant"],
+            base_env={"RUNPOD_API_KEY": "rp"},
+            output_dir=Path("/out"),
+            corpus_path=Path("/c"),
+            endpoints={},  # missing
+            run_bench=lambda _env: None,
+            load_result=lambda _path: {},
+        )
+
+
+def test_no_nim_references_remain_in_the_reconciled_sweep() -> None:
+    # The pivot to self-hosted RunPod serving left the old MODELS registry
+    # stale (NIM base URLs) -- this is the regression guard that it's gone.
+    source = SCRIPT_PATH.read_text()
+    assert "NIM" not in source
+    assert "nvidia" not in source.lower()
+    assert not hasattr(sweep, "SweepModel")
