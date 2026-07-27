@@ -137,7 +137,9 @@ def test_warm_poll_target_is_completed() -> None:
 
 
 def test_teardown_argv_renders_the_serverless_delete_command() -> None:
-    assert teardown_argv("wkdqe0qef23jy2") == ["runpodctl", "serverless", "delete", "wkdqe0qef23jy2"]
+    argv = teardown_argv("wkdqe0qef23jy2")
+
+    assert argv == ["runpodctl", "serverless", "delete", "wkdqe0qef23jy2"]
 
 
 def test_openai_base_url_for_is_shared_with_the_registry_not_redefined() -> None:
@@ -165,7 +167,7 @@ def test_deploy_hands_the_rendered_argv_to_the_injected_run() -> None:
 def test_teardown_hands_the_rendered_argv_to_the_injected_run() -> None:
     seen: list[list[str]] = []
 
-    def fake_run(argv: list[str]) -> dict[str, str]:
+    def fake_run(argv: list[str]) -> dict[str, Any]:
         seen.append(argv)
         return {"ok": True}
 

@@ -229,7 +229,10 @@ def test_agent_banner_reflects_the_resolved_agent_env_not_a_hardcoded_label(
 
     banner = module._agent_banner()
 
-    assert banner == "agent: Qwen/Qwen2.5-7B-Instruct @ https://api.runpod.ai/v2/wkdqe0qef23jy2/openai/v1"
+    assert (
+        banner
+        == "agent: Qwen/Qwen2.5-7B-Instruct @ https://api.runpod.ai/v2/wkdqe0qef23jy2/openai/v1"
+    )
     assert "super-secret-runpod-key" not in banner  # the key is NEVER printed
 
 
