@@ -48,9 +48,9 @@ def test_load_retail_weak_dir1_preset() -> None:
     assert len(baseline) == 2, "a benign lookup+cancel baseline precedes the crossings"
     assert len(crossings) == 4, "the 4 measured cancel_without_auth crossings"
     assert all(t.probe_id for t in crossings), "each crossing traces to a source probe_id"
-    assert all(
-        t.proposed.tool_name == "cancel_pending_order" for t in crossings
-    ), "the weakened agent's destructive write is the retail cancel tool"
+    assert all(t.proposed.tool_name == "cancel_pending_order" for t in crossings), (
+        "the weakened agent's destructive write is the retail cancel tool"
+    )
 
 
 def test_preset_crossings_are_grounded_in_the_committed_aggregate() -> None:
@@ -155,9 +155,7 @@ def test_replay_step_events_carry_probe_id_role_and_controls(
     assert all(s["verdict"] == "block" for s in crossing_steps)
     assert all(s.get("probe_id") for s in crossing_steps)
     # A blocked step surfaces the incident-response compliance control.
-    assert any(
-        c["ref"] == "soc2:cc7-4" for s in crossing_steps for c in s.get("controls", [])
-    )
+    assert any(c["ref"] == "soc2:cc7-4" for s in crossing_steps for c in s.get("controls", []))
 
 
 def test_replay_respects_the_single_session_slot(
