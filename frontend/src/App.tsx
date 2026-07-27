@@ -1,5 +1,6 @@
 import { Sidebar } from "./components/Sidebar";
 import { StoryView } from "./views/StoryView";
+import { ControlRoomView } from "./views/ControlRoomView";
 import { EvidenceView } from "./views/EvidenceView";
 import { BenchOutputView } from "./views/BenchOutputView";
 import { ProbesView } from "./views/ProbesView";
@@ -12,6 +13,8 @@ function CurrentView() {
   switch (route.category) {
     case "story":
       return <StoryView />;
+    case "control_room":
+      return <ControlRoomView />;
     case "evidence":
       return <EvidenceView />;
     case "bench_output":
