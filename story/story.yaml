@@ -527,3 +527,57 @@ claims:
   - hipaa:access-logging
   - iso-42001:records
   - soc2:cc7-2
+- id: enforcement-resolution-modes
+  act: 6
+  exec_copy: 'A caught action does not just get a yes or no. It gets a graded response,
+    so the safe path keeps moving and only the genuinely hard cases stop.'
+  tech_copy: 'Each proposed action resolves into one of five modes rather than block/allow:
+    redirect (run the compliant lookup first), step-up (re-authenticate the customer), defer
+    (accept and approve out of band), escalate (route to a human), or allow. The mode is derived
+    from the real gate verdict plus the tool consequence. Demonstrated on a committed preset and
+    a fake-agent live path; live crossings are not yet reproduced (H2 remains open).'
+  verdict: null
+  evidence_grade: scripted-proxy
+  artifact_refs:
+  - story/replay/retail-weak-modes.json
+  figure_ids: []
+  numeric_checks: []
+  control_refs:
+  - eu-ai-act:art-14
+  - soc2:cc7-4
+- id: enforcement-hitl-queue-no-hold
+  act: 6
+  exec_copy: 'The only actions a person reviews are the genuinely hard ones, and they are
+    handled by callback, so nobody is left waiting on hold.'
+  tech_copy: 'Redirect, step-up and defer resolve inside the conversation; only irreversible
+    or over-authority actions escalate to a priority-ordered human-review queue, resolved
+    asynchronously by callback rather than an in-call hold. Reversibility is the deciding
+    variable: a reversible action can be accepted and compensated, so it never needs a
+    synchronous human.'
+  verdict: null
+  evidence_grade: scripted-proxy
+  artifact_refs:
+  - story/replay/retail-weak-modes.json
+  figure_ids: []
+  numeric_checks: []
+  control_refs:
+  - eu-ai-act:art-14
+  - fca:consumer-duty
+- id: enforcement-standing-authority-defer
+  act: 6
+  exec_copy: 'Actions inside a session''s delegated authority are accepted and approved in
+    the background. Only the over-limit ones reach a person.'
+  tech_copy: 'A count-only, session-scoped standing model decides whether an allowed action
+    is within delegated authority: within authority plus reversible derives defer (accept,
+    async-approve), while over authority plus irreversible escalates. This is what keeps the
+    human queue small and what makes defer expressible at all. Amount ceilings and time-bounded
+    grants are deliberately deferred.'
+  verdict: null
+  evidence_grade: deterministic-recompute
+  artifact_refs:
+  - story/replay/retail-weak-modes.json
+  figure_ids: []
+  numeric_checks: []
+  control_refs:
+  - eu-ai-act:art-14
+  - iso-42001:operational-controls

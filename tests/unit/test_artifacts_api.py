@@ -19,9 +19,9 @@ def test_story_endpoint_returns_full_story() -> None:
     assert resp.status_code == 200
     body = resp.json()
     assert len(body["acts"]) == 6
-    # 20 since P3 added attested-action-log-is-the-substrate (the sample
-    # evidence pack claim that anchors the logging/attestation controls).
-    assert len(body["claims"]) == 20
+    # 23: the 20 research claims + 3 enforcement-delivery claims (Act 6 --
+    # resolution modes, the async HITL queue, and standing-authority defer).
+    assert len(body["claims"]) == 23
     claim = body["claims"][0]
     for field in (
         "id",
