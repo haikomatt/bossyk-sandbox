@@ -25,6 +25,7 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -117,3 +118,28 @@ def summarize(tokens: Sequence[TokenLogprob]) -> StepUncertainty:
         mean_entropy=math.fsum(entropies) / n,
         min_margin=min(margins),
     )
+
+
+def parse_openai_logprobs(content: Sequence[dict[str, Any]] | None) -> list[TokenLogprob]:
+    """Parse an OpenAI/vLLM ``logprobs.content`` list into ``TokenLogprob``s.
+
+    ``content`` is the per-token list the OpenAI chat API returns under
+    ``choices[].logprobs.content``; LangChain surfaces it verbatim at
+    ``AIMessage.response_metadata["logprobs"]["content"]``. Each item carries the
+    chosen token's ``logprob`` plus a ``top_logprobs`` list of alternatives.
+    Missing/None ``top_logprobs`` -> empty (entropy/margin then 0.0). A None or
+    empty ``content`` (e.g. a pure tool-call turn that emitted no scored tokens)
+    yields an empty list, which ``summarize`` maps to the ``n_tokens == 0``
+    summary -- keeping the tool-call-logprobs open question a graceful no-op
+    rather than an error.
+    """
+    tokens: list[TokenLogprob] = []
+    for item in content or []:
+        alts = item.get("top_logprobs") or []
+        tokens.append(
+            TokenLogprob(
+                logprob=float(item["logprob"]),
+                top_logprobs=tuple(float(a["logprob"]) for a in alts),
+            )
+        )
+    return tokens

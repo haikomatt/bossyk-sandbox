@@ -10,6 +10,7 @@ from bossyk_sandbox.interp.logprob_metrics import (
     StepUncertainty,
     TokenLogprob,
     margin,
+    parse_openai_logprobs,
     summarize,
     surprisal,
     top_k_entropy,
@@ -74,3 +75,35 @@ def test_summarize_uses_localising_aggregations() -> None:
 def test_summarize_mean_surprisal_is_the_token_mean() -> None:
     toks = [TokenLogprob(logprob=-1.0), TokenLogprob(logprob=-3.0)]
     assert summarize(toks).mean_surprisal == pytest.approx(2.0)
+
+
+def test_parse_openai_logprobs_reads_chosen_and_alternatives() -> None:
+    content = [
+        {
+            "token": "yes",
+            "logprob": -0.5,
+            "top_logprobs": [
+                {"token": "yes", "logprob": -0.5},
+                {"token": "no", "logprob": -1.2},
+            ],
+        }
+    ]
+    toks = parse_openai_logprobs(content)
+    assert len(toks) == 1
+    assert toks[0].logprob == -0.5
+    assert toks[0].top_logprobs == (-0.5, -1.2)
+
+
+def test_parse_openai_logprobs_missing_top_logprobs_is_empty_tuple() -> None:
+    toks = parse_openai_logprobs([{"token": "x", "logprob": -0.1}])
+    assert toks[0].top_logprobs == ()
+
+
+def test_parse_openai_logprobs_none_or_empty_content_is_empty_list() -> None:
+    assert parse_openai_logprobs(None) == []
+    assert parse_openai_logprobs([]) == []
+
+
+def test_parse_then_summarize_pure_tool_call_turn_is_zero() -> None:
+    # A tool-call turn with no scored tokens -> empty parse -> n_tokens == 0.
+    assert summarize(parse_openai_logprobs(None)).n_tokens == 0
