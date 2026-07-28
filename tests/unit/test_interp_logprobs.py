@@ -107,3 +107,28 @@ def test_parse_openai_logprobs_none_or_empty_content_is_empty_list() -> None:
 def test_parse_then_summarize_pure_tool_call_turn_is_zero() -> None:
     # A tool-call turn with no scored tokens -> empty parse -> n_tokens == 0.
     assert summarize(parse_openai_logprobs(None)).n_tokens == 0
+
+
+def test_parse_openai_logprobs_ignores_extra_provider_fields() -> None:
+    # Real Fireworks/vLLM payloads carry extra keys per token (bytes, token_id,
+    # sampling_logprob, text_offset, ...). The parser must read only logprob +
+    # top_logprobs[].logprob and ignore the rest. Shape captured from a live
+    # Fireworks kimi-k2p6 response (2026-07-28 probe).
+    content = [
+        {
+            "token": "Yes",
+            "bytes": [89, 101, 115],
+            "logprob": -0.011,
+            "token_id": 2742,
+            "sampling_logprob": 0.0,
+            "text_offset": 3,
+            "top_logprobs": [
+                {"token": "Yes", "bytes": [89, 101, 115], "logprob": -0.011, "token_id": 2742},
+                {"token": " weather", "bytes": [], "logprob": -13.31, "token_id": 10666},
+            ],
+        }
+    ]
+    toks = parse_openai_logprobs(content)
+    assert len(toks) == 1
+    assert toks[0].logprob == -0.011
+    assert toks[0].top_logprobs == (-0.011, -13.31)
