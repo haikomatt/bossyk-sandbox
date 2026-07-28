@@ -1,33 +1,36 @@
-/* bossyk evidence browser -- visual language matches the exec deck: white
-   background, near-black ink, a single accent, and the five evidence-grade
-   colors used consistently everywhere a grade appears. */
+/* bossyk agent governance console -- visual language matches the auditk
+   website (auditk.io): near-black #0f1117 ground, warm off-white ink, a
+   single blue accent, DM Serif Display / DM Sans / DM Mono, sharp 2px edges.
+   The five evidence-grade colors are tuned for legibility on the dark ground. */
 
 :root {
-  --ink: #1a1a1a;
-  --ink-muted: #55555a;
-  --ink-faint: #8a8a90;
-  --bg: #ffffff;
-  --bg-raised: #fafafa;
-  --border: #e2e2e5;
-  --accent: #4477aa;
-  --accent-bg: rgba(68, 119, 170, 0.08);
+  --ink: #f5f0e8;
+  --ink-muted: #a7b0c0;
+  --ink-faint: #8892a4;
+  --bg: #0f1117;
+  --bg-raised: #161a23;
+  --border: rgba(136, 146, 164, 0.18);
+  --accent: #4a9eff;
+  --accent-bg: rgba(74, 158, 255, 0.12);
 
-  --grade-live: #2f7d4f;
-  --grade-live-bg: rgba(47, 125, 79, 0.1);
-  --grade-scripted: #b5860a;
-  --grade-scripted-bg: rgba(181, 134, 10, 0.1);
-  --grade-modeled: #6f4fa8;
-  --grade-modeled-bg: rgba(111, 79, 168, 0.1);
-  --grade-deterministic: #4477aa;
-  --grade-deterministic-bg: rgba(68, 119, 170, 0.1);
-  --grade-open: #767680;
-  --grade-open-bg: rgba(118, 118, 128, 0.1);
+  --grade-live: #5fcf92;
+  --grade-live-bg: rgba(95, 207, 146, 0.13);
+  --grade-scripted: #e2b544;
+  --grade-scripted-bg: rgba(226, 181, 68, 0.13);
+  --grade-modeled: #b79be8;
+  --grade-modeled-bg: rgba(183, 155, 232, 0.13);
+  --grade-deterministic: #4a9eff;
+  --grade-deterministic-bg: rgba(74, 158, 255, 0.13);
+  --grade-open: #8892a4;
+  --grade-open-bg: rgba(136, 146, 164, 0.13);
 
-  --error: #a3392f;
-  --error-bg: rgba(163, 57, 47, 0.08);
+  --error: #ff6f61;
+  --error-bg: rgba(255, 111, 97, 0.12);
 
-  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --mono: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", monospace;
+  --radius: 2px;
+  --serif: "DM Serif Display", Georgia, "Times New Roman", serif;
+  --sans: "DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "DM Mono", "Fira Code", ui-monospace, SFMono-Regular, monospace;
 
   color: var(--ink);
   background: var(--bg);
@@ -52,7 +55,13 @@ body {
 }
 
 h1,
-h2,
+h2 {
+  font-family: var(--serif);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
 h3 {
   font-family: var(--sans);
   font-weight: 600;
@@ -74,22 +83,43 @@ button {
 
 .app-header {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
+  align-items: center;
+  gap: 10px;
   padding: 16px 24px;
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
 }
 
-.app-header__title {
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: -0.2px;
+/* auditk.io logo lockup: serif mark · thin accent rule · mono name. */
+.logo-mark {
+  font-family: var(--serif);
+  font-size: 1.6rem;
+  line-height: 1;
+  color: var(--ink);
+}
+
+.logo-rule {
+  display: inline-block;
+  width: 1px;
+  height: 1.3em;
+  background: rgba(74, 158, 255, 0.4);
+  align-self: center;
+}
+
+.logo-name {
+  font-family: var(--mono);
+  font-size: 0.95rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--ink);
 }
 
 .app-header__tagline {
-  font-size: 13px;
+  font-family: var(--mono);
+  font-size: 12px;
   color: var(--ink-faint);
+  letter-spacing: 0.01em;
+  margin-left: 4px;
 }
 
 /* ---- body layout ---- */
@@ -125,8 +155,10 @@ button {
   padding: 9px 24px;
   color: var(--ink-muted);
   cursor: pointer;
-  font-size: 14px;
-  border-left: 3px solid transparent;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  letter-spacing: 0.01em;
+  border-left: 2px solid transparent;
 }
 
 .sidebar__link:hover {
@@ -152,7 +184,7 @@ button {
 
 .status-pane {
   padding: 16px 18px;
-  border-radius: 6px;
+  border-radius: 3px;
   font-size: 14px;
 }
 
@@ -177,12 +209,14 @@ button {
 
 .evidence-chip {
   display: inline-block;
-  font-size: 11.5px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   padding: 3px 9px;
-  border-radius: 999px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
 }
 
 .evidence-chip--live-measurement {
@@ -250,7 +284,7 @@ button {
 
 .claim-card {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 16px 18px;
   background: var(--bg);
 }
@@ -274,7 +308,7 @@ button {
   gap: 5px;
   font-size: 11px;
   padding: 2px 8px;
-  border-radius: 5px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--bg-raised);
   color: var(--ink-faint);
@@ -350,7 +384,7 @@ button {
 
 .ev-step {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 12px 14px;
   background: var(--bg);
 }
@@ -639,7 +673,7 @@ button {
 
 .figure-thumb {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--bg);
   padding: 12px;
   cursor: pointer;
@@ -686,7 +720,7 @@ button {
   width: 100%;
   max-width: 900px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--bg-raised);
 }
 
@@ -735,7 +769,7 @@ button {
   line-height: 1.6;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 20px;
   max-width: 900px;
 }
@@ -773,7 +807,7 @@ button {
   color: #fff;
   background: var(--accent);
   border: 1px solid var(--accent);
-  border-radius: 6px;
+  border-radius: 3px;
   padding: 8px 16px;
   cursor: pointer;
 }
@@ -787,7 +821,7 @@ button {
   font-size: 13px;
   color: var(--ink-faint);
   border: 1px dashed var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 18px;
 }
 
@@ -796,7 +830,7 @@ button {
   color: var(--error);
   background: var(--error-bg);
   border: 1px solid var(--error);
-  border-radius: 6px;
+  border-radius: 3px;
   padding: 10px 12px;
 }
 
@@ -809,7 +843,7 @@ button {
 .cr-turn {
   border: 1px solid var(--border);
   border-left-width: 3px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 12px 14px;
   background: var(--bg);
 }
@@ -870,7 +904,7 @@ button {
   margin-top: 20px;
   border: 1px solid var(--grade-live);
   background: var(--grade-live-bg);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 16px 18px;
 }
 
@@ -898,7 +932,7 @@ button {
   color: var(--ink-muted);
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 3px;
   padding: 8px 12px;
   margin: 0 0 12px;
 }

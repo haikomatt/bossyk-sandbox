@@ -34,8 +34,10 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <span className="app-header__title">bossyk — evidence browser</span>
-        <span className="app-header__tagline">every number traces to a committed artifact</span>
+        <span className="logo-mark">bk</span>
+        <span className="logo-rule" />
+        <span className="logo-name">bossyk</span>
+        <span className="app-header__tagline">agent governance console · built on auditk</span>
       </header>
       <div className="app-body">
         <Sidebar current={route.category} />
