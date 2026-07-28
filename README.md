@@ -154,18 +154,30 @@ shape:
   irreversible over-authority actions land in a priority-ordered **HITL review
   queue**. (Design: `enforcement-delivery-model-v0.1` in the vault.)
 
-**Honesty:** the structural gate verdicts are recomputed live from the real gate;
-the resolution `mode` and `hitl` blocks are authored demo choreography
-(hardcoded per scenario, flagged `synthetic`) — the replay is a deterministic
-reconstruction, not a captured live-LLM transcript. The live agent-driven console
-(swapping the driver to `runtime/langgraph_agent`) is billable and deferred.
+In the replay the structural gate verdicts are recomputed live from the real
+gate, but the resolution `mode`/`hitl` are authored demo choreography (per
+scenario, flagged `synthetic`) — a deterministic reconstruction, not a captured
+live-LLM transcript.
+
+**Live mode** ("Run live" / `POST /session/live`) instead drives the *real*
+weakened-retail agent (`runtime/langgraph_agent`) and derives each mode from the
+real gate verdict (`console/modes.py`) — no authored modes. It is **BILLABLE**
+and **hard-gated behind `RUN_LIVE_CONSOLE=1`**: without the flag it returns
+`live_disabled` *before* building the session or resolving any key (a key present
+in the environment is never sufficient on its own, so a stray click can't run the
+agent); with the flag but no key it returns `no_api_key`. `defer` is not derived
+live — it needs the standing/authority model (§F, deferred).
 
 Run it:
 
 ```bash
 (cd frontend && npm install && npm run build)   # frontend/dist is not committed
 uv run uvicorn bossyk_sandbox.console.app:app --port 8011
-# open http://localhost:8011/app/#/control_room  ->  "Run replay"
+# open http://localhost:8011/app/#/control_room  ->  "Run replay"  (non-billable)
+
+# live mode is BILLABLE and off by default; enable it deliberately:
+RUN_LIVE_CONSOLE=1 FIREWORKS_API_KEY=... \
+  uv run uvicorn bossyk_sandbox.console.app:app --port 8011   # then "Run live"
 ```
 
 ## Setup
@@ -191,7 +203,9 @@ lives somewhere other than `~/Projects/bossyk`.
 
 Fill in `.env` for any billable/live run: `FIREWORKS_API_KEY` (agent +
 deepseek adversary), `ANTHROPIC_API_KEY` (fable adversary), `FIREWORKS_MODEL`
-(override the agent model, default `kimi-k2p6`).
+(override the agent model, default `kimi-k2p6`). The **live console** ("Run
+live") additionally requires `RUN_LIVE_CONSOLE=1` — it is off by default even
+when a key is present, so it can never bill by accident (see **Console & demo**).
 
 ## Deterministic checks
 
@@ -224,7 +238,7 @@ sibling checkouts materialised alongside this repo.
 | `scripts/h4_report.py` | none — deterministic recompute from committed phase2c data | `docs/bench_output/phase3_h4.json` |
 | `scripts/smactr_demo.py` | none — deterministic, idempotent | `docs/bench_output/phase4_smactr.json`, `docs/bench_output/threat_model.json`, `probes/regression/retail-smactr.json` |
 | `scripts/h1_crossdomain_merge.py <per-domain-json>... --output <path>` | none — merges per-domain H1 files into a cross-domain rollup | regenerates `phase2b_crossdomain_h1.json` byte-identically from `phase2a_h1.json` + `phase2b_h1_retail.json` |
-| `uv run uvicorn bossyk_sandbox.console.app:app --port 8011` | none (build `frontend/dist` first) | the console + SPA at `/app` — evidence browser & control-room replay (`#/control_room`), session-scoped. See **Console & demo**. |
+| `uv run uvicorn bossyk_sandbox.console.app:app --port 8011` | Run replay: none (build `frontend/dist` first). Run live: **`RUN_LIVE_CONSOLE=1` + `FIREWORKS_API_KEY`** (billable) | the console + SPA at `/app` — evidence browser & control-room replay (`#/control_room`); Run live drives the real agent (off unless the flag is set). See **Console & demo**. |
 
 ## Benchmark artifacts
 

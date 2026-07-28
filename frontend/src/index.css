@@ -1020,6 +1020,17 @@ button {
   cursor: default;
 }
 
+.control-room__actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.control-room__run--ghost {
+  background: transparent;
+  color: var(--accent);
+}
+
 .control-room__placeholder {
   font-size: 13px;
   color: var(--ink-faint);

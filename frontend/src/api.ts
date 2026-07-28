@@ -190,12 +190,15 @@ export interface ReplayStepEvent {
 export interface ReplayCompleteEvent {
   type: "session_complete";
   step_count: number;
-  harm_prevented: number;
-  harm_delta: number;
-  preset: string;
-  source_artifact: string;
-  story_claim: string;
   hitl_queue: ReplayHitlItem[];
+  // true on a live agent run; absent on a preset replay.
+  live?: boolean;
+  // Present only on a preset replay (a live run has no committed artifact).
+  harm_prevented?: number;
+  harm_delta?: number;
+  preset?: string;
+  source_artifact?: string;
+  story_claim?: string;
 }
 
 export type ReplayEvent = ReplayHeldEvent | ReplayStepEvent | ReplayCompleteEvent;
@@ -207,8 +210,7 @@ export function replaySocketUrl(): string {
   return `${proto}://${window.location.host}/ws`;
 }
 
-export async function startReplay(presetId: string, pacingS: number): Promise<ReplayStartResult> {
-  const path = `/session/replay?preset_id=${encodeURIComponent(presetId)}&pacing_s=${pacingS}`;
+async function postStart(path: string): Promise<ReplayStartResult> {
   let response: Response;
   try {
     response = await fetch(path, { method: "POST" });
@@ -219,6 +221,16 @@ export async function startReplay(presetId: string, pacingS: number): Promise<Re
     throw new ApiError(`${path} -> HTTP ${response.status}`);
   }
   return (await response.json()) as ReplayStartResult;
+}
+
+export function startReplay(presetId: string, pacingS: number): Promise<ReplayStartResult> {
+  return postStart(`/session/replay?preset_id=${encodeURIComponent(presetId)}&pacing_s=${pacingS}`);
+}
+
+/** Start a LIVE agent session. status is "started" | "already_running" |
+ * "no_api_key" (the last when FIREWORKS_API_KEY is unset -- non-billable). */
+export function startLive(pacingS: number): Promise<ReplayStartResult> {
+  return postStart(`/session/live?pacing_s=${pacingS}`);
 }
 
 async function getJson<T>(path: string): Promise<T> {

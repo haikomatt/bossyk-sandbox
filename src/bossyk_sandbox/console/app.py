@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,15 @@ from fastapi.staticfiles import StaticFiles
 from bossyk_sandbox.compliance.attribution import CONTROLS_METADATA_KEY
 from bossyk_sandbox.compliance.frameworks import load_frameworks
 from bossyk_sandbox.console.artifacts import router as artifacts_router
+from bossyk_sandbox.console.live import (
+    advance_to_interrupt,
+    hitl_item,
+    initial_input,
+    resolve_call,
+    resume_after,
+    sort_hitl_queue,
+    thread_config,
+)
 from bossyk_sandbox.console.replay import (
     ReplayPreset,
     build_gate,
@@ -25,6 +35,10 @@ from bossyk_sandbox.evidence.trace import build_trace, make_attested_step
 from bossyk_sandbox.gate import Gate
 from bossyk_sandbox.instruments.base import Verdict
 from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel
+from bossyk_sandbox.runtime.langgraph_agent import (
+    AgentSession,
+    build_weakened_retail_agent_session,
+)
 from bossyk_sandbox.runtime.stub_agent import SCRIPTED_TOOL_CALLS
 
 app = FastAPI(title="bossyk-sandbox console")
@@ -257,6 +271,81 @@ async def _run_replay_session(
         _sessions.pop(session.session_id, None)
 
 
+async def _run_live_session(
+    session: ConsoleSession, agent_session: AgentSession, pacing_s: float = 1.0
+) -> None:
+    """Non-interactive playback of a LIVE agent session: drive the real
+    LangGraph graph (offloading each blocking LLM segment to a thread), derive
+    the resolution mode per held call from the gate's own verdict, and broadcast
+    the same event shape as the preset replay. Enforces the gate — a held call is
+    resumed with its automatic verdict, never a human override — so no blocked
+    tool executes. BILLABLE: `agent_session` runs a real LLM per turn."""
+    graph = agent_session.graph
+    config = thread_config(session.session_id)
+    hitl_queue: list[dict[str, str]] = []
+
+    try:
+        payload = await asyncio.to_thread(advance_to_interrupt, graph, initial_input(), config)
+        i = 0
+        while payload is not None:
+            held = payload
+            verdict, decision = resolve_call(held)
+            await _broadcast(
+                {
+                    "type": "held",
+                    "live": True,
+                    "session_id": session.session_id,
+                    "action_id": f"{session.session_id}-action-{i}",
+                    "tool_name": held["tool_name"],
+                    "arguments": held["arguments"],
+                    "auto_verdict": verdict.value,
+                    "auto_reason": held.get("auto_reason"),
+                    "label": held["tool_name"],
+                    "mode": decision.mode,
+                }
+            )
+            await asyncio.sleep(pacing_s)
+
+            # Advancing runs execute_node for THIS call (appending its attested
+            # step) then pauses at the next held call (or END).
+            payload = await asyncio.to_thread(
+                advance_to_interrupt, graph, resume_after(held), config
+            )
+            step = agent_session.steps[i]
+            step_event: dict[str, Any] = {
+                "type": "step",
+                "tool_name": held["tool_name"],
+                "arguments": held["arguments"],
+                "verdict": verdict.value,
+                "overridden": False,
+                "controls": _display_controls(step),
+                "label": held["tool_name"],
+                "mode": decision.mode,
+                "mode_reason": decision.reason,
+            }
+            if decision.mode == "escalate" and decision.hitl is not None:
+                hitl_queue.append(hitl_item(held, decision))
+                step_event["hitl"] = decision.hitl
+            await _broadcast(step_event)
+            i += 1
+
+        build_trace(
+            trace_id=agent_session.trace_id,
+            agent_config_ref="live:weakened-retail",
+            steps=agent_session.steps,
+        )
+        await _broadcast(
+            {
+                "type": "session_complete",
+                "live": True,
+                "step_count": len(agent_session.steps),
+                "hitl_queue": sort_hitl_queue(hitl_queue),
+            }
+        )
+    finally:
+        _sessions.pop(session.session_id, None)
+
+
 @app.get("/")
 async def index() -> FileResponse:
     return FileResponse(Path(__file__).parent / "index.html")
@@ -289,6 +378,35 @@ async def start_replay_session(preset_id: str, pacing_s: float = 1.0) -> dict[st
         session = ConsoleSession(session_id=session_id)
         _sessions[session_id] = session
         session.task = asyncio.create_task(_run_replay_session(session, preset, pacing_s))
+    return {"status": "started", "session_id": session_id}
+
+
+@app.post("/session/live")
+async def start_live_session(pacing_s: float = 1.0) -> dict[str, str]:
+    """Start a LIVE weakened-retail agent session (modes derived from the real
+    gate + agent, not a preset). BILLABLE: running the agent calls the LLM per
+    turn.
+
+    Hard-gated behind `RUN_LIVE_CONSOLE=1`: a key being present in the
+    environment is never sufficient on its own. Without the flag this returns
+    "live_disabled" BEFORE building the session or resolving any key, so a stray
+    click or POST can never bill. With the flag but no key it returns
+    "no_api_key" (the graph is constructed but never run). Shares the
+    single-session slot."""
+    if os.environ.get("RUN_LIVE_CONSOLE") != "1":
+        return {"status": "live_disabled"}
+
+    async with _sessions_lock:
+        if _sessions:
+            return {"status": "already_running"}
+        try:
+            agent_session = await asyncio.to_thread(build_weakened_retail_agent_session)
+        except RuntimeError:
+            return {"status": "no_api_key"}
+        session_id = uuid4().hex
+        session = ConsoleSession(session_id=session_id)
+        _sessions[session_id] = session
+        session.task = asyncio.create_task(_run_live_session(session, agent_session, pacing_s))
     return {"status": "started", "session_id": session_id}
 
 
