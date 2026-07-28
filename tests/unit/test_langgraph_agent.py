@@ -666,3 +666,27 @@ def test_capture_logprobs_tool_call_turn_without_logprobs_is_zero() -> None:
 
     assert len(session.agent_interp) == 2
     assert all(s.n_tokens == 0 for s in session.agent_interp)
+
+
+def test_capture_prompts_off_by_default_leaves_agent_prompts_empty() -> None:
+    llm = _ScriptedLLM(responses=[AIMessage(content="done")])
+    session = build_airline_agent_session(
+        trace_id="t-prompts-off", llm=llm, environment=_FakeEnvironment(tools=_CountingToolkit())
+    )
+    _run_to_completion(session, thread_id="prompts-off")
+    assert session.agent_prompts == []
+
+
+def test_capture_prompts_records_the_rendered_decision_context_per_turn() -> None:
+    llm = _ScriptedLLM(responses=[AIMessage(content="done")])
+    session = build_airline_agent_session(
+        trace_id="t-prompts-on",
+        llm=llm,
+        environment=_FakeEnvironment(tools=_CountingToolkit(), policy="be compliant"),
+        capture_prompts=True,
+    )
+    _run_to_completion(session, thread_id="prompts-on")
+    assert len(session.agent_prompts) == 1
+    assert len(session.agent_prompts) == len(session.agent_latency)
+    # the rendered context carries the system/policy the agent was given
+    assert "be compliant" in session.agent_prompts[0]
