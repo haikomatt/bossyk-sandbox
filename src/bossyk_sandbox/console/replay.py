@@ -33,13 +33,23 @@ _PRESETS_DIR = _REPO_ROOT / "story" / "replay"
 @dataclass(frozen=True)
 class ReplayTurn:
     """One proposed tool call in a preset. `role` is "baseline" (demo scaffold
-    -- a compliant lookup+cancel pair) or "crossing" (a measured gate-save,
-    identified by `probe_id`)."""
+    -- a compliant lookup+cancel pair), "crossing" (a measured gate-save,
+    identified by `probe_id`), or "demo" (authored mode-demo turn).
+
+    `mode` is the authored resolution mode (allow / redirect / defer / step-up /
+    escalate) layered on the real structural gate verdict -- the enforcement-
+    delivery view of the action, hardcoded per demo scenario. `hitl` is present
+    only on `escalate` turns: the hard-cell item routed to the review queue.
+    `synthetic` flags authored mode-demo turns (not grounded crossings)."""
 
     proposed: ProposedAction
     label: str
     role: str
     probe_id: str | None = None
+    mode: str | None = None
+    mode_reason: str | None = None
+    hitl: dict[str, str] | None = None
+    synthetic: bool = False
 
 
 @dataclass(frozen=True)
@@ -60,10 +70,38 @@ class ReplayResult:
     """The deterministic outcome of driving a preset through the domain gate."""
 
     verdicts: list[str]
+    modes: list[str | None]
     steps: list[Step]
     harm_prevented: int
     harm_delta: int
+    hitl_queue: list[dict[str, str]]
     trace: Trace
+
+
+# Hard-cell HITL queue ordering: most severe first.
+_SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+
+
+def build_hitl_queue(preset: ReplayPreset) -> list[dict[str, str]]:
+    """The escalate turns' hard-cell items, priority-ordered (most severe
+    first) for the HITL review queue. Only `escalate` turns with an `hitl`
+    block contribute."""
+    items: list[dict[str, str]] = []
+    for turn in preset.turns:
+        if turn.mode != "escalate" or turn.hitl is None:
+            continue
+        items.append(
+            {
+                "severity": turn.hitl["severity"],
+                "reason": turn.hitl["reason"],
+                "resolution": turn.hitl["resolution"],
+                "channel": turn.hitl.get("channel", ""),
+                "label": turn.label,
+                "tool_name": turn.proposed.tool_name,
+            }
+        )
+    items.sort(key=lambda item: _SEVERITY_RANK.get(item["severity"], 99))
+    return items
 
 
 def load_replay_preset(preset_id: str) -> ReplayPreset:
@@ -80,6 +118,10 @@ def load_replay_preset(preset_id: str) -> ReplayPreset:
             label=turn["label"],
             role=turn["role"],
             probe_id=turn.get("probe_id"),
+            mode=turn.get("mode"),
+            mode_reason=turn.get("mode_reason"),
+            hitl=turn.get("hitl"),
+            synthetic=turn.get("synthetic", False),
         )
         for turn in data["turns"]
     ]
@@ -144,8 +186,10 @@ def drive_replay(preset: ReplayPreset) -> ReplayResult:
     )
     return ReplayResult(
         verdicts=verdicts,
+        modes=[turn.mode for turn in preset.turns],
         steps=steps,
         harm_prevented=harm_prevented,
         harm_delta=harm_prevented,
+        hitl_queue=build_hitl_queue(preset),
         trace=trace,
     )

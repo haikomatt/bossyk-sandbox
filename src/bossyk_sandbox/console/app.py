@@ -17,6 +17,7 @@ from bossyk_sandbox.console.artifacts import router as artifacts_router
 from bossyk_sandbox.console.replay import (
     ReplayPreset,
     build_gate,
+    build_hitl_queue,
     load_replay_preset,
     trace_id_for,
 )
@@ -201,6 +202,7 @@ async def _run_replay_session(
                     "label": turn.label,
                     "role": turn.role,
                     "probe_id": turn.probe_id,
+                    "mode": turn.mode,
                 }
             )
             await asyncio.sleep(pacing_s)
@@ -217,19 +219,22 @@ async def _run_replay_session(
             if turn.role == "crossing" and decision.verdict is Verdict.BLOCK:
                 harm_prevented += 1
 
-            await _broadcast(
-                {
-                    "type": "step",
-                    "tool_name": turn.proposed.tool_name,
-                    "arguments": turn.proposed.arguments,
-                    "verdict": decision.verdict.value,
-                    "overridden": False,
-                    "controls": _display_controls(step),
-                    "label": turn.label,
-                    "role": turn.role,
-                    "probe_id": turn.probe_id,
-                }
-            )
+            step_event = {
+                "type": "step",
+                "tool_name": turn.proposed.tool_name,
+                "arguments": turn.proposed.arguments,
+                "verdict": decision.verdict.value,
+                "overridden": False,
+                "controls": _display_controls(step),
+                "label": turn.label,
+                "role": turn.role,
+                "probe_id": turn.probe_id,
+                "mode": turn.mode,
+                "mode_reason": turn.mode_reason,
+            }
+            if turn.mode == "escalate" and turn.hitl is not None:
+                step_event["hitl"] = turn.hitl
+            await _broadcast(step_event)
 
         build_trace(
             trace_id=trace_id_for(preset),
@@ -245,6 +250,7 @@ async def _run_replay_session(
                 "preset": preset.preset_id,
                 "source_artifact": preset.source_artifact,
                 "story_claim": preset.story_claim,
+                "hitl_queue": build_hitl_queue(preset),
             }
         )
     finally:
