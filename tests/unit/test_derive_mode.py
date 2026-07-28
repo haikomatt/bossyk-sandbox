@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from bossyk_sandbox.console.modes import derive_mode
 from bossyk_sandbox.instruments.base import Verdict
+from bossyk_sandbox.standing import AuthorityVerdict
 
 # derive_mode maps a REAL gate verdict + the tool's consequence class onto a
 # resolution mode -- the honest upgrade over Slice A's authored per-turn modes.
@@ -67,3 +68,47 @@ def test_defer_is_not_derivable_without_the_standing_model() -> None:
     modes = {derive_mode(t, v).mode for t in tools for v in (Verdict.ALLOW, Verdict.BLOCK)}
     assert "defer" not in modes
     assert modes <= {"allow", "redirect", "step-up", "escalate"}
+
+
+# --- §F: authority-driven ALLOW-path modes -----------------------------------
+
+
+def _over(boundary: str = "cancellation") -> AuthorityVerdict:
+    return AuthorityVerdict("over", "test: over standing", boundary)
+
+
+def _within(boundary: str = "cancellation") -> AuthorityVerdict:
+    return AuthorityVerdict("within", "test: within standing", boundary)
+
+
+def test_over_authority_reversible_now_defers() -> None:
+    # This is the whole point of §F: `defer` becomes derivable.
+    d = derive_mode("cancel_pending_order", Verdict.ALLOW, authority=_over())
+    assert d.mode == "defer"
+    assert d.hitl is None
+
+
+def test_over_authority_irreversible_escalates() -> None:
+    refund = derive_mode("return_delivered_order_items", Verdict.ALLOW, authority=_over("refund"))
+    assert refund.mode == "escalate"
+    assert refund.hitl is not None and refund.hitl["severity"] == "high"
+
+    payment = derive_mode(
+        "modify_pending_order_payment", Verdict.ALLOW, authority=_over("payment_change")
+    )
+    assert payment.mode == "escalate"
+    assert payment.hitl is not None and payment.hitl["severity"] == "critical"
+
+
+def test_within_authority_allows_as_before() -> None:
+    assert derive_mode("cancel_pending_order", Verdict.ALLOW, authority=_within()).mode == "allow"
+
+
+def test_within_authority_pii_still_steps_up() -> None:
+    d = derive_mode("modify_user_address", Verdict.ALLOW, authority=_within("account_change"))
+    assert d.mode == "step-up"
+
+
+def test_not_governed_authority_is_back_compatible() -> None:
+    not_gov = AuthorityVerdict("not_governed", "no grant")
+    assert derive_mode("cancel_pending_order", Verdict.ALLOW, authority=not_gov).mode == "allow"
