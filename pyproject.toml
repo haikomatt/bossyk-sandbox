@@ -68,5 +68,7 @@ ignore_missing_imports = true
 # transformers/torch belong to the optional `bench` extra (model-backed
 # guardrail + auditk NLI); their imports are env-gated at runtime. CI and
 # fresh checkouts type-check without the ~GBs of the bench extra installed.
-module = ["transformers.*", "torch.*"]
+# nnsight/transformer_lens are the interp pod-only capture deps -- installed on
+# the RunPod pod, never locally; scripts/interp_capture.py imports nnsight lazily.
+module = ["transformers.*", "torch.*", "nnsight.*", "transformer_lens.*"]
 ignore_missing_imports = true
