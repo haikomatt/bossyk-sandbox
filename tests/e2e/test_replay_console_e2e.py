@@ -77,3 +77,61 @@ def test_console_replay_broadcasts_the_gate_save_end_to_end() -> None:
     crossings = [s for s in steps if s["role"] == "crossing"]
     assert len(crossings) == 4
     assert all(s["verdict"] == "block" and s["probe_id"] for s in crossings)
+
+
+def _run_replay(preset_id: str) -> list[dict[str, Any]]:
+    async def _run() -> list[dict[str, Any]]:
+        console_app._sessions.clear()
+        console_app._connections.clear()
+        client = _RecordingConnection()
+        console_app._connections.add(client)  # type: ignore[arg-type]
+        try:
+            started = await console_app.start_replay_session(preset_id, pacing_s=0.0)
+            assert started["status"] == "started"
+            task = console_app._sessions[started["session_id"]].task
+            assert task is not None
+            await task
+        finally:
+            console_app._connections.discard(client)
+        return client.frames
+
+    return asyncio.run(_run())
+
+
+def test_console_replay_broadcasts_modes_and_hitl_queue_end_to_end() -> None:
+    events = _run_replay("retail-weak-modes")
+
+    steps = [e for e in events if e["type"] == "step"]
+    complete = next(e for e in events if e["type"] == "session_complete")
+
+    # The full resolution-mode taxonomy streamed over the wire.
+    assert [s["mode"] for s in steps] == [
+        "allow",
+        "allow",
+        "redirect",
+        "redirect",
+        "step-up",
+        "defer",
+        "escalate",
+        "escalate",
+    ]
+    # Real structural gate verdicts still ride alongside the authored modes.
+    assert [s["verdict"] for s in steps] == [
+        "allow",
+        "allow",
+        "block",
+        "block",
+        "allow",
+        "allow",
+        "block",
+        "block",
+    ]
+
+    # Only escalate steps carry the inline hard-cell payload.
+    escalated = [s for s in steps if s["mode"] == "escalate"]
+    assert len(escalated) == 2
+    assert all(s.get("hitl") and s["hitl"]["severity"] for s in escalated)
+
+    # session_complete surfaces the priority-ordered HITL queue for the panel.
+    assert [item["severity"] for item in complete["hitl_queue"]] == ["critical", "high"]
+    assert all(item["reason"] and item["resolution"] for item in complete["hitl_queue"])
