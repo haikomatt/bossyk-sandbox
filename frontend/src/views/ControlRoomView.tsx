@@ -115,21 +115,65 @@ function VerdictChip({ verdict }: { verdict: string }) {
   return <span className={`ev-verdict ev-verdict--${verdict}`}>{verdict.toUpperCase()}</span>;
 }
 
+// The substrate + gated controls fire on every attested action (it was
+// logged, signed, and passed the risk gate), so they carry no per-action
+// signal -- fold them into one "audit baseline" pill and surface inline only
+// the controls that are specific to THIS action.
+const BASELINE_BASES = new Set(["substrate", "verdict:gated"]);
+
+/** Plain-English gloss for a control's `basis` (why the control applies). */
+function basisLabel(basis: string): string {
+  switch (basis) {
+    case "substrate":
+      return "logged & signed";
+    case "verdict:gated":
+      return "passed risk gate";
+    case "verdict:blocked":
+      return "remediated · blocked";
+    case "verdict:overridden":
+      return "human oversight";
+    case "boundary:cancellation":
+      return "consumer-duty boundary";
+    case "data-class:personal-data":
+      return "personal-data access";
+    default:
+      return basis;
+  }
+}
+
+function ControlChip({ control }: { control: ReplayControl }) {
+  return (
+    <span className="framework-tag" title={`${control.title} — ${control.ref}`}>
+      <span className="framework-tag__name">{control.framework}</span>
+      <span className="framework-tag__ref">{control.control}</span>
+      <span className="ev-basis">{basisLabel(control.basis)}</span>
+    </span>
+  );
+}
+
 function ControlPills({ controls }: { controls: ReplayControl[] }) {
   if (controls.length === 0) return null;
+  const baseline = controls.filter((control) => BASELINE_BASES.has(control.basis));
+  const specific = controls.filter((control) => !BASELINE_BASES.has(control.basis));
   return (
-    <div className="ev-tags">
-      {controls.map((control) => (
-        <span
-          key={`${control.ref}:${control.basis}`}
-          className="framework-tag"
-          title={control.title}
-        >
-          <span className="framework-tag__name">{control.framework}</span>
-          <span className="framework-tag__ref">{control.control}</span>
-          <span className="ev-basis">{control.basis}</span>
-        </span>
-      ))}
+    <div className="cr-controls">
+      {baseline.length > 0 && (
+        <details className="cr-baseline">
+          <summary className="cr-baseline__summary">audit baseline ✓ ({baseline.length})</summary>
+          <div className="ev-tags cr-baseline__tags">
+            {baseline.map((control) => (
+              <ControlChip key={`${control.ref}:${control.basis}`} control={control} />
+            ))}
+          </div>
+        </details>
+      )}
+      {specific.length > 0 && (
+        <div className="ev-tags">
+          {specific.map((control) => (
+            <ControlChip key={`${control.ref}:${control.basis}`} control={control} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -218,6 +262,14 @@ export function ControlRoomView() {
         <p className="control-room__placeholder">
           Press “Run replay” to watch each proposed tool call be held, scored by the gate, and
           attested — allowed baseline first, then the four skip-lookup crossings the gate blocks.
+        </p>
+      )}
+
+      {turns.length > 0 && (
+        <p className="cr-legend">
+          Each governed action is tagged with the compliance controls it discharges. The folded{" "}
+          <strong>audit baseline</strong> (logging + risk gate) applies to every action; the chips
+          beside it are specific to that action.
         </p>
       )}
 
