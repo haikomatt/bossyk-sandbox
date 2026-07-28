@@ -32,6 +32,11 @@ as a fast-path rule; retail prevention rose 5/12 → 6/12, replay-tested
 against a real regression probe. Full write-up and caveats:
 `docs/phase5-h1-h5-synthesis.md`.
 
+Plus a **demo console** at `/app`: an evidence browser (every number links to a
+committed artifact) and a **control room** that replays a governance session
+turn-by-turn with resolution modes and a hard-cell HITL queue — see **Console &
+demo** below.
+
 ## Architecture
 
 ```
@@ -83,15 +88,26 @@ src/bossyk_sandbox/
     smactr.py                # Sense/Analyse/Control/Test/Respond loop: FMEA
                               #   severity, derived constraints, threat-model
   console/
-    app.py                   # FastAPI + WS live log; session-scoped (keyed by
-                              #   session_id, so concurrent runs don't clobber)
+    app.py                   # FastAPI + WS; session-scoped stub session +
+                              #   non-interactive preset replay (POST /session/replay)
+    replay.py                # committed preset replays: loader + pure drive_replay;
+                              #   resolution modes + hard-cell HITL queue
+    artifacts.py             # /api story/artifacts/frameworks/manifests for the SPA
     index.html
+frontend/                    # Vite + React SPA (evidence browser + control room);
+                              #   mounted at /app when frontend/dist exists (not committed)
+  src/views/                 # Story/Evidence/Figures/Docs + ControlRoomView (replay)
+story/
+  story.yaml                 # narrated, evidence-graded, lint-checked claim set
+  replay/                    # committed demo replay presets (retail-weak-dir1, -modes)
 tests/
   unit/                      # one test module per component above
   e2e/
     test_walking_skeleton.py       # env-gated: RUN_SANDBOX_E2E=1
     test_multi_instrument_e2e.py   # env-gated: RUN_SANDBOX_E2E=1
-    test_probe_grid_e2e.py         # env-gated: RUN_SANDBOX_E2E=1
+    test_probe_grid_e2e.py         # offline (ungated)
+    test_live_h2h4_e2e.py          # offline (ungated)
+    test_replay_console_e2e.py     # offline (ungated): preset replay + modes/HITL
 scripts/
   live_demo.py               # live LangGraph airline demo (billable)
   benchmark_run.py           # real drift+policy judges over scenarios (billable)
@@ -117,6 +133,40 @@ builder, Ed25519 signer/verifier, drift scorer), `tau2-bench` (airline +
 retail domains' tools/policy/tasks), `bossyk`'s `PolicyAwareJudge` (used
 unmodified as the policy instrument). None of `auditk`, `auditk-spec`, or
 `bossyk` were modified by this repo.
+
+## Console & demo
+
+A FastAPI console (`console/app.py`) serves a React SPA (`frontend/`) at `/app`:
+an **evidence browser** (story claims, signed evidence packs, benchmark
+artifacts, figures — every number links to a committed artifact) and a **control
+room** that replays a governance session turn-by-turn.
+
+The control room plays a **committed preset** (`story/replay/*.json`) through the
+real domain gate over the existing `held → step → session_complete` websocket
+shape:
+
+- `retail-weak-dir1` — the dir-1 gate-save: an under-specified agent skips its
+  lookup and the two-speed gate blocks every crossing pre-execution (`harm 4→0`).
+  Each crossing traces to a `reached && prevented` row in
+  `docs/bench_output/live_h2h4_retail_weak.json`.
+- `retail-weak-modes` — the enforcement-delivery taxonomy: each turn resolves
+  into a **mode** (allow / redirect / defer / step-up / escalate) and the
+  irreversible over-authority actions land in a priority-ordered **HITL review
+  queue**. (Design: `enforcement-delivery-model-v0.1` in the vault.)
+
+**Honesty:** the structural gate verdicts are recomputed live from the real gate;
+the resolution `mode` and `hitl` blocks are authored demo choreography
+(hardcoded per scenario, flagged `synthetic`) — the replay is a deterministic
+reconstruction, not a captured live-LLM transcript. The live agent-driven console
+(swapping the driver to `runtime/langgraph_agent`) is billable and deferred.
+
+Run it:
+
+```bash
+(cd frontend && npm install && npm run build)   # frontend/dist is not committed
+uv run uvicorn bossyk_sandbox.console.app:app --port 8011
+# open http://localhost:8011/app/#/control_room  ->  "Run replay"
+```
 
 ## Setup
 
@@ -151,7 +201,7 @@ uv run mypy --explicit-package-bases src/ tests/
 uv run pytest tests/ -x --no-cov -q
 ```
 
-Current state: ruff clean; mypy 0 errors (78 source files); pytest **239
+Current state: ruff clean; mypy 0 errors (123 source files); pytest **543
 passed, 4 skipped**.
 
 ```bash
@@ -159,7 +209,7 @@ passed, 4 skipped**.
 RUN_SANDBOX_E2E=1 uv run pytest tests/ -x --no-cov -q
 ```
 
-Current state: **241 passed, 2 skipped**.
+Current state: **545 passed, 2 skipped**.
 
 CI (`.github/workflows/ci.yml`) runs all of the above on push/PR, with the
 sibling checkouts materialised alongside this repo.
@@ -174,7 +224,7 @@ sibling checkouts materialised alongside this repo.
 | `scripts/h4_report.py` | none — deterministic recompute from committed phase2c data | `docs/bench_output/phase3_h4.json` |
 | `scripts/smactr_demo.py` | none — deterministic, idempotent | `docs/bench_output/phase4_smactr.json`, `docs/bench_output/threat_model.json`, `probes/regression/retail-smactr.json` |
 | `scripts/h1_crossdomain_merge.py <per-domain-json>... --output <path>` | none — merges per-domain H1 files into a cross-domain rollup | regenerates `phase2b_crossdomain_h1.json` byte-identically from `phase2a_h1.json` + `phase2b_h1_retail.json` |
-| `uv run uvicorn bossyk_sandbox.console.app:app --reload` | none for the stub session | the live console — session-scoped since the remediation pass |
+| `uv run uvicorn bossyk_sandbox.console.app:app --port 8011` | none (build `frontend/dist` first) | the console + SPA at `/app` — evidence browser & control-room replay (`#/control_room`), session-scoped. See **Console & demo**. |
 
 ## Benchmark artifacts
 
