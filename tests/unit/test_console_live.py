@@ -117,10 +117,32 @@ def test_live_session_frees_the_slot_when_done(monkeypatch: pytest.MonkeyPatch) 
     assert asyncio.run(_drive()) is False
 
 
-def test_start_live_session_reports_no_api_key_without_running_billably(
+def test_start_live_session_is_disabled_without_the_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The hard gate: without RUN_LIVE_CONSOLE=1 the endpoint must refuse BEFORE
+    # building the session or resolving any key, so a key in the environment is
+    # never sufficient and a stray click/POST can never bill.
+    monkeypatch.delenv("RUN_LIVE_CONSOLE", raising=False)
+
+    def _must_not_build(**_kwargs: Any) -> Step:
+        raise AssertionError("live session must not be built when live is disabled")
+
+    monkeypatch.setattr(console_app, "build_weakened_retail_agent_session", _must_not_build)
+
+    async def _drive() -> dict[str, str]:
+        return await console_app.start_live_session(pacing_s=0.0)
+
+    result = asyncio.run(_drive())
+    assert result == {"status": "live_disabled"}
+    assert not console_app._sessions
+
+
+def test_start_live_session_reports_no_api_key_when_enabled_but_keyless(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_broadcast(monkeypatch)
+    monkeypatch.setenv("RUN_LIVE_CONSOLE", "1")
 
     def _raise(**_kwargs: Any) -> Step:
         raise RuntimeError("No agent API key")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -384,8 +385,17 @@ async def start_replay_session(preset_id: str, pacing_s: float = 1.0) -> dict[st
 async def start_live_session(pacing_s: float = 1.0) -> dict[str, str]:
     """Start a LIVE weakened-retail agent session (modes derived from the real
     gate + agent, not a preset). BILLABLE: running the agent calls the LLM per
-    turn. Returns "no_api_key" (non-billable) when no agent key is configured —
-    the graph is constructed but never run. Shares the single-session slot."""
+    turn.
+
+    Hard-gated behind `RUN_LIVE_CONSOLE=1`: a key being present in the
+    environment is never sufficient on its own. Without the flag this returns
+    "live_disabled" BEFORE building the session or resolving any key, so a stray
+    click or POST can never bill. With the flag but no key it returns
+    "no_api_key" (the graph is constructed but never run). Shares the
+    single-session slot."""
+    if os.environ.get("RUN_LIVE_CONSOLE") != "1":
+        return {"status": "live_disabled"}
+
     async with _sessions_lock:
         if _sessions:
             return {"status": "already_running"}

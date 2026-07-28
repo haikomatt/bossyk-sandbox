@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReplayCompleteEvent, ReplayControl, ReplayEvent, ReplayHitlItem } from "../api";
-import { replaySocketUrl, startReplay } from "../api";
+import { replaySocketUrl, startLive, startReplay } from "../api";
 import { navigate } from "../router";
+
+type RunKind = "replay" | "live";
 
 const PRESET_ID = "retail-weak-modes";
 const PACING_S = 1.2;
@@ -50,32 +52,40 @@ function useReplaySocket() {
   const [error, setError] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
-  const run = useCallback(() => {
-    if (status === "running") return;
-    setTurns([]);
-    setHitlQueue([]);
-    setSummary(null);
-    setError(null);
-    setStatus("running");
+  const run = useCallback(
+    (kind: RunKind) => {
+      if (status === "running") return;
+      setTurns([]);
+      setHitlQueue([]);
+      setSummary(null);
+      setError(null);
+      setStatus("running");
 
-    const ws = new WebSocket(replaySocketUrl());
-    wsRef.current = ws;
+      const ws = new WebSocket(replaySocketUrl());
+      wsRef.current = ws;
 
-    ws.onopen = () => {
-      startReplay(PRESET_ID, PACING_S)
-        .then((result) => {
-          if (result.status !== "started") {
-            setError(`replay could not start: ${result.status}`);
+      ws.onopen = () => {
+        const starting = kind === "live" ? startLive(PACING_S) : startReplay(PRESET_ID, PACING_S);
+        starting
+          .then((result) => {
+            if (result.status !== "started") {
+              const messages: Record<string, string> = {
+                live_disabled:
+                  "Live runs are disabled — set RUN_LIVE_CONSOLE=1 (and an agent key) in the console environment to enable.",
+                no_api_key:
+                  "Live run needs an agent key — set FIREWORKS_API_KEY in the console environment, then Run live again.",
+              };
+              setError(messages[result.status] ?? `${kind} could not start: ${result.status}`);
+              setStatus("error");
+              ws.close();
+            }
+          })
+          .catch((err: unknown) => {
+            setError(err instanceof Error ? err.message : String(err));
             setStatus("error");
             ws.close();
-          }
-        })
-        .catch((err: unknown) => {
-          setError(err instanceof Error ? err.message : String(err));
-          setStatus("error");
-          ws.close();
-        });
-    };
+          });
+      };
 
     ws.onmessage = (message) => {
       const event = JSON.parse(message.data as string) as ReplayEvent;
@@ -282,10 +292,29 @@ function HitlQueuePanel({ queue }: { queue: ReplayHitlItem[] }) {
 
 function CompletionBanner({ summary }: { summary: ReplayCompleteEvent }) {
   const escalated = summary.hitl_queue.length;
+
+  if (summary.live) {
+    return (
+      <div className="cr-summary">
+        <div className="cr-summary__headline">
+          Live run · {summary.step_count} actions governed · {escalated} escalated to human review
+        </div>
+        <p className="cr-summary__body">
+          A live under-specified agent was driven through the real gate. Each resolution mode was{" "}
+          <strong>derived from the gate verdict</strong>, not authored: skip-lookup writes{" "}
+          <strong>redirected</strong>, PII access <strong>stepped up</strong> to the customer, and only
+          irreversible over-authority actions <strong>escalated</strong> to the queue. (<code>defer</code>{" "}
+          awaits the standing-authority model.)
+        </p>
+      </div>
+    );
+  }
+
+  const artifact = summary.source_artifact;
   return (
     <div className="cr-summary">
       <div className="cr-summary__headline">
-        {summary.harm_prevented} harmful actions stopped pre-execution · {escalated} escalated to
+        {summary.harm_prevented ?? 0} harmful actions stopped pre-execution · {escalated} escalated to
         human review
       </div>
       <p className="cr-summary__body">
@@ -296,16 +325,20 @@ function CompletionBanner({ summary }: { summary: ReplayCompleteEvent }) {
         live run used; the resolution modes are the demo scenario.
       </p>
       <div className="cr-summary__refs">
-        <button type="button" className="artifact-ref artifact-ref--link" onClick={() => navigate("story")}>
-          story claim: {summary.story_claim}
-        </button>
-        <button
-          type="button"
-          className="artifact-ref artifact-ref--link"
-          onClick={() => navigate("bench_output", summary.source_artifact.split("/").pop() ?? "")}
-        >
-          source: {summary.source_artifact}
-        </button>
+        {summary.story_claim && (
+          <button type="button" className="artifact-ref artifact-ref--link" onClick={() => navigate("story")}>
+            story claim: {summary.story_claim}
+          </button>
+        )}
+        {artifact && (
+          <button
+            type="button"
+            className="artifact-ref artifact-ref--link"
+            onClick={() => navigate("bench_output", artifact.split("/").pop() ?? "")}
+          >
+            source: {artifact}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -323,12 +356,28 @@ export function ControlRoomView() {
           <p className="control-room__sub">
             An under-specified retail agent, driven through the real gate. Each action resolves into a
             mode — <strong>allow · redirect · defer · step-up · escalate</strong> — and only the
-            hard-cell escalations reach the review queue on the right.
+            hard-cell escalations reach the review queue on the right. <em>Replay</em> plays a committed
+            scenario; <em>Run live</em> drives the real agent (needs an agent key).
           </p>
         </div>
-        <button type="button" className="control-room__run" onClick={run} disabled={status === "running"}>
-          {status === "running" ? "Replaying…" : status === "idle" ? "Run replay" : "Replay again"}
-        </button>
+        <div className="control-room__actions">
+          <button
+            type="button"
+            className="control-room__run"
+            onClick={() => run("replay")}
+            disabled={status === "running"}
+          >
+            {status === "running" ? "Running…" : "Run replay"}
+          </button>
+          <button
+            type="button"
+            className="control-room__run control-room__run--ghost"
+            onClick={() => run("live")}
+            disabled={status === "running"}
+          >
+            Run live
+          </button>
+        </div>
       </header>
 
       {error && <p className="control-room__error">{error}</p>}
