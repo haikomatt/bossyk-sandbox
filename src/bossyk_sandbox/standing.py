@@ -50,6 +50,20 @@ class AuthorityVerdict:
     boundary: str | None = None
 
 
+def retail_standing_grants() -> dict[str, StandingGrant]:
+    """The committed per-domain (retail) standing policy (decision #2). A demo
+    default, not a real delegated-authority config: a session may cancel a
+    couple of orders and issue one refund within authority; a further cancel is
+    deferred (reversible), a further refund escalates (irreversible), and
+    payment changes have no standing at all (any one escalates)."""
+    return {
+        "cancellation": StandingGrant(boundary="cancellation", max_count=2),
+        "refund": StandingGrant(boundary="refund", max_count=1),
+        "account_change": StandingGrant(boundary="account_change", max_count=1),
+        "payment_change": StandingGrant(boundary="payment_change", max_count=0),
+    }
+
+
 def boundary_for(tool_name: str) -> str | None:
     """The consequence boundary a tool acts on, or None if it is not a governed
     write (e.g. a read/lookup)."""

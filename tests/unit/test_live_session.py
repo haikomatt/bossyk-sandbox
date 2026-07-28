@@ -78,6 +78,43 @@ def test_run_live_session_derives_modes_from_real_gate_verdicts() -> None:
     assert len(result.steps) == 5
 
 
+def _standing_scenario_llm() -> _FakeLLM:
+    # Three looked-up cancels (each gate-ALLOWed) so the 3rd consumes standing
+    # authority beyond max_count=2 -> the live path derives `defer`.
+    calls = [
+        {"name": "get_order_details", "args": {"order_id": "#A"}, "id": "l1"},
+        {"name": "cancel_pending_order", "args": {"order_id": "#A"}, "id": "c1"},
+        {"name": "get_order_details", "args": {"order_id": "#B"}, "id": "l2"},
+        {"name": "cancel_pending_order", "args": {"order_id": "#B"}, "id": "c2"},
+        {"name": "get_order_details", "args": {"order_id": "#C"}, "id": "l3"},
+        {"name": "cancel_pending_order", "args": {"order_id": "#C"}, "id": "c3"},
+    ]
+    return _FakeLLM([AIMessage(content="", tool_calls=calls), AIMessage(content="done")])
+
+
+def test_run_live_session_defers_the_over_authority_cancel() -> None:
+    from bossyk_sandbox.standing import StandingGrant
+
+    session = build_retail_agent_session(llm=_standing_scenario_llm(), environment=_FakeEnv())
+    grants = {"cancellation": StandingGrant("cancellation", max_count=2)}
+
+    result = run_live_session(session, grants=grants)
+
+    # All six calls are gate-ALLOWed (each cancel has its prior lookup); the
+    # first two cancels are within standing (allow), the third is over -> defer.
+    assert result.verdicts == ["allow"] * 6
+    assert result.modes == ["allow", "allow", "allow", "allow", "allow", "defer"]
+    assert result.hitl_queue == []  # defer is reversible; nothing escalates
+
+
+def test_run_live_session_without_grants_never_defers() -> None:
+    # Back-compat: no standing policy -> the ALLOW path keeps pre-§F behaviour.
+    session = build_retail_agent_session(llm=_standing_scenario_llm(), environment=_FakeEnv())
+    result = run_live_session(session)  # grants=None
+    assert "defer" not in result.modes
+    assert result.modes == ["allow"] * 6
+
+
 def test_run_live_session_enforces_the_gate_no_blocked_tool_runs() -> None:
     # The driver resumes each interrupt with the gate's own verdict (no human
     # override), so a blocked write is never executed by the tau2 toolkit.

@@ -4,7 +4,7 @@ import asyncio
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from auditk.schema import Step
@@ -17,6 +17,7 @@ from bossyk_sandbox.compliance.frameworks import load_frameworks
 from bossyk_sandbox.console.artifacts import router as artifacts_router
 from bossyk_sandbox.console.live import (
     advance_to_interrupt,
+    authority_for,
     hitl_item,
     initial_input,
     resolve_call,
@@ -33,13 +34,14 @@ from bossyk_sandbox.console.replay import (
 )
 from bossyk_sandbox.evidence.trace import build_trace, make_attested_step
 from bossyk_sandbox.gate import Gate
-from bossyk_sandbox.instruments.base import Verdict
+from bossyk_sandbox.instruments.base import ProposedAction, Verdict
 from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel
 from bossyk_sandbox.runtime.langgraph_agent import (
     AgentSession,
     build_weakened_retail_agent_session,
 )
 from bossyk_sandbox.runtime.stub_agent import SCRIPTED_TOOL_CALLS
+from bossyk_sandbox.standing import retail_standing_grants
 
 app = FastAPI(title="bossyk-sandbox console")
 app.include_router(artifacts_router)
@@ -283,13 +285,19 @@ async def _run_live_session(
     graph = agent_session.graph
     config = thread_config(session.session_id)
     hitl_queue: list[dict[str, str]] = []
+    grants = retail_standing_grants()  # §F: committed per-domain standing policy
+    history: list[ProposedAction] = []  # allowed actions consume standing authority
 
     try:
         payload = await asyncio.to_thread(advance_to_interrupt, graph, initial_input(), config)
         i = 0
         while payload is not None:
             held = payload
-            verdict, decision = resolve_call(held)
+            verdict, decision = resolve_call(held, authority=authority_for(held, history, grants))
+            if verdict is Verdict.ALLOW:
+                history.append(
+                    ProposedAction(str(held["tool_name"]), cast(dict[str, Any], held["arguments"]))
+                )
             await _broadcast(
                 {
                     "type": "held",

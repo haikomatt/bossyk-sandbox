@@ -24,8 +24,9 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 
 from bossyk_sandbox.console.modes import SEVERITY_RANK, ModeDecision, derive_mode
-from bossyk_sandbox.instruments.base import Verdict
+from bossyk_sandbox.instruments.base import ProposedAction, Verdict
 from bossyk_sandbox.runtime.langgraph_agent import AgentSession, AgentState
+from bossyk_sandbox.standing import AuthorityVerdict, StandingGrant, evaluate_authority
 
 _DEFAULT_USER_MESSAGE = "Hi, I need help with a couple of orders on my account."
 
@@ -75,10 +76,28 @@ def advance_to_interrupt(graph: Any, inp: Any, config: RunnableConfig) -> dict[s
     return payload
 
 
-def resolve_call(payload: dict[str, object]) -> tuple[Verdict, ModeDecision]:
+def _proposed_of(payload: dict[str, object]) -> ProposedAction:
+    return ProposedAction(str(payload["tool_name"]), cast(dict[str, Any], payload["arguments"]))
+
+
+def authority_for(
+    payload: dict[str, object],
+    history: list[ProposedAction],
+    grants: dict[str, StandingGrant] | None,
+) -> AuthorityVerdict | None:
+    """The §F standing verdict for a held call, or None when no policy is set
+    (back-compat: `derive_mode` then keeps its pre-§F ALLOW behaviour)."""
+    if not grants:
+        return None
+    return evaluate_authority(_proposed_of(payload), history, grants)
+
+
+def resolve_call(
+    payload: dict[str, object], *, authority: AuthorityVerdict | None = None
+) -> tuple[Verdict, ModeDecision]:
     """The gate verdict and derived resolution mode for one held call."""
     verdict = Verdict(str(payload["auto_verdict"]))
-    return verdict, derive_mode(str(payload["tool_name"]), verdict)
+    return verdict, derive_mode(str(payload["tool_name"]), verdict, authority=authority)
 
 
 def hitl_item(payload: dict[str, object], decision: ModeDecision) -> dict[str, str]:
@@ -102,26 +121,35 @@ def run_live_session(
     *,
     thread_id: str = "live-session-1",
     user_message: str = _DEFAULT_USER_MESSAGE,
+    grants: dict[str, StandingGrant] | None = None,
 ) -> LiveResult:
     """Drive a live session to completion synchronously (used offline in tests
-    with a fake LLM). The console's async wrapper reuses the same helpers."""
+    with a fake LLM). The console's async wrapper reuses the same helpers.
+
+    `grants` is the §F standing policy (None = no authority model, pre-§F
+    behaviour). Authority is consumed by ALLOWed actions: a boundary's count is
+    the session's prior *allowed* actions at that boundary."""
     graph = session.graph
     config = thread_config(thread_id)
 
     verdicts: list[str] = []
     modes: list[str] = []
     hitl_queue: list[dict[str, str]] = []
+    history: list[ProposedAction] = []
 
     inp: Any = initial_input(user_message)
     while True:
         payload = advance_to_interrupt(graph, inp, config)
         if payload is None:
             break  # the graph reached END with no further held call
-        verdict, decision = resolve_call(payload)
+        authority = authority_for(payload, history, grants)
+        verdict, decision = resolve_call(payload, authority=authority)
         verdicts.append(verdict.value)
         modes.append(decision.mode)
         if decision.mode == "escalate" and decision.hitl is not None:
             hitl_queue.append(hitl_item(payload, decision))
+        if verdict is Verdict.ALLOW:
+            history.append(_proposed_of(payload))
         inp = resume_after(payload)
 
     return LiveResult(
