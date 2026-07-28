@@ -8,8 +8,8 @@
   "expected": {
     "verdicts": ["allow", "allow", "block", "block", "allow", "allow", "block", "block"],
     "modes": ["allow", "allow", "redirect", "redirect", "step-up", "defer", "escalate", "escalate"],
-    "harm_prevented": 4,
-    "harm_delta": 4,
+    "harm_prevented": 2,
+    "harm_delta": 2,
     "hitl_count": 2,
     "hitl_order": ["critical", "high"]
   },

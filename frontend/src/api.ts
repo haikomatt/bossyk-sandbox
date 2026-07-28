@@ -144,6 +144,16 @@ export interface ReplayControl {
   title: string;
 }
 
+/** A hard-cell item routed to the HITL review queue (an `escalate` turn). */
+export interface ReplayHitlItem {
+  severity: string; // critical | high | medium | low
+  reason: string;
+  resolution: string;
+  channel: string;
+  label: string;
+  tool_name: string;
+}
+
 export interface ReplayHeldEvent {
   type: "held";
   replay: boolean;
@@ -157,6 +167,7 @@ export interface ReplayHeldEvent {
   label: string;
   role: string;
   probe_id: string | null;
+  mode: string | null;
 }
 
 export interface ReplayStepEvent {
@@ -169,6 +180,11 @@ export interface ReplayStepEvent {
   label: string;
   role: string;
   probe_id: string | null;
+  // Authored resolution mode (allow / redirect / defer / step-up / escalate)
+  // layered on the real structural verdict; hitl present only on escalate.
+  mode: string | null;
+  mode_reason: string | null;
+  hitl?: ReplayHitlItem;
 }
 
 export interface ReplayCompleteEvent {
@@ -179,6 +195,7 @@ export interface ReplayCompleteEvent {
   preset: string;
   source_artifact: string;
   story_claim: string;
+  hitl_queue: ReplayHitlItem[];
 }
 
 export type ReplayEvent = ReplayHeldEvent | ReplayStepEvent | ReplayCompleteEvent;
