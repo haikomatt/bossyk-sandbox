@@ -1,0 +1,76 @@
+"""Hermetic tests for interp.logprob_metrics -- pure math, no I/O, no model."""
+
+from __future__ import annotations
+
+import math
+
+import pytest
+
+from bossyk_sandbox.interp.logprob_metrics import (
+    StepUncertainty,
+    TokenLogprob,
+    margin,
+    summarize,
+    surprisal,
+    top_k_entropy,
+)
+
+LN2 = math.log(2.0)
+
+
+def test_surprisal_is_negative_logprob() -> None:
+    assert surprisal(TokenLogprob(logprob=-2.0)) == 2.0
+    assert surprisal(TokenLogprob(logprob=0.0)) == 0.0  # certain token, zero surprise
+
+
+def test_top_k_entropy_uniform_over_two_is_ln2() -> None:
+    # p = [0.5, 0.5] -> entropy ln 2
+    tok = TokenLogprob(logprob=math.log(0.5), top_logprobs=(math.log(0.5), math.log(0.5)))
+    assert top_k_entropy(tok) == pytest.approx(LN2)
+
+
+def test_top_k_entropy_renormalises_truncated_topk() -> None:
+    # Visible mass sums to 0.6, not 1.0; renormalise to [0.5, 0.5] -> ln 2.
+    tok = TokenLogprob(logprob=math.log(0.3), top_logprobs=(math.log(0.3), math.log(0.3)))
+    assert top_k_entropy(tok) == pytest.approx(LN2)
+
+
+def test_top_k_entropy_peaked_distribution_is_near_zero() -> None:
+    tok = TokenLogprob(logprob=math.log(0.999), top_logprobs=(math.log(0.999), math.log(0.001)))
+    assert top_k_entropy(tok) < 0.05
+
+
+def test_top_k_entropy_no_alternatives_is_zero() -> None:
+    assert top_k_entropy(TokenLogprob(logprob=-0.1)) == 0.0
+
+
+def test_margin_is_top1_minus_top2_regardless_of_input_order() -> None:
+    tok = TokenLogprob(logprob=math.log(0.7), top_logprobs=(math.log(0.3), math.log(0.7)))
+    assert margin(tok) == pytest.approx(math.log(0.7) - math.log(0.3))
+
+
+def test_margin_zero_when_fewer_than_two_alternatives() -> None:
+    assert margin(TokenLogprob(logprob=-0.1, top_logprobs=(-0.1,))) == 0.0
+    assert margin(TokenLogprob(logprob=-0.1)) == 0.0
+
+
+def test_summarize_empty_turn_is_all_zero() -> None:
+    assert summarize([]) == StepUncertainty(0, 0.0, 0.0, 0.0, 0.0)
+
+
+def test_summarize_uses_localising_aggregations() -> None:
+    # One calm token, one high-surprisal near-tie token: max_surprisal and
+    # min_margin must reflect the spike, not the average.
+    calm = TokenLogprob(logprob=math.log(0.95), top_logprobs=(math.log(0.95), math.log(0.05)))
+    spike = TokenLogprob(logprob=math.log(0.10), top_logprobs=(math.log(0.10), math.log(0.09)))
+    out = summarize([calm, spike])
+    assert out.n_tokens == 2
+    assert out.max_surprisal == pytest.approx(-math.log(0.10))
+    assert out.max_surprisal > out.mean_surprisal
+    # the near-tie spike token has the smaller margin
+    assert out.min_margin == pytest.approx(math.log(0.10) - math.log(0.09))
+
+
+def test_summarize_mean_surprisal_is_the_token_mean() -> None:
+    toks = [TokenLogprob(logprob=-1.0), TokenLogprob(logprob=-3.0)]
+    assert summarize(toks).mean_surprisal == pytest.approx(2.0)
