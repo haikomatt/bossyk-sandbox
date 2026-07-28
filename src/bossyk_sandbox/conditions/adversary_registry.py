@@ -50,13 +50,19 @@ def required_key_env(name: str) -> str:
     return ADVERSARY_MODELS[name].key_env
 
 
-def build_adversary(name: str, *, fallback_model: str | None = None) -> Adversary:
+def build_adversary(
+    name: str, *, tool_context: str = "", goal_mode: bool = False, fallback_model: str | None = None
+) -> Adversary:
     """Looks up `name` in `ADVERSARY_MODELS` and builds the matching real
     `Adversary` -- the client-agnostic `FireworksAdversary` wrapping
     whichever provider client the spec calls for. Raises `KeyError` for an
     unregistered name, `RuntimeError` if the model's API key env var is
     unset. `fallback_model` only applies to the anthropic provider (passed
-    through to `build_anthropic_client`)."""
+    through to `build_anthropic_client`). `tool_context` grounds the built
+    adversary in the target agent's real tools (see
+    conditions.fireworks_adversary.render_tool_context). `goal_mode` makes
+    the adversary emit multi-turn user goals instead of single-turn attack
+    payloads (path B)."""
     spec = ADVERSARY_MODELS[name]
     api_key = os.environ.get(spec.key_env)
     if not api_key:
@@ -73,4 +79,6 @@ def build_adversary(name: str, *, fallback_model: str | None = None) -> Adversar
         )
     else:
         client = build_anthropic_client(model=spec.model_id, fallback_model=fallback_model)
-    return FireworksAdversary(client=client, model=spec.model_id)
+    return FireworksAdversary(
+        client=client, model=spec.model_id, tool_context=tool_context, goal_mode=goal_mode
+    )

@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 
 export type ViewCategory =
   | "story"
+  | "control_room"
   | "evidence"
   | "bench_output"
   | "probes"
@@ -29,6 +30,7 @@ function parseHash(hash: string): Route {
   const category = rawCategory as ViewCategory;
   const validCategories: ViewCategory[] = [
     "story",
+    "control_room",
     "evidence",
     "bench_output",
     "probes",

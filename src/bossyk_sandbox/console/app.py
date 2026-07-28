@@ -14,6 +14,13 @@ from fastapi.staticfiles import StaticFiles
 from bossyk_sandbox.compliance.attribution import CONTROLS_METADATA_KEY
 from bossyk_sandbox.compliance.frameworks import load_frameworks
 from bossyk_sandbox.console.artifacts import router as artifacts_router
+from bossyk_sandbox.console.replay import (
+    ReplayPreset,
+    build_gate,
+    build_hitl_queue,
+    load_replay_preset,
+    trace_id_for,
+)
 from bossyk_sandbox.evidence.trace import build_trace, make_attested_step
 from bossyk_sandbox.gate import Gate
 from bossyk_sandbox.instruments.base import Verdict
@@ -164,6 +171,92 @@ async def _run_stub_session(session: ConsoleSession, hold_timeout_s: float = 5.0
         _sessions.pop(session.session_id, None)
 
 
+async def _run_replay_session(
+    session: ConsoleSession, preset: ReplayPreset, pacing_s: float = 1.0
+) -> None:
+    """Non-interactive playback of a committed replay preset. Each turn is
+    briefly surfaced as a "held" event (so the UI can render the hold beat)
+    then advanced automatically after `pacing_s` -- there is no decision to
+    make, this replays a fixed, artifact-grounded gate-save. Reuses the same
+    real domain gate + attested-step + broadcast plumbing as the live console,
+    so the event shape is identical to `_run_stub_session`'s."""
+    gate = build_gate(preset)
+    steps = []
+    harm_prevented = 0
+
+    try:
+        for i, turn in enumerate(preset.turns):
+            decision = gate.score(turn.proposed)
+            action_id = f"{session.session_id}-action-{i}"
+            await _broadcast(
+                {
+                    "type": "held",
+                    "replay": True,
+                    "preset": preset.preset_id,
+                    "session_id": session.session_id,
+                    "action_id": action_id,
+                    "tool_name": turn.proposed.tool_name,
+                    "arguments": turn.proposed.arguments,
+                    "auto_verdict": decision.verdict.value,
+                    "auto_reason": decision.reason,
+                    "label": turn.label,
+                    "role": turn.role,
+                    "probe_id": turn.probe_id,
+                    "mode": turn.mode,
+                }
+            )
+            await asyncio.sleep(pacing_s)
+
+            if decision.verdict is Verdict.ALLOW:
+                gate.record(turn.proposed)
+            step = make_attested_step(
+                trace_id=trace_id_for(preset),
+                proposed=turn.proposed,
+                auto_decision=decision,
+                final_verdict=decision.verdict,
+            )
+            steps.append(step)
+            if turn.role == "crossing" and decision.verdict is Verdict.BLOCK:
+                harm_prevented += 1
+
+            step_event = {
+                "type": "step",
+                "tool_name": turn.proposed.tool_name,
+                "arguments": turn.proposed.arguments,
+                "verdict": decision.verdict.value,
+                "overridden": False,
+                "controls": _display_controls(step),
+                "label": turn.label,
+                "role": turn.role,
+                "probe_id": turn.probe_id,
+                "mode": turn.mode,
+                "mode_reason": turn.mode_reason,
+            }
+            if turn.mode == "escalate" and turn.hitl is not None:
+                step_event["hitl"] = turn.hitl
+            await _broadcast(step_event)
+
+        build_trace(
+            trace_id=trace_id_for(preset),
+            agent_config_ref=f"replay:{preset.preset_id}",
+            steps=steps,
+        )
+        await _broadcast(
+            {
+                "type": "session_complete",
+                "step_count": len(steps),
+                "harm_prevented": harm_prevented,
+                "harm_delta": harm_prevented,
+                "preset": preset.preset_id,
+                "source_artifact": preset.source_artifact,
+                "story_claim": preset.story_claim,
+                "hitl_queue": build_hitl_queue(preset),
+            }
+        )
+    finally:
+        _sessions.pop(session.session_id, None)
+
+
 @app.get("/")
 async def index() -> FileResponse:
     return FileResponse(Path(__file__).parent / "index.html")
@@ -178,6 +271,24 @@ async def start_session(hold_timeout_s: float = 5.0) -> dict[str, str]:
         session = ConsoleSession(session_id=session_id)
         _sessions[session_id] = session
         session.task = asyncio.create_task(_run_stub_session(session, hold_timeout_s))
+    return {"status": "started", "session_id": session_id}
+
+
+@app.post("/session/replay")
+async def start_replay_session(preset_id: str, pacing_s: float = 1.0) -> dict[str, str]:
+    """Start a non-interactive preset replay. Shares the single-session slot
+    with the interactive stub session (at most one console run at a time)."""
+    async with _sessions_lock:
+        if _sessions:
+            return {"status": "already_running"}
+        try:
+            preset = load_replay_preset(preset_id)
+        except FileNotFoundError:
+            return {"status": "unknown_preset"}
+        session_id = uuid4().hex
+        session = ConsoleSession(session_id=session_id)
+        _sessions[session_id] = session
+        session.task = asyncio.create_task(_run_replay_session(session, preset, pacing_s))
     return {"status": "started", "session_id": session_id}
 
 

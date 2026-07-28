@@ -1,5 +1,6 @@
 import { Sidebar } from "./components/Sidebar";
 import { StoryView } from "./views/StoryView";
+import { ControlRoomView } from "./views/ControlRoomView";
 import { EvidenceView } from "./views/EvidenceView";
 import { BenchOutputView } from "./views/BenchOutputView";
 import { ProbesView } from "./views/ProbesView";
@@ -12,6 +13,8 @@ function CurrentView() {
   switch (route.category) {
     case "story":
       return <StoryView />;
+    case "control_room":
+      return <ControlRoomView />;
     case "evidence":
       return <EvidenceView />;
     case "bench_output":
@@ -31,8 +34,10 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <span className="app-header__title">bossyk — evidence browser</span>
-        <span className="app-header__tagline">every number traces to a committed artifact</span>
+        <span className="logo-mark">bk</span>
+        <span className="logo-rule" />
+        <span className="logo-name">bossyk</span>
+        <span className="app-header__tagline">agent governance console · built on auditk</span>
       </header>
       <div className="app-body">
         <Sidebar current={route.category} />

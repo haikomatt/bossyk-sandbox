@@ -126,6 +126,101 @@ export const JSON_ARTIFACT_CATEGORIES: readonly ArtifactCategory[] = [
 
 class ApiError extends Error {}
 
+// --- control-room replay (POST /session/replay + the /ws event stream) ---
+
+export interface ReplayStartResult {
+  status: string; // "started" | "already_running" | "unknown_preset"
+  session_id?: string;
+}
+
+/** One resolved compliance control on a broadcast step, already carrying its
+ * human framework/control names (see console `_display_controls`). Richer than
+ * the story `ControlTag`, which is just ref + basis. */
+export interface ReplayControl {
+  ref: string;
+  basis: string;
+  framework: string;
+  control: string;
+  title: string;
+}
+
+/** A hard-cell item routed to the HITL review queue (an `escalate` turn). */
+export interface ReplayHitlItem {
+  severity: string; // critical | high | medium | low
+  reason: string;
+  resolution: string;
+  channel: string;
+  label: string;
+  tool_name: string;
+}
+
+export interface ReplayHeldEvent {
+  type: "held";
+  replay: boolean;
+  preset: string;
+  session_id: string;
+  action_id: string;
+  tool_name: string;
+  arguments: Record<string, unknown>;
+  auto_verdict: string;
+  auto_reason: string;
+  label: string;
+  role: string;
+  probe_id: string | null;
+  mode: string | null;
+}
+
+export interface ReplayStepEvent {
+  type: "step";
+  tool_name: string;
+  arguments: Record<string, unknown>;
+  verdict: string;
+  overridden: boolean;
+  controls: ReplayControl[];
+  label: string;
+  role: string;
+  probe_id: string | null;
+  // Authored resolution mode (allow / redirect / defer / step-up / escalate)
+  // layered on the real structural verdict; hitl present only on escalate.
+  mode: string | null;
+  mode_reason: string | null;
+  hitl?: ReplayHitlItem;
+}
+
+export interface ReplayCompleteEvent {
+  type: "session_complete";
+  step_count: number;
+  harm_prevented: number;
+  harm_delta: number;
+  preset: string;
+  source_artifact: string;
+  story_claim: string;
+  hitl_queue: ReplayHitlItem[];
+}
+
+export type ReplayEvent = ReplayHeldEvent | ReplayStepEvent | ReplayCompleteEvent;
+
+/** Same-origin websocket URL for the console broadcast stream. The SPA is
+ * served by the console at /app, so /ws is same-origin in the demo. */
+export function replaySocketUrl(): string {
+  const proto = window.location.protocol === "https:" ? "wss" : "ws";
+  return `${proto}://${window.location.host}/ws`;
+}
+
+export async function startReplay(presetId: string, pacingS: number): Promise<ReplayStartResult> {
+  const path = `/session/replay?preset_id=${encodeURIComponent(presetId)}&pacing_s=${pacingS}`;
+  let response: Response;
+  try {
+    response = await fetch(path, { method: "POST" });
+  } catch {
+    throw new ApiError(`could not reach the API at ${path} -- is the backend running?`);
+  }
+  if (!response.ok) {
+    throw new ApiError(`${path} -> HTTP ${response.status}`);
+  }
+  return (await response.json()) as ReplayStartResult;
+}
+
 async function getJson<T>(path: string): Promise<T> {
   let response: Response;
   try {

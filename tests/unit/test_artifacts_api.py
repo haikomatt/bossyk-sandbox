@@ -158,7 +158,13 @@ def test_manifests_endpoint_finds_docs_with_script_key() -> None:
         assert "doc" in entry
         assert len(entry["manifests"]) >= 1
         for manifest in entry["manifests"]:
-            assert "script" in manifest
+            # A reproducibility manifest references at least one runnable script:
+            # either flat (top-level `script`) or as multi-step sub-blocks (e.g.
+            # generate:/run:, each carrying its own `script`), which the grounded
+            # and multiturn live-H2/H4 repro manifests use.
+            has_flat = "script" in manifest
+            has_nested = any(isinstance(v, dict) and "script" in v for v in manifest.values())
+            assert has_flat or has_nested
 
 
 # --- 404s ------------------------------------------------------------------------

@@ -93,11 +93,25 @@ labels and gate decisions. Upgrading H4 from "modeled" to "live" requires:
 - **an explicit harm oracle** mapping realized side effects to harm, replacing
   the 1-unit-per-violation assumption.
 
+## Latency budget (measured) — §15B+ update (2026-07-24)
+
+The "detected-too-late" binary above is **modeled** (a verdict label, no wall-clock).
+The §15B+ latency phase measures the actual cost. A live weakened-agent run
+(n=21 policy judge calls) puts the slow judge at **~19s mean / ~57s p95**;
+against a 500ms UX hold budget it must get **~38× faster (mean) / ~114× (p95)**
+to turn a detected-too-late into a prevention — the concrete target the §15C
+fast detector has to beat. The action's own tau2 exec cost is ~0.03ms (a floor,
+not real-world I/O), so the UX budget is the meaningful target. Full write-up,
+sweep (250ms/500ms/1s), and honest caveats:
+[`phase-latency-budget-results.md`](phase-latency-budget-results.md). The
+modeled binary now sits beside a measured latency number.
+
 ## What's next
 
 - **Raise prevention onto the fast path:** a fast small-model classifier on the
   slow path's semantic catches (the plan's two-speed §5) — turning "detected too
-  late" into "prevented" — is the concrete lever this result points to.
+  late" into "prevented" — is the concrete lever this result points to. §15B+
+  now quantifies how much faster: ~38× at a 500ms budget.
 - **Interrupt taxonomy:** redirect / escalate + the HITL approval queue (deferred
   from this phase; plan Phase 3/6).
 - **Live-injection loop (H2-on-crossings):** score the 56 guardrail-bypass crossings
