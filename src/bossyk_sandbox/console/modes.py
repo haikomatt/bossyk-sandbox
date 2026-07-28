@@ -17,6 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from bossyk_sandbox.instruments.base import Verdict
+from bossyk_sandbox.standing import AuthorityVerdict
 
 # HITL queue ordering, most severe first.
 SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3}
@@ -63,13 +64,39 @@ class ModeDecision:
     hitl: dict[str, str] | None = None
 
 
-def derive_mode(tool_name: str, gate_verdict: Verdict) -> ModeDecision:
-    """Map (gate verdict, tool consequence) onto a resolution mode.
+def _escalation(
+    tool_name: str, consequence: Consequence, *, mode_reason: str, hitl_reason: str
+) -> ModeDecision:
+    """An escalate decision with its hard-cell HITL item (by tool severity)."""
+    return ModeDecision(
+        mode="escalate",
+        reason=mode_reason,
+        hitl={
+            "severity": consequence.severity,
+            "reason": hitl_reason,
+            "resolution": "queued for supervisor approval",
+            "channel": "callback",
+        },
+    )
 
-    - BLOCK + reversible write  -> redirect  (agent re-runs the required lookup)
-    - BLOCK + irreversible write -> escalate (hard-cell HITL, by severity)
-    - ALLOW + PII access         -> step-up  (bounce authority to the customer)
-    - ALLOW + anything else      -> allow
+
+def derive_mode(
+    tool_name: str, gate_verdict: Verdict, *, authority: AuthorityVerdict | None = None
+) -> ModeDecision:
+    """Map (gate verdict, tool consequence, standing authority) onto a mode.
+
+    - BLOCK + reversible write               -> redirect  (agent re-runs the lookup)
+    - BLOCK + irreversible write             -> escalate  (hard-cell HITL)
+    - ALLOW + over authority + reversible    -> defer     (accept, async-approve)
+    - ALLOW + over authority + irreversible  -> escalate  (a human must decide)
+    - ALLOW + within authority + PII         -> step-up
+    - ALLOW + within authority / not-governed -> allow
+
+    `authority` is the §F standing verdict (`bossyk_sandbox.standing`). Without it
+    -- or when `not_governed` -- the ALLOW path keeps its pre-§F behaviour and
+    never yields `defer`: `defer` requires the standing model to say an action is
+    *over* authority yet *reversible* (accept it, approve out of band). Over +
+    irreversible goes to a human.
     """
     consequence = _CONSEQUENCE.get(tool_name, _DEFAULT)
 
@@ -79,18 +106,28 @@ def derive_mode(tool_name: str, gate_verdict: Verdict) -> ModeDecision:
                 mode="redirect",
                 reason="gate blocked an unverified reversible write; agent redirected to verify",
             )
-        return ModeDecision(
-            mode="escalate",
-            reason="irreversible action over delegated authority, escalated to human review",
-            hitl={
-                "severity": consequence.severity,
-                "reason": (
-                    f"{tool_name}: irreversible action blocked pre-execution and exceeds "
-                    "delegated authority -- needs supervisor review."
-                ),
-                "resolution": "queued for supervisor approval",
-                "channel": "callback",
-            },
+        return _escalation(
+            tool_name,
+            consequence,
+            mode_reason="irreversible action over delegated authority, escalated to human review",
+            hitl_reason=(
+                f"{tool_name}: irreversible action blocked pre-execution and exceeds "
+                "delegated authority -- needs supervisor review."
+            ),
+        )
+
+    # ALLOW path: the gate permitted it; standing authority decides the rest.
+    if authority is not None and authority.status == "over":
+        if consequence.reversible:
+            return ModeDecision(
+                mode="defer",
+                reason="over standing authority but reversible -- accept + async-approve",
+            )
+        return _escalation(
+            tool_name,
+            consequence,
+            mode_reason="over standing authority and irreversible -- escalated to review",
+            hitl_reason=f"{tool_name}: over standing authority and irreversible -- needs review.",
         )
 
     if consequence.pii:
