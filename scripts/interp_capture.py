@@ -37,8 +37,16 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from bossyk_sandbox.env import load_project_env
-from bossyk_sandbox.interp.capture_run import DecisionItem, Tracer, run_capture_report
+from bossyk_sandbox.interp.activation_capture import ActivationRecord, Timepoint, assemble_xy
+from bossyk_sandbox.interp.capture_run import (
+    DecisionItem,
+    Tracer,
+    capture_records,
+    report_from_records,
+)
 
 
 def load_items(data: list[dict[str, Any]]) -> list[DecisionItem]:
@@ -62,6 +70,37 @@ def parse_layers(spec: str) -> list[int]:
     if not layers:
         raise ValueError("no layers parsed from --layers")
     return layers
+
+
+def build_npz_payload(
+    records: list[ActivationRecord],
+    items: list[DecisionItem],
+    layers: list[int],
+    *,
+    timepoint: Timepoint = Timepoint.T4,
+) -> dict[str, Any]:
+    """Assemble the persisted-activations payload for `np.savez`: one `X_<layer>`
+    matrix (n_items, d_model) per layer plus the label vectors, in item order.
+
+    This is the WHOLE POINT of the pod run -- persist the activations so the
+    split-robust re-probe (scripts/reprobe.py) runs off-pod with no GPU, and a
+    methodology change never re-bills a capture. `is_error` is stored as int8 with
+    -1 = unlabelled (so an item the coherence judge left unjudged round-trips as
+    'no label' rather than a fabricated False)."""
+    payload: dict[str, Any] = {
+        "layers": np.asarray(layers, dtype=np.int64),
+        "timepoint": np.asarray(timepoint.value),
+        "step_ids": np.asarray([item.step_id for item in items]),
+        "is_violation": np.asarray([item.is_violation for item in items], dtype=bool),
+        "is_error": np.asarray(
+            [-1 if item.is_error is None else int(item.is_error) for item in items],
+            dtype=np.int8,
+        ),
+    }
+    for layer in layers:
+        x, _y = assemble_xy(records, layer=layer, timepoint=timepoint)
+        payload[f"X_{layer}"] = np.asarray(x, dtype=np.float32)
+    return payload
 
 
 def nnsight_tracer(model_id: str, *, device_map: str = "auto") -> Tracer:
@@ -90,6 +129,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--items", required=True, help="path to the decisions JSON")
     parser.add_argument("--layers", required=True, help="comma-separated layers, e.g. 0,8,16,24,31")
     parser.add_argument("--out", required=True, help="path to write the probe report JSON")
+    parser.add_argument(
+        "--acts-out",
+        default=None,
+        help="path to write the activations npz (default: <out> with .npz suffix)",
+    )
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args(argv)
 
@@ -100,8 +144,17 @@ def main(argv: list[str] | None = None) -> int:
     items = load_items(json.loads(Path(args.items).read_text()))
     layers = parse_layers(args.layers)
     tracer = nnsight_tracer(args.model)
-    report = run_capture_report(items, layers, tracer, seed=args.seed)
 
+    # Capture ONCE (the expensive GPU pass), then persist + probe off the records.
+    records = capture_records(items, layers, tracer)
+
+    acts_path = Path(args.acts_out) if args.acts_out else Path(args.out).with_suffix(".npz")
+    np.savez(acts_path, **build_npz_payload(records, items, layers))
+    # Loud, unambiguous path: PULL THIS before teardown (a wrong filename lost a
+    # prior run's activations -- session-handoff 2026-07-29 operational lesson).
+    print(f"SAVED ACTIVATIONS -> {acts_path.resolve()}  (PULL THIS before teardown)")
+
+    report = report_from_records(records, items, layers, seed=args.seed)
     Path(args.out).write_text(json.dumps(report, indent=2))
     print(f"wrote {args.out}: {report['n_violation']}/{report['n_items']} violation items")
     for layer, scores in report["layers"].items():
