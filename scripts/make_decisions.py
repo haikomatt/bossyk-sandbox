@@ -79,8 +79,10 @@ def _is_transient(exc: Exception) -> bool:
 def _reset_captures(session: AgentSession, start: int) -> None:
     """Discard the in-place per-turn captures a failed prompt attempt left behind,
     so a retry (or a skip) doesn't leave partial turns in the dataset. `del l[start:]`
-    is a safe no-op when the list is already shorter."""
+    is a safe no-op when the list is already shorter. agent_actions is trimmed in
+    lockstep with agent_prompts so the two stay 1:1 aligned across retries."""
     del session.agent_prompts[start:]
+    del session.agent_actions[start:]
     del session.agent_latency[start:]
     del session.agent_interp[start:]
 
@@ -140,7 +142,7 @@ def drive_session(
                 _reset_captures(session, start)
                 print(f"skipping prompt {j} after error: {exc}", file=sys.stderr)
                 break
-    return build_decisions(session.agent_prompts, blocked)
+    return build_decisions(session.agent_prompts, blocked, actions=session.agent_actions)
 
 
 def main(argv: list[str] | None = None) -> int:

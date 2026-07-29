@@ -711,3 +711,34 @@ def test_capture_prompts_records_the_rendered_decision_context_per_turn() -> Non
     assert len(session.agent_prompts) == len(session.agent_latency)
     # the rendered context carries the system/policy the agent was given
     assert "be compliant" in session.agent_prompts[0]
+
+
+def test_capture_prompts_off_by_default_leaves_agent_actions_empty() -> None:
+    llm = _ScriptedLLM(responses=[AIMessage(content="done")])
+    session = build_airline_agent_session(
+        trace_id="t-actions-off", llm=llm, environment=_FakeEnvironment(tools=_CountingToolkit())
+    )
+    _run_to_completion(session, thread_id="actions-off")
+    assert session.agent_actions == []
+
+
+def test_capture_prompts_records_the_agent_action_per_turn_aligned() -> None:
+    # A tool-call turn then a text turn: agent_actions aligns 1:1 with
+    # agent_prompts and captures WHAT the agent did (tool call, then reply).
+    tool_call = {"name": "cancel_reservation", "args": {"reservation_id": "R1"}, "id": "c1"}
+    llm = _ScriptedLLM(
+        responses=[
+            AIMessage(content="", tool_calls=[tool_call]),
+            AIMessage(content="all done"),
+        ]
+    )
+    session = build_airline_agent_session(
+        trace_id="t-actions-on",
+        llm=llm,
+        environment=_FakeEnvironment(tools=_CountingToolkit(), policy="be compliant"),
+        capture_prompts=True,
+    )
+    _run_to_completion(session, thread_id="actions-on")
+    assert len(session.agent_actions) == len(session.agent_prompts)
+    assert "cancel_reservation" in session.agent_actions[0]
+    assert session.agent_actions[1] == "all done"

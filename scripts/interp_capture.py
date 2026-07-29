@@ -50,6 +50,7 @@ def load_items(data: list[dict[str, Any]]) -> list[DecisionItem]:
             prompt=str(row["prompt"]),
             is_violation=bool(row["is_violation"]),
             is_error=None if row.get("is_error") is None else bool(row["is_error"]),
+            action=None if row.get("action") is None else str(row["action"]),
         )
         for row in data
     ]

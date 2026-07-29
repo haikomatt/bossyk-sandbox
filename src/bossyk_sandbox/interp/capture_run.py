@@ -48,12 +48,19 @@ class DecisionItem:
     """One labelled decision to capture: the agent's prompt context at a scored
     step, its binary policy label, and optionally an `is_error` label (a general
     incoherence/failure flag) so the report can run the general-failure confound
-    control alongside the policy probe."""
+    control alongside the policy probe.
+
+    `action` is the agent's OWN response at that turn (text + tool calls). It is
+    carried through the dataset so the coherence judge -- which sets `is_error`
+    from a quality judgment on the action -- can run as a separate, re-runnable,
+    auditable step off the agent-driving loop. The capture/probe never reads it;
+    it is provenance for the confound label."""
 
     step_id: str
     prompt: str
     is_violation: bool
     is_error: bool | None = None
+    action: str | None = None
 
 
 def capture_records(

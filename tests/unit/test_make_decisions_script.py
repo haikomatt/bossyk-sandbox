@@ -77,6 +77,8 @@ def test_drive_session_builds_decisions_from_captured_prompts() -> None:
     assert [it.step_id for it in items] == ["turn-0", "turn-1"]
     assert all(it.is_violation is False for it in items)
     assert "POLICY-X" in items[0].prompt
+    # each decision carries the agent's action (the judge's input), aligned per turn
+    assert [it.action for it in items] == ["ok", "ok"]
 
 
 class _FlakyLLM:

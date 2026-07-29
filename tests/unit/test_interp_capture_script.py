@@ -42,6 +42,18 @@ def test_load_items_parses_optional_error_label() -> None:
     assert items[1].is_error is None
 
 
+def test_load_items_round_trips_optional_action() -> None:
+    module = _import_script()
+    items = module.load_items(
+        [
+            {"step_id": "s1", "prompt": "p1", "is_violation": True, "action": "cancel(W1)"},
+            {"step_id": "s2", "prompt": "p2", "is_violation": False},  # action absent -> None
+        ]
+    )
+    assert items[0].action == "cancel(W1)"
+    assert items[1].action is None
+
+
 def test_parse_layers() -> None:
     module = _import_script()
     assert module.parse_layers("0,8,16,24,31") == [0, 8, 16, 24, 31]
