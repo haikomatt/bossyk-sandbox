@@ -15,6 +15,8 @@ tests/unit/test_live_session.py). This module never constructs an LLM itself.
 
 from __future__ import annotations
 
+import time
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -26,7 +28,12 @@ from langgraph.types import Command
 from bossyk_sandbox.console.modes import SEVERITY_RANK, ModeDecision, derive_mode
 from bossyk_sandbox.instruments.base import ProposedAction, Verdict
 from bossyk_sandbox.runtime.langgraph_agent import AgentSession, AgentState
-from bossyk_sandbox.standing import AuthorityVerdict, StandingGrant, evaluate_authority
+from bossyk_sandbox.standing import (
+    AuthorityVerdict,
+    StandingGrant,
+    TimedAction,
+    evaluate_authority,
+)
 
 _DEFAULT_USER_MESSAGE = "Hi, I need help with a couple of orders on my account."
 
@@ -82,14 +89,17 @@ def _proposed_of(payload: dict[str, object]) -> ProposedAction:
 
 def authority_for(
     payload: dict[str, object],
-    history: list[ProposedAction],
+    history: Sequence[ProposedAction | TimedAction],
     grants: dict[str, StandingGrant] | None,
+    *,
+    now: float | None = None,
 ) -> AuthorityVerdict | None:
     """The §F standing verdict for a held call, or None when no policy is set
-    (back-compat: `derive_mode` then keeps its pre-§F ALLOW behaviour)."""
+    (back-compat: `derive_mode` then keeps its pre-§F ALLOW behaviour). `now`
+    (epoch seconds) time-bounds windowed grants; session-scoped grants ignore it."""
     if not grants:
         return None
-    return evaluate_authority(_proposed_of(payload), history, grants)
+    return evaluate_authority(_proposed_of(payload), history, grants, now=now)
 
 
 def resolve_call(
@@ -122,34 +132,39 @@ def run_live_session(
     thread_id: str = "live-session-1",
     user_message: str = _DEFAULT_USER_MESSAGE,
     grants: dict[str, StandingGrant] | None = None,
+    clock: Callable[[], float] = time.time,
 ) -> LiveResult:
     """Drive a live session to completion synchronously (used offline in tests
     with a fake LLM). The console's async wrapper reuses the same helpers.
 
     `grants` is the §F standing policy (None = no authority model, pre-§F
     behaviour). Authority is consumed by ALLOWed actions: a boundary's count is
-    the session's prior *allowed* actions at that boundary."""
+    the session's prior *allowed* actions at that boundary. `clock` stamps each
+    allowed action with the wall-clock time it was taken so **windowed** grants
+    can expire standing; it is injected (defaulting to `time.time`) so tests stay
+    deterministic. Session-scoped grants ignore the timestamps."""
     graph = session.graph
     config = thread_config(thread_id)
 
     verdicts: list[str] = []
     modes: list[str] = []
     hitl_queue: list[dict[str, str]] = []
-    history: list[ProposedAction] = []
+    history: list[TimedAction] = []
 
     inp: Any = initial_input(user_message)
     while True:
         payload = advance_to_interrupt(graph, inp, config)
         if payload is None:
             break  # the graph reached END with no further held call
-        authority = authority_for(payload, history, grants)
+        now = clock()
+        authority = authority_for(payload, history, grants, now=now)
         verdict, decision = resolve_call(payload, authority=authority)
         verdicts.append(verdict.value)
         modes.append(decision.mode)
         if decision.mode == "escalate" and decision.hitl is not None:
             hitl_queue.append(hitl_item(payload, decision))
         if verdict is Verdict.ALLOW:
-            history.append(_proposed_of(payload))
+            history.append(TimedAction(_proposed_of(payload), now))
         inp = resume_after(payload)
 
     return LiveResult(

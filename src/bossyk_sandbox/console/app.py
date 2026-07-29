@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
@@ -41,7 +42,7 @@ from bossyk_sandbox.runtime.langgraph_agent import (
     build_weakened_retail_agent_session,
 )
 from bossyk_sandbox.runtime.stub_agent import SCRIPTED_TOOL_CALLS
-from bossyk_sandbox.standing import retail_standing_grants
+from bossyk_sandbox.standing import TimedAction, retail_standing_grants
 
 app = FastAPI(title="bossyk-sandbox console")
 app.include_router(artifacts_router)
@@ -286,18 +287,22 @@ async def _run_live_session(
     config = thread_config(session.session_id)
     hitl_queue: list[dict[str, str]] = []
     grants = retail_standing_grants()  # §F: committed per-domain standing policy
-    history: list[ProposedAction] = []  # allowed actions consume standing authority
+    history: list[TimedAction] = []  # allowed actions consume standing authority
 
     try:
         payload = await asyncio.to_thread(advance_to_interrupt, graph, initial_input(), config)
         i = 0
         while payload is not None:
             held = payload
-            verdict, decision = resolve_call(held, authority=authority_for(held, history, grants))
+            now = time.time()  # stamps allowed actions so windowed grants can expire
+            verdict, decision = resolve_call(
+                held, authority=authority_for(held, history, grants, now=now)
+            )
             if verdict is Verdict.ALLOW:
-                history.append(
-                    ProposedAction(str(held["tool_name"]), cast(dict[str, Any], held["arguments"]))
+                proposed = ProposedAction(
+                    str(held["tool_name"]), cast(dict[str, Any], held["arguments"])
                 )
+                history.append(TimedAction(proposed, now))
             await _broadcast(
                 {
                     "type": "held",
