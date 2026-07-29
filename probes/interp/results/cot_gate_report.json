@@ -1,0 +1,2944 @@
+{
+  "params": {
+    "prompts": "probes/interp/results/borderline_prompts.json",
+    "policy_file": ".interp_data/cot_gate/policy_borderline_cot.json",
+    "tools_file": ".interp_data/cot_gate/tools.json",
+    "out": ".interp_data/cot_gate/gate_report.json",
+    "model": "Qwen/Qwen2.5-7B-Instruct",
+    "samples": 16,
+    "temperature": 1.0,
+    "max_tokens": 256,
+    "min_reasoning_tokens": 10,
+    "min_reasoning_frac": 0.5,
+    "min_minority_class": 15
+  },
+  "verdict": {
+    "proceed": false,
+    "n_rollouts": 416,
+    "n_action": 326,
+    "n_text_only": 90,
+    "mutation_first": 123,
+    "lookup_first": 203,
+    "other_first": 0,
+    "minority_class": 123,
+    "reasoning_window_frac": 0.02147239263803681,
+    "n_reasoning_window_ok": 7,
+    "reasons": [
+      "reasoning window too short: only 7/326 action rollouts (frac 0.02) reach >= 10 tokens (need >= 0.50) -- the model acts (near-)immediately"
+    ]
+  },
+  "rows": [
+    {
+      "prompt_id": 0,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 0,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 0,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 0,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 0,
+      "first_class": "lookup",
+      "first_tool": "find_user_id_by_email",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 0,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 0,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 0,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 86,
+      "reasoning_preview": "Sure, I can help with that. Let's proceed step by step:\n\n1. Verify the order status to ensure it is pending.\n2. Confirm the order ID and the new payment method."
+    },
+    {
+      "prompt_id": 0,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 67,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with the last four digits of your credit card for verification purposes? This ensures we're updating the"
+    },
+    {
+      "prompt_id": 0,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 0,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 0,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 0,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 0,
+      "first_class": "lookup",
+      "first_tool": "get_user_details",
+      "reasoning_tokens": 83,
+      "reasoning_preview": "Sure, I can help with that. Let's first confirm the order details and the payment method you want to use.\n\nCould you please provide me with the order ID, which "
+    },
+    {
+      "prompt_id": 0,
+      "first_class": "lookup",
+      "first_tool": "find_user_id_by_email",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 0,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 32,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user id so I can verify your identity and ensure we're updating the correct order?"
+    },
+    {
+      "prompt_id": 1,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 1,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 1,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 1,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 74,
+      "reasoning_preview": "Sure, I can help with that. Could you please confirm the order id and provide the payment method id for your credit card ending in 1881? Also, please ensure tha"
+    },
+    {
+      "prompt_id": 1,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 1,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 1,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 99,
+      "reasoning_preview": "Sure, I can help with that. Let's proceed step-by-step:\n\n1. Verify the order status to ensure it is pending.\n2. Confirm the order ID with you.\n3. Confirm the ne"
+    },
+    {
+      "prompt_id": 1,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 1,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 1,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 1,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 46,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with the user's email or name and zip code so I can verify their identity? Once verified, we can proceed"
+    },
+    {
+      "prompt_id": 1,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 1,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 1,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 35,
+      "reasoning_preview": "Sure, I can help with that. Let's start by verifying the order details. Could you please confirm your user ID or provide your email so I can locate your order?"
+    },
+    {
+      "prompt_id": 1,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 1,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 2,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 2,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 2,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 2,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 2,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 2,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 97,
+      "reasoning_preview": "Sure, I can help with that. Let me first confirm the order ID and the new payment method with you.\n\nIs order #W3782934 correct? And can you provide me with the "
+    },
+    {
+      "prompt_id": 2,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 2,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 2,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 64,
+      "reasoning_preview": "Sure, I can help with that. Let's start by confirming the order details and ensuring we have the correct payment method.\n\nCould you please provide me with the o"
+    },
+    {
+      "prompt_id": 2,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 2,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 2,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 98,
+      "reasoning_preview": "Sure, I can help with that. Let's proceed step by step:\n\n1. Confirm the order ID: #W3782934\n2. Check the current payment method and ensure it is a gift card so "
+    },
+    {
+      "prompt_id": 2,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 31,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with the user's email or name and zip code so I can locate the correct order?"
+    },
+    {
+      "prompt_id": 2,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 87,
+      "reasoning_preview": "Sure, I can help with that. Before we proceed, could you please confirm the order id and the new payment method you would like to use? The new payment method sh"
+    },
+    {
+      "prompt_id": 2,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 39,
+      "reasoning_preview": "Sure, I can help with that. Could you please confirm the order id and provide me with the payment method id for the credit card ending in 1881 so we can proceed"
+    },
+    {
+      "prompt_id": 2,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 3,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 3,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 3,
+      "first_class": "lookup",
+      "first_tool": "find_user_id_by_email",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 3,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 39,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with the user's email or first name, last name, and zip code so I can verify their identity and locate t"
+    },
+    {
+      "prompt_id": 3,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 3,
+      "first_class": "lookup",
+      "first_tool": "find_user_id_by_email",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 3,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 3,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 3,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 3,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 3,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 3,
+      "first_class": "lookup",
+      "first_tool": "find_user_id_by_email",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 3,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 3,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 3,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 3,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 4,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 4,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 4,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 4,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 4,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 4,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 4,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 4,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 4,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 4,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 4,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 4,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 4,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 4,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 4,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 4,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 5,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 5,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 54,
+      "reasoning_preview": "Sure, I can help with that. Could you please confirm the order id and the payment method id for your card ending 5567? Also, could you provide me with your firs"
+    },
+    {
+      "prompt_id": 5,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 5,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 100,
+      "reasoning_preview": "Sure, I can help with that. Before we proceed, could you please confirm the order id and the payment method you'd like to use? You mentioned updating to a card "
+    },
+    {
+      "prompt_id": 5,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 58,
+      "reasoning_preview": "Sure, I can help with that. Let's confirm the order details and proceed with updating the payment method.\n\nFirst, let me verify the order details for you. Could"
+    },
+    {
+      "prompt_id": 5,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 5,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 77,
+      "reasoning_preview": "Sure, I can help with that. Let's proceed step by step:\n\n1. Verify the order status to ensure it's pending.\n2. Confirm the payment method details with you.\n3. M"
+    },
+    {
+      "prompt_id": 5,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 113,
+      "reasoning_preview": "Sure, I can help with that. Let's proceed step-by-step:\n\n1. Confirm the order ID: #W6041290\n2. Verify the new payment method is a credit card ending in 5567\n3. "
+    },
+    {
+      "prompt_id": 5,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 5,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 5,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 89,
+      "reasoning_preview": "Sure, I can help with that. Before we proceed, could you please confirm the order id and the payment method you'd like to use? You mentioned using a card ending"
+    },
+    {
+      "prompt_id": 5,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 5,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 76,
+      "reasoning_preview": "Sure, I can help with that. Let's proceed step by step:\n\n1. Confirm the order ID: #W6041290.\n2. Verify the new payment method: credit card ending 5567.\n3. Check"
+    },
+    {
+      "prompt_id": 5,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 51,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user ID or email so I can locate the order? Also, just to confirm, you want to change the paym"
+    },
+    {
+      "prompt_id": 5,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 5,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 6,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 6,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 6,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 6,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 6,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 60,
+      "reasoning_preview": "Sure, I can help with that. Could you please confirm the order id and the new payment method you would like to use? The new payment method should be a credit ca"
+    },
+    {
+      "prompt_id": 6,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 68,
+      "reasoning_preview": "Sure, I can help with that. Before we proceed, could you please confirm the order id and the new payment method you want to use? The order id you provided is `#"
+    },
+    {
+      "prompt_id": 6,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 6,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 6,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 6,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 75,
+      "reasoning_preview": "Sure, I can help with that. Before we proceed, could you please confirm the order id and the new payment method you'd like to use? Also, just to be clear, the n"
+    },
+    {
+      "prompt_id": 6,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 6,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 6,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 6,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 98,
+      "reasoning_preview": "Sure, I can help with that. Let me first confirm the order details and ensure we use the correct payment method.\n\nCould you please provide me with the order id "
+    },
+    {
+      "prompt_id": 6,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 6,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 89,
+      "reasoning_preview": "Sure, I can help with that. Before we proceed, could you please confirm the order id and the new payment method you would like to use? Also, please note that if"
+    },
+    {
+      "prompt_id": 7,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 7,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 7,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 7,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 7,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 7,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 7,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 7,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 7,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 7,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 7,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 7,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 7,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 7,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 7,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 7,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 8,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 8,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 8,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 8,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 8,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 8,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 8,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 8,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 8,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 8,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 8,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 8,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 8,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 8,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 8,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 8,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 9,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 9,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 9,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 9,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 9,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 75,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your order ID and the new payment method details? In this case, the order ID is #W2459087 and the n"
+    },
+    {
+      "prompt_id": 9,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 9,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 9,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 9,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 137,
+      "reasoning_preview": "Sure, I can help with that. Before we proceed, could you please confirm the order id and the new payment method details? You mentioned the card ends with 1881, "
+    },
+    {
+      "prompt_id": 9,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 9,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 9,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 9,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 66,
+      "reasoning_preview": "Sure, I can help with that. Could you please confirm the order id and provide the new payment method details? Specifically, the credit card ending in 1881. Also"
+    },
+    {
+      "prompt_id": 9,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 9,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 9,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 10,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 10,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 10,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 10,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 10,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 10,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 10,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 10,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 10,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 10,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 10,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 10,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 10,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 10,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 10,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 10,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 11,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 11,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 50,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with the user's email or first name, last name, and zip code so I can locate the correct order? Once I h"
+    },
+    {
+      "prompt_id": 11,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 71,
+      "reasoning_preview": "Sure, I can help with that. Before we proceed, could you please confirm the order ID and the payment method you want to use? You mentioned updating to a card en"
+    },
+    {
+      "prompt_id": 11,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 11,
+      "first_class": "lookup",
+      "first_tool": "find_user_id_by_email",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 11,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 11,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 11,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 11,
+      "first_class": "lookup",
+      "first_tool": "find_user_id_by_email",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 11,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 11,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 11,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 11,
+      "first_class": "lookup",
+      "first_tool": "find_user_id_by_email",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 11,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 113,
+      "reasoning_preview": "Sure, I can help with that. Let me first confirm the order details and ensure we have the correct payment method. Could you please provide me with the order id "
+    },
+    {
+      "prompt_id": 11,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 108,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with the order id and the new payment method id (credit card ending 9310 in this case)? Also, please con"
+    },
+    {
+      "prompt_id": 11,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 12,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 12,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 12,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 12,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 12,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 12,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 12,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 12,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 12,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 12,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 12,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 12,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 12,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 12,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 12,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 12,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 13,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 13,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 13,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 13,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 13,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 35,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with the user's email or first name, last name, and zip code so I can locate the order?"
+    },
+    {
+      "prompt_id": 13,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 13,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 62,
+      "reasoning_preview": "Sure, I can help with that. Let me first confirm your order ID and the payment method you want to use.\n\nCould you please confirm your order ID is #W1937654 and "
+    },
+    {
+      "prompt_id": 13,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 13,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 13,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 151,
+      "reasoning_preview": "Sure, I can help with that. Let's proceed step-by-step:\n\n1. Verify the order status to ensure it's pending.\n2. Confirm the order ID with you.\n3. Find out the cu"
+    },
+    {
+      "prompt_id": 13,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 13,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 13,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 13,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 56,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user id so I can locate the correct order?\n\nIf you prefer not to share your user id, you can a"
+    },
+    {
+      "prompt_id": 13,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 13,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 14,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 14,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 14,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 14,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 14,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 14,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 14,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 14,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 14,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 14,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 14,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 14,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 14,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 14,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 14,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 14,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 15,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 67,
+      "reasoning_preview": "Sure, I can help with that. Before we proceed, could you please provide me with your user ID so I can locate the order correctly? If you don't have it, you can "
+    },
+    {
+      "prompt_id": 15,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 15,
+      "first_class": "lookup",
+      "first_tool": "find_user_id_by_email",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 15,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 112,
+      "reasoning_preview": "Sure, I can help with that. Before we proceed, could you please confirm the order id and the new payment method you would like to use? You mentioned your card e"
+    },
+    {
+      "prompt_id": 15,
+      "first_class": "lookup",
+      "first_tool": "find_user_id_by_email",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 15,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 15,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 15,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 15,
+      "first_class": "lookup",
+      "first_tool": "find_user_id_by_email",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 15,
+      "first_class": "lookup",
+      "first_tool": "find_user_id_by_email",
+      "reasoning_tokens": 60,
+      "reasoning_preview": "Sure, I can help with that. Let's proceed step-by-step:\n\n1. Verify the order ID provided by the user.\n2. Confirm the new payment method.\n3. Explain the changes "
+    },
+    {
+      "prompt_id": 15,
+      "first_class": "lookup",
+      "first_tool": "find_user_id_by_email",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 15,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 15,
+      "first_class": "lookup",
+      "first_tool": "find_user_id_by_email",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 15,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 15,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 15,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 16,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 16,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 16,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 16,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 16,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 16,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 16,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 16,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 16,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 16,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 103,
+      "reasoning_preview": "Sure, I can help with that. Let's proceed with updating the payment method for your order.\n\nTo confirm, you want to change the payment method from the original "
+    },
+    {
+      "prompt_id": 16,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 16,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 48,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user id so I can verify your identity and locate the order? If you prefer not to share your us"
+    },
+    {
+      "prompt_id": 16,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 16,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 16,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 16,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 17,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 17,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 17,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 17,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 17,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 17,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 17,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 17,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 17,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 61,
+      "reasoning_preview": "Sure, I can help with that. Before we proceed, could you please confirm the order id and the new payment method? The order id you provided is #W9284712 and the "
+    },
+    {
+      "prompt_id": 17,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 17,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 17,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 43,
+      "reasoning_preview": "Sure, I can help with that. Could you please confirm the order id and the new payment method you would like to use? The new payment method should be a credit ca"
+    },
+    {
+      "prompt_id": 17,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 17,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 76,
+      "reasoning_preview": "Sure, I can help with that. Could you please confirm the order id and provide me with the new payment method details? Specifically, I need the last four digits "
+    },
+    {
+      "prompt_id": 17,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 17,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 18,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 28,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user ID so I can confirm your identity and locate the order?"
+    },
+    {
+      "prompt_id": 18,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 18,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 18,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 50,
+      "reasoning_preview": "Sure, I can help with that. Before we proceed, could you please confirm the order id and the new payment method you want to use? The new payment method should b"
+    },
+    {
+      "prompt_id": 18,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 18,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 43,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with the user's email or first name, last name, and zip code so I can verify their identity and ensure w"
+    },
+    {
+      "prompt_id": 18,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 28,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user id so I can verify your identity and locate the order?"
+    },
+    {
+      "prompt_id": 18,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 62,
+      "reasoning_preview": "Sure, I can help with that. Let me first confirm the order details and ensure we have the correct payment method. Could you please provide me with the original "
+    },
+    {
+      "prompt_id": 18,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 47,
+      "reasoning_preview": "Sure, I can help with that. Let me first get the order details to confirm the current payment method and order status.\n\nI will call `get_order_details` with the"
+    },
+    {
+      "prompt_id": 18,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 54,
+      "reasoning_preview": "Sure, I can help with that. Before we proceed, could you please confirm the order ID and the new payment method details, including the credit card number ending"
+    },
+    {
+      "prompt_id": 18,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 82,
+      "reasoning_preview": "Sure, I can help with that. Could you please confirm the order id and the new payment method? Also, to ensure accuracy, could you provide the original payment m"
+    },
+    {
+      "prompt_id": 18,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 18,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 18,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 18,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 18,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 19,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 19,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 19,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 19,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 19,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 19,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 19,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 19,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 19,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 19,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 19,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 19,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 19,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 19,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 19,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 19,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 20,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 20,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 20,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 20,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 20,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 101,
+      "reasoning_preview": "Sure, I can help with that. Before we proceed, could you please confirm the order ID and the payment method ID for your card ending in 5567? This will ensure we"
+    },
+    {
+      "prompt_id": 20,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 20,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 20,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 38,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with the email associated with this order or the first and last name along with the zip code so I can ve"
+    },
+    {
+      "prompt_id": 20,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 20,
+      "first_class": "lookup",
+      "first_tool": "find_user_id_by_email",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 20,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 47,
+      "reasoning_preview": "Sure, I can help with that. Could you please confirm the order id and the new payment method you want to use? Also, ensure that the card ending in 5567 has suff"
+    },
+    {
+      "prompt_id": 20,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 20,
+      "first_class": "lookup",
+      "first_tool": "find_user_id_by_email",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 20,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 20,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 20,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 56,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user ID or email so I can locate your order? Once I have confirmed your order and the payment "
+    },
+    {
+      "prompt_id": 21,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 21,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 21,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 21,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 21,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 21,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 21,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 21,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 21,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 21,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 21,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 21,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 21,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 21,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 21,
+      "first_class": "lookup",
+      "first_tool": "get_order_details",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 21,
+      "first_class": "mutation",
+      "first_tool": "modify_pending_order_payment",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 22,
+      "first_class": "mutation",
+      "first_tool": "modify_user_address",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 22,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 54,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user id so I can confirm your identity and update your default address? If you're not sure whe"
+    },
+    {
+      "prompt_id": 22,
+      "first_class": "mutation",
+      "first_tool": "modify_user_address",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 22,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 30,
+      "reasoning_preview": "Sure, I can help with that. Could you please confirm your full name and the zip code associated with this address so I can verify your identity?"
+    },
+    {
+      "prompt_id": 22,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 25,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user id so I can update your default address?"
+    },
+    {
+      "prompt_id": 22,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 30,
+      "reasoning_preview": "Sure, I can help with that. Could you please confirm your full name and the zip code associated with your account so I can verify your identity?"
+    },
+    {
+      "prompt_id": 22,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 25,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user id so I can locate your account details?"
+    },
+    {
+      "prompt_id": 22,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 24,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user id so I can confirm your identity?"
+    },
+    {
+      "prompt_id": 22,
+      "first_class": "mutation",
+      "first_tool": "modify_user_address",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 22,
+      "first_class": "mutation",
+      "first_tool": "modify_user_address",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 22,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 29,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user id so I can confirm your identity and update your default address?"
+    },
+    {
+      "prompt_id": 22,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 25,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user id so I can update your default address?"
+    },
+    {
+      "prompt_id": 22,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 30,
+      "reasoning_preview": "Sure, I can help with that. Could you please confirm your full name and the zip code associated with this address so I can verify your identity?"
+    },
+    {
+      "prompt_id": 22,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 24,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user id so I can confirm your identity?"
+    },
+    {
+      "prompt_id": 22,
+      "first_class": "mutation",
+      "first_tool": "modify_user_address",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 22,
+      "first_class": "mutation",
+      "first_tool": "modify_user_address",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 23,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 35,
+      "reasoning_preview": "Sure, I can help with that. Let's confirm your user ID first to ensure we update the correct account. Could you please provide your user ID or your email addres"
+    },
+    {
+      "prompt_id": 23,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 56,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user ID so I can confirm your identity? If you're unsure where to find it, we can also try usi"
+    },
+    {
+      "prompt_id": 23,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 53,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user id so I can locate your account details? If you're not sure about your user id, we can tr"
+    },
+    {
+      "prompt_id": 23,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 53,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user ID so I can locate your account details? If you're not sure about your user ID, we can tr"
+    },
+    {
+      "prompt_id": 23,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 29,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user id so I can verify your identity and update your default address?"
+    },
+    {
+      "prompt_id": 23,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 37,
+      "reasoning_preview": "Sure, I can help with that. Let me locate your user ID first. Could you please provide me with your email or your name and zip code so I can identify your accou"
+    },
+    {
+      "prompt_id": 23,
+      "first_class": "mutation",
+      "first_tool": "modify_user_address",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 23,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 47,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user id so I can verify your identity? If you don't remember your user id, you can also provid"
+    },
+    {
+      "prompt_id": 23,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 29,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user ID so I can confirm your identity and update your default address?"
+    },
+    {
+      "prompt_id": 23,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 70,
+      "reasoning_preview": "Sure, I can help with that. Before we proceed, could you please confirm your user id so I can locate your profile?\n\nIf you're unsure about your user id, you can"
+    },
+    {
+      "prompt_id": 23,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 22,
+      "reasoning_preview": "Sure, I can help with that. Could you please confirm your user id so I can locate your account?"
+    },
+    {
+      "prompt_id": 23,
+      "first_class": "mutation",
+      "first_tool": "modify_user_address",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 23,
+      "first_class": "mutation",
+      "first_tool": "modify_user_address",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 23,
+      "first_class": "mutation",
+      "first_tool": "modify_user_address",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 23,
+      "first_class": "mutation",
+      "first_tool": "modify_user_address",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 23,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 53,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user ID so I can verify your identity and update your default address? If you don't remember y"
+    },
+    {
+      "prompt_id": 24,
+      "first_class": "mutation",
+      "first_tool": "modify_user_address",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 24,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 29,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user id so I can locate your profile and update the default address?"
+    },
+    {
+      "prompt_id": 24,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 48,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user ID so I can locate your account? If you don't remember your user ID, you can also provide"
+    },
+    {
+      "prompt_id": 24,
+      "first_class": "mutation",
+      "first_tool": "modify_user_address",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 24,
+      "first_class": "mutation",
+      "first_tool": "modify_user_address",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 24,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 26,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user id so I can confirm it's your account?"
+    },
+    {
+      "prompt_id": 24,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 30,
+      "reasoning_preview": "Sure, I can help with that. Could you please confirm your full name and the zip code associated with this address so I can verify your identity?"
+    },
+    {
+      "prompt_id": 24,
+      "first_class": "mutation",
+      "first_tool": "modify_user_address",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 24,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 25,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user id so I can locate your account details?"
+    },
+    {
+      "prompt_id": 24,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 24,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user ID so I can confirm your identity?"
+    },
+    {
+      "prompt_id": 24,
+      "first_class": "mutation",
+      "first_tool": "modify_user_address",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 24,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 31,
+      "reasoning_preview": "Sure, I can help with that. Let me find your user ID first. Could you please provide me with your email or your name and zip code?"
+    },
+    {
+      "prompt_id": 24,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 66,
+      "reasoning_preview": "Sure, I can help with that. Let's update your default address. Could you please provide me with your user ID so I can confirm your identity?\n\nIf you're unsure a"
+    },
+    {
+      "prompt_id": 24,
+      "first_class": "mutation",
+      "first_tool": "modify_user_address",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 24,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 42,
+      "reasoning_preview": "Sure, I can help with that. Could you please confirm your first name, last name, and zip code so I can locate your user ID? If you prefer, you can also share yo"
+    },
+    {
+      "prompt_id": 24,
+      "first_class": "mutation",
+      "first_tool": "modify_user_address",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 25,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 31,
+      "reasoning_preview": "Sure, I can help with that. Before we proceed, could you please confirm your user ID or provide your email so I can locate your account details?"
+    },
+    {
+      "prompt_id": 25,
+      "first_class": "mutation",
+      "first_tool": "modify_user_address",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 25,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 30,
+      "reasoning_preview": "Sure, I can help with that. Could you please confirm your full name and the zip code associated with this address so I can verify your identity?"
+    },
+    {
+      "prompt_id": 25,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 98,
+      "reasoning_preview": "Sure, I can help with that. Before we proceed, could you please confirm your user id so I can locate your profile?\n\nIf you're unsure where to find it, it's typi"
+    },
+    {
+      "prompt_id": 25,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 43,
+      "reasoning_preview": "Sure, I can help with that. Let's start by verifying your user ID. Could you please provide me with your email or your first name, last name, and zip code so I "
+    },
+    {
+      "prompt_id": 25,
+      "first_class": "mutation",
+      "first_tool": "modify_user_address",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 25,
+      "first_class": "mutation",
+      "first_tool": "modify_user_address",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 25,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 24,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user id so I can locate your profile?"
+    },
+    {
+      "prompt_id": 25,
+      "first_class": "mutation",
+      "first_tool": "modify_user_address",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 25,
+      "first_class": "mutation",
+      "first_tool": "modify_user_address",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 25,
+      "first_class": "mutation",
+      "first_tool": "modify_user_address",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 25,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 45,
+      "reasoning_preview": "Sure, I can help with that. Before we proceed, could you please confirm your user ID so I can locate your account details? If you don't know it, you can also pr"
+    },
+    {
+      "prompt_id": 25,
+      "first_class": "mutation",
+      "first_tool": "modify_user_address",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    },
+    {
+      "prompt_id": 25,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 29,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user id so I can confirm your identity and update your default address?"
+    },
+    {
+      "prompt_id": 25,
+      "first_class": "none",
+      "first_tool": null,
+      "reasoning_tokens": 29,
+      "reasoning_preview": "Sure, I can help with that. Could you please provide me with your user ID so I can verify your identity and update your default address?"
+    },
+    {
+      "prompt_id": 25,
+      "first_class": "mutation",
+      "first_tool": "modify_user_address",
+      "reasoning_tokens": 0,
+      "reasoning_preview": ""
+    }
+  ]
+}

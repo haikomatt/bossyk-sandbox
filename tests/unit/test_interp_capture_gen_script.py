@@ -78,3 +78,53 @@ def test_build_gen_payload_forward_offsets_padding_and_text() -> None:
     # text-so-far accumulates decoded tokens up to and including the offset
     assert payload["text_so_far"][0, 1] == "Sure I'll modify"
     assert payload["text_so_far"][1, 1] == ""  # out of range -> empty
+
+
+def test_build_gen_payload_tool_call_anchor_is_backward_and_action_only() -> None:
+    # The CoT lead-time regime: a reasoning window precedes the tool call, so we
+    # anchor BACKWARD from the tool-call token over ACTION rollouts only (both
+    # mutation-first and lookup-first have a tool-call anchor; a text-only
+    # compliant rollout has none and is excluded).
+    m = _import()
+    d = 2
+    # rollout A: mutation-first, tool call at generated token index 3
+    ra = m.Rollout(
+        prompt_id=0,
+        is_violation=True,
+        token_strings=["I'll", " just", " cancel", " <tool_call>", "{"],
+        residuals={7: [[float(i)] * d for i in range(5)]},
+    )
+    # rollout B: lookup-first (compliant), same prompt, tool call at index 3
+    rb = m.Rollout(
+        prompt_id=0,
+        is_violation=False,
+        token_strings=["Let", " me", " check", " <tool_call>", "{"],
+        residuals={7: [[10.0 + i] * d for i in range(5)]},
+    )
+    # rollout C: text-only compliant, NO tool call -> excluded under tool_call anchor
+    rc = m.Rollout(
+        prompt_id=0,
+        is_violation=False,
+        token_strings=["Could", " you", " confirm"],
+        residuals={7: [[99.0] * d for _ in range(3)]},
+    )
+    payload = m.build_gen_payload(
+        [ra, rb, rc], layers=[7], offsets=[-1, -2, -4], anchor="tool_call"
+    )
+
+    # offsets stored ascending; only the two action rollouts survive
+    assert payload["offsets"].tolist() == [-4, -2, -1]
+    assert payload["is_violation"].tolist() == [True, False]
+    assert payload["prompt_id"].tolist() == [0, 0]
+    assert payload["X_7"].shape == (2, 3, d)
+    # rollout A, anchor index 3: col -4 -> pos -1 (NaN); col -2 -> pos 1; col -1 -> pos 2
+    assert np.isnan(payload["X_7"][0, 0]).all()
+    assert payload["X_7"][0, 1, 0] == 1.0
+    assert payload["X_7"][0, 2, 0] == 2.0
+    # rollout B, anchor index 3: col -2 -> pos 1 (11.0); col -1 -> pos 2 (12.0)
+    assert payload["X_7"][1, 1, 0] == 11.0
+    assert payload["X_7"][1, 2, 0] == 12.0
+    # text-so-far is the reasoning up to and including each pre-tool-call position
+    assert payload["text_so_far"][0, 2] == "I'll just cancel"
+    assert payload["text_so_far"][0, 1] == "I'll just"
+    assert payload["text_so_far"][0, 0] == ""  # position before generation start

@@ -103,41 +103,71 @@ class Rollout:
 
 
 def build_gen_payload(
-    rollouts: list[Rollout], layers: list[int], offsets: list[int]
+    rollouts: list[Rollout],
+    layers: list[int],
+    offsets: list[int],
+    anchor: str = "start",
 ) -> dict[str, Any]:
-    """Assemble the per-rollout, per-(offset, layer) npz payload, anchored at
-    GENERATION START. `offsets` are forward token positions into the response
-    (0 = first generated token, 1 = second, ...). `X_<layer>` has shape
-    (n_rollouts, n_offsets, d_model); a cell is NaN where the rollout is shorter
-    than that offset. `text_so_far` (n_rollouts, n_offsets) is the decoded
-    generation up to and including each offset -- input to the text-so-far
-    baseline (offset 0 is one token, so early offsets carry little text, the
-    control we need). `prompt_id` supports group-CV by prompt.
+    """Assemble the per-rollout, per-(offset, layer) npz payload.
 
-    The lead-time question: at forward offset k tokens into the response, is the
-    EVENTUAL outcome decodable from the residual, and does it beat the text so
-    far? Every rollout has generation-start, so both classes are represented
-    (unlike a tool-call anchor, which excludes the text-asking compliant class)."""
-    n = len(rollouts)
-    offs = sorted(offsets)  # forward positions, e.g. [0,1,2,4,8,16]
-    d = len(next(iter(rollouts[0].residuals.values()))[0]) if rollouts else 0
+    Two anchoring modes (the v1 tool-call anchor and the v2 start anchor, both
+    kept):
+
+    - ``anchor="start"`` (default): `offsets` are FORWARD token positions into
+      the response (0 = first generated token, 1 = second, ...). Every rollout
+      has a generation-start, so BOTH classes are represented -- including a
+      compliant rollout that only asks in text and never calls a tool. This is
+      the immediate-action H1 regime (the eventual-outcome label).
+
+    - ``anchor="tool_call"``: `offsets` are BACKWARD, tool-call-relative token
+      positions (0 = the tool-call token itself, -1 = one token before it, ...).
+      Only ACTION rollouts -- those that emit a parseable tool-call marker --
+      are kept (a text-only compliant rollout has no anchor and is excluded).
+      This is the CoT lead-time regime: with a reasoning window BEFORE the tool
+      call, does the residual predict the eventual tool choice (mutation-first
+      vs lookup-first) at negative offsets, ahead of the reasoning text so far?
+
+    `X_<layer>` has shape (n_kept, n_offsets, d_model); a cell is NaN where the
+    target position falls outside the rollout (shorter than a forward offset, or
+    before generation start for a backward offset). `text_so_far` (n_kept,
+    n_offsets) is the decoded generation up to and including each target
+    position -- input to the text-so-far baseline. `prompt_id` supports the
+    essential group-CV by prompt."""
+    if anchor not in {"start", "tool_call"}:
+        raise ValueError(f"unknown anchor {anchor!r}; use 'start' or 'tool_call'")
+
+    if anchor == "tool_call":
+        # action-rollout-only filter: keep rollouts with a tool-call anchor
+        kept = [
+            (r, idx)
+            for r in rollouts
+            if (idx := find_tool_call_token_index(r.token_strings)) is not None
+        ]
+    else:
+        kept = [(r, 0) for r in rollouts]
+
+    offs = sorted(offsets)  # ascending: forward [0,1,2,...] or backward [-24,...,-1]
+    d = len(next(iter(kept[0][0].residuals.values()))[0]) if kept else 0
+    n = len(kept)
     payload: dict[str, Any] = {
         "offsets": np.asarray(offs, dtype=np.int64),
         "layers": np.asarray(layers, dtype=np.int64),
-        "is_violation": np.asarray([r.is_violation for r in rollouts], dtype=bool),
-        "prompt_id": np.asarray([r.prompt_id for r in rollouts], dtype=np.int64),
+        "anchor": np.asarray(anchor),
+        "is_violation": np.asarray([r.is_violation for r, _ in kept], dtype=bool),
+        "prompt_id": np.asarray([r.prompt_id for r, _ in kept], dtype=np.int64),
     }
     text_so_far = np.empty((n, len(offs)), dtype=object)
     per_layer = {layer: np.full((n, len(offs), d), np.nan, dtype=np.float32) for layer in layers}
-    for ri, r in enumerate(rollouts):
+    for ri, (r, base) in enumerate(kept):
         n_gen = len(r.token_strings)
         for oi, o in enumerate(offs):
-            if o >= n_gen:  # rollout shorter than this offset
+            pos = base + o  # start: pos==o; tool_call: pos==anchor_index+o (o<=0)
+            if pos < 0 or pos >= n_gen:  # outside this rollout
                 text_so_far[ri, oi] = ""
                 continue
-            text_so_far[ri, oi] = "".join(r.token_strings[: o + 1])
+            text_so_far[ri, oi] = "".join(r.token_strings[: pos + 1])
             for layer in layers:
-                per_layer[layer][ri, oi, :] = r.residuals[layer][o]
+                per_layer[layer][ri, oi, :] = r.residuals[layer][pos]
     payload["text_so_far"] = text_so_far.astype(str)
     for layer in layers:
         payload[f"X_{layer}"] = per_layer[layer]
@@ -222,7 +252,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--rollouts", type=int, default=16, help="samples per prompt")
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--layers", default="7,14,27")
-    parser.add_argument("--offsets", default="0,1,2,4,8,16", help="forward token positions")
+    parser.add_argument(
+        "--anchor",
+        choices=("start", "tool_call"),
+        default="start",
+        help="start = forward offsets from generation start (v2, immediate-action); "
+        "tool_call = backward offsets from the tool-call token over action rollouts "
+        "only (v1, the CoT lead-time regime)",
+    )
+    parser.add_argument(
+        "--offsets",
+        default=None,
+        help="comma-separated token positions; forward for --anchor start "
+        "(default 0,1,2,4,8,16), backward for --anchor tool_call (default -1,-2,-4,-8,-16,-24)",
+    )
     parser.add_argument("--max-new-tokens", type=int, default=64)
     args = parser.parse_args(argv)
 
@@ -231,7 +274,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     layers = [int(x) for x in args.layers.split(",")]
-    offsets = [int(x) for x in args.offsets.split(",")]
+    default_offsets = "-1,-2,-4,-8,-16,-24" if args.anchor == "tool_call" else "0,1,2,4,8,16"
+    offsets = [int(x) for x in (args.offsets or default_offsets).split(",")]
     prompts = [str(p) for p in json.loads(Path(args.prompts).read_text())]
     policy = str(json.loads(Path(args.policy_file).read_text()))
     tools = json.loads(Path(args.tools_file).read_text())
@@ -263,7 +307,7 @@ def main(argv: list[str] | None = None) -> int:
             flush=True,
         )
 
-    payload = build_gen_payload(rollouts, layers, offsets)
+    payload = build_gen_payload(rollouts, layers, offsets, anchor=args.anchor)
     np.savez(args.out, **payload)
     nv = int(payload["is_violation"].sum())
     print(f"SAVED GEN ACTIVATIONS -> {Path(args.out).resolve()}  (PULL before teardown)")
