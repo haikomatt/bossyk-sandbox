@@ -87,41 +87,39 @@ def find_tool_call_token_index(token_strings: list[str]) -> int | None:
     return None
 
 
-def offset_token_indices(tool_call_index: int, offsets: list[int]) -> dict[int, int]:
-    """Map each backward offset (negative, tokens before the tool call) to an
-    absolute token index, dropping offsets that fall before generation start."""
-    out: dict[int, int] = {}
-    for o in offsets:
-        idx = tool_call_index + o
-        if idx >= 0:
-            out[o] = idx
-    return out
-
-
 @dataclass
 class Rollout:
-    """One sampled generation of one borderline prompt."""
+    """One sampled generation of one borderline prompt.
+
+    `is_violation` is the EVENTUAL outcome (did this rollout emit a gated-mutation
+    tool call anywhere), so the COMPLIANT class includes rollouts that ask in text
+    or call a lookup -- not just tool-emitting ones. Anchored at generation start
+    (index 0), because a compliant rollout has no action token to anchor on."""
 
     prompt_id: int
     is_violation: bool
     token_strings: list[str]
-    tool_call_index: int  # generated-token index where the action begins
     residuals: dict[int, list[list[float]]]  # layer -> per-generated-token residual
 
 
 def build_gen_payload(
     rollouts: list[Rollout], layers: list[int], offsets: list[int]
 ) -> dict[str, Any]:
-    """Assemble the per-rollout, per-(offset, layer) npz payload.
+    """Assemble the per-rollout, per-(offset, layer) npz payload, anchored at
+    GENERATION START. `offsets` are forward token positions into the response
+    (0 = first generated token, 1 = second, ...). `X_<layer>` has shape
+    (n_rollouts, n_offsets, d_model); a cell is NaN where the rollout is shorter
+    than that offset. `text_so_far` (n_rollouts, n_offsets) is the decoded
+    generation up to and including each offset -- input to the text-so-far
+    baseline (offset 0 is one token, so early offsets carry little text, the
+    control we need). `prompt_id` supports group-CV by prompt.
 
-    `X_<layer>` has shape (n_rollouts, n_offsets, d_model); a cell is NaN where
-    the offset falls before the rollout's generation start (short rollout). The
-    `text_so_far` (n_rollouts, n_offsets) string array is the decoded generation
-    up to and including each offset token -- the input to the text-so-far
-    baseline (its earliest offsets are near-empty by construction, the control we
-    lacked). `prompt_id` supports group-CV by prompt."""
+    The lead-time question: at forward offset k tokens into the response, is the
+    EVENTUAL outcome decodable from the residual, and does it beat the text so
+    far? Every rollout has generation-start, so both classes are represented
+    (unlike a tool-call anchor, which excludes the text-asking compliant class)."""
     n = len(rollouts)
-    offs = sorted(offsets)  # e.g. [-16,-12,-8,-4,-2,-1]
+    offs = sorted(offsets)  # forward positions, e.g. [0,1,2,4,8,16]
     d = len(next(iter(rollouts[0].residuals.values()))[0]) if rollouts else 0
     payload: dict[str, Any] = {
         "offsets": np.asarray(offs, dtype=np.int64),
@@ -132,15 +130,14 @@ def build_gen_payload(
     text_so_far = np.empty((n, len(offs)), dtype=object)
     per_layer = {layer: np.full((n, len(offs), d), np.nan, dtype=np.float32) for layer in layers}
     for ri, r in enumerate(rollouts):
-        idx_map = offset_token_indices(r.tool_call_index, offs)
+        n_gen = len(r.token_strings)
         for oi, o in enumerate(offs):
-            tok_idx = idx_map.get(o)
-            if tok_idx is None:
+            if o >= n_gen:  # rollout shorter than this offset
                 text_so_far[ri, oi] = ""
                 continue
-            text_so_far[ri, oi] = "".join(r.token_strings[: tok_idx + 1])
+            text_so_far[ri, oi] = "".join(r.token_strings[: o + 1])
             for layer in layers:
-                per_layer[layer][ri, oi, :] = r.residuals[layer][tok_idx]
+                per_layer[layer][ri, oi, :] = r.residuals[layer][o]
     payload["text_so_far"] = text_so_far.astype(str)
     for layer in layers:
         payload[f"X_{layer}"] = per_layer[layer]
@@ -225,7 +222,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--rollouts", type=int, default=16, help="samples per prompt")
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--layers", default="7,14,27")
-    parser.add_argument("--offsets", default="-16,-12,-8,-4,-2,-1")
+    parser.add_argument("--offsets", default="0,1,2,4,8,16", help="forward token positions")
     parser.add_argument("--max-new-tokens", type=int, default=64)
     args = parser.parse_args(argv)
 
@@ -255,14 +252,14 @@ def main(argv: list[str] | None = None) -> int:
                 temperature=args.temperature,
                 seed=pid * 1000 + s,
             )
-            tc = find_tool_call_token_index(token_strings)
-            if tc is None:
-                continue  # no tool call emitted -> not an action rollout, skip
-            gen_text = "".join(token_strings)
-            outcome = classify_outcome(parse_first_tool_call(gen_text))
-            rollouts.append(Rollout(pid, outcome, token_strings, tc, residuals))
+            # Keep EVERY rollout (do not skip no-tool ones -- text-asking is the
+            # compliant class). Label by the eventual outcome: a gated-mutation
+            # tool call anywhere in the response is a violation.
+            outcome = classify_outcome(parse_first_tool_call("".join(token_strings)))
+            rollouts.append(Rollout(pid, outcome, token_strings, residuals))
+        pv = [r for r in rollouts if r.prompt_id == pid]
         print(
-            f"prompt {pid}: {sum(1 for r in rollouts if r.prompt_id == pid)} action rollouts",
+            f"prompt {pid}: {len(pv)} rollouts, {sum(r.is_violation for r in pv)} violation",
             flush=True,
         )
 
