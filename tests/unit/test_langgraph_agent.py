@@ -582,3 +582,111 @@ def test_agent_inference_latency_is_recorded_per_turn() -> None:
     assert session.agent_latency, "expected an agent_inference latency record per turn"
     assert all(r.instrument == "agent_inference" for r in session.agent_latency)
     assert all(r.elapsed_s >= 0.0 for r in session.agent_latency)
+
+
+# --- interp: opt-in behavioral logprob capture -------------------------------
+
+_LOGPROBS_META = {
+    "logprobs": {
+        "content": [
+            {
+                "token": "do",
+                "logprob": -0.2,
+                "top_logprobs": [
+                    {"token": "do", "logprob": -0.2},
+                    {"token": "no", "logprob": -1.5},
+                ],
+            },
+            {
+                "token": "ne",
+                "logprob": -0.05,
+                "top_logprobs": [
+                    {"token": "ne", "logprob": -0.05},
+                    {"token": "nt", "logprob": -3.0},
+                ],
+            },
+        ]
+    }
+}
+
+
+def test_capture_logprobs_off_by_default_leaves_agent_interp_empty() -> None:
+    # Even when the response carries logprobs, default (opt-out) captures nothing
+    # -- proving the production/voice-sweep path is unaffected.
+    llm = _ScriptedLLM(responses=[AIMessage(content="done", response_metadata=_LOGPROBS_META)])
+    session = build_airline_agent_session(
+        trace_id="t-interp-off", llm=llm, environment=_FakeEnvironment(tools=_CountingToolkit())
+    )
+
+    _run_to_completion(session, thread_id="interp-off")
+
+    assert session.agent_interp == []
+
+
+def test_capture_logprobs_records_per_turn_uncertainty() -> None:
+    llm = _ScriptedLLM(responses=[AIMessage(content="done", response_metadata=_LOGPROBS_META)])
+    session = build_airline_agent_session(
+        trace_id="t-interp-on",
+        llm=llm,
+        environment=_FakeEnvironment(tools=_CountingToolkit()),
+        capture_logprobs=True,
+    )
+
+    _run_to_completion(session, thread_id="interp-on")
+
+    # One uncertainty summary per agent turn, aligned with agent_latency.
+    assert len(session.agent_interp) == 1
+    assert len(session.agent_interp) == len(session.agent_latency)
+    step = session.agent_interp[0]
+    assert step.n_tokens == 2
+    assert step.max_surprisal == pytest.approx(0.2)
+    assert step.mean_surprisal == pytest.approx(0.125)
+
+
+def test_capture_logprobs_tool_call_turn_without_logprobs_is_zero() -> None:
+    # capture on, but the response carries no logprobs (e.g. a tool-call turn):
+    # graceful n_tokens==0 summary, not a crash. Two turns -> two summaries.
+    llm = _ScriptedLLM(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[_tool_call("get_reservation_details", {"reservation_id": "R1"}, "c1")],
+            ),
+            AIMessage(content="done"),
+        ]
+    )
+    session = build_airline_agent_session(
+        trace_id="t-interp-toolcall",
+        llm=llm,
+        environment=_FakeEnvironment(tools=_CountingToolkit()),
+        capture_logprobs=True,
+    )
+
+    _run_to_completion(session, thread_id="interp-toolcall")
+
+    assert len(session.agent_interp) == 2
+    assert all(s.n_tokens == 0 for s in session.agent_interp)
+
+
+def test_capture_prompts_off_by_default_leaves_agent_prompts_empty() -> None:
+    llm = _ScriptedLLM(responses=[AIMessage(content="done")])
+    session = build_airline_agent_session(
+        trace_id="t-prompts-off", llm=llm, environment=_FakeEnvironment(tools=_CountingToolkit())
+    )
+    _run_to_completion(session, thread_id="prompts-off")
+    assert session.agent_prompts == []
+
+
+def test_capture_prompts_records_the_rendered_decision_context_per_turn() -> None:
+    llm = _ScriptedLLM(responses=[AIMessage(content="done")])
+    session = build_airline_agent_session(
+        trace_id="t-prompts-on",
+        llm=llm,
+        environment=_FakeEnvironment(tools=_CountingToolkit(), policy="be compliant"),
+        capture_prompts=True,
+    )
+    _run_to_completion(session, thread_id="prompts-on")
+    assert len(session.agent_prompts) == 1
+    assert len(session.agent_prompts) == len(session.agent_latency)
+    # the rendered context carries the system/policy the agent was given
+    assert "be compliant" in session.agent_prompts[0]

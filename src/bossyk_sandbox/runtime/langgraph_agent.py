@@ -21,6 +21,12 @@ from tau2.domains.retail.environment import get_environment as get_retail_enviro
 from bossyk_sandbox.evidence.trace import make_attested_step
 from bossyk_sandbox.gate import Gate
 from bossyk_sandbox.instruments.base import Decision, Instrument, ProposedAction, Verdict
+from bossyk_sandbox.interp.logprob_metrics import (
+    StepUncertainty,
+    parse_openai_logprobs,
+    summarize,
+)
+from bossyk_sandbox.interp.prompt_render import render_prompt
 from bossyk_sandbox.scenarios.runner import default_fast_rules, retail_fast_rules
 from bossyk_sandbox.scoring.latency import Clock, LatencyRecord, timed
 
@@ -75,9 +81,35 @@ class AirlineAgentSession:
     # metric -- a model too slow here is unusable in a live voice pipeline,
     # regardless of how robust it is.
     agent_latency: list[LatencyRecord] = field(default_factory=list)
+    # Interpretability (behavioral layer): per-agent-turn logprob uncertainty
+    # summary, appended in place ONLY when the session is built with
+    # capture_logprobs=True (default off, so the production/voice-sweep path is
+    # byte-for-byte unchanged). One entry per agent turn, aligned with
+    # agent_latency; a turn with no scored tokens (pure tool-call) yields an
+    # n_tokens==0 summary. Lined up against the Gate's policy verdict downstream.
+    agent_interp: list[StepUncertainty] = field(default_factory=list)
+    # Interpretability (white-box producer): per-agent-turn rendered decision
+    # prompt (system/policy + conversation so far, the T4 pre-action context),
+    # appended in place ONLY when built with capture_prompts=True (default off).
+    # One entry per agent turn, aligned with agent_interp; the mechanistic
+    # capture (scripts/interp_capture.py) re-tokenises these on the pod.
+    agent_prompts: list[str] = field(default_factory=list)
 
 
 AgentSession = AirlineAgentSession
+
+
+def _step_uncertainty(response: Any) -> StepUncertainty:
+    """Extract the per-turn logprob-uncertainty summary from a chat response.
+
+    Reads the OpenAI-standard logprobs LangChain surfaces at
+    ``AIMessage.response_metadata["logprobs"]["content"]``. Absent/None at any
+    level (endpoint not asked for logprobs, or a tool-call turn with no scored
+    tokens) degrades to the ``n_tokens == 0`` summary rather than raising -- this
+    is the graceful handling of the open tool-call-logprobs question."""
+    meta = getattr(response, "response_metadata", None) or {}
+    logprobs = meta.get("logprobs") or {}
+    return summarize(parse_openai_logprobs(logprobs.get("content")))
 
 
 def _tool_schemas(toolkit: Any) -> list[dict[str, Any]]:
@@ -151,6 +183,9 @@ def _build_agent_session(
     environment: Any | None,
     policy_override: str | None = None,
     clock: Clock = time.perf_counter,
+    capture_logprobs: bool = False,
+    top_logprobs: int = 5,
+    capture_prompts: bool = False,
 ) -> AgentSession:
     """Domain-parameterized live LangGraph agent with in-graph tool-call
     interception, shared by `build_airline_agent_session` and
@@ -195,6 +230,14 @@ def _build_agent_session(
         # persistently rate-limited attempt is recorded as an error and the run
         # continues instead of hanging. (env-tunable, default 0.)
         max_retries = int(os.environ.get("AGENT_MAX_RETRIES", "0"))
+        # Opt-in behavioral capture: ask the endpoint for per-token logprobs +
+        # top-k alternatives. Off by default so the existing production/voice-
+        # sweep path is unchanged. vLLM and Fireworks both honour these on their
+        # OpenAI route; whether they populate on tool-call turns is the open
+        # question _step_uncertainty degrades gracefully around.
+        logprob_kwargs: dict[str, Any] = (
+            {"logprobs": True, "top_logprobs": top_logprobs} if capture_logprobs else {}
+        )
         llm = ChatOpenAI(
             model=resolved_model,
             base_url=resolved_base_url,
@@ -202,17 +245,24 @@ def _build_agent_session(
             temperature=0,
             max_retries=max_retries,
             timeout=120,
+            **logprob_kwargs,
         ).bind_tools(tool_schemas)
 
     gate = Gate(instruments=fast_rules)
     steps: list[Step] = []
     tool_latency: list[LatencyRecord] = []
     agent_latency: list[LatencyRecord] = []
+    agent_interp: list[StepUncertainty] = []
+    agent_prompts: list[str] = []
 
     def agent_node(state: AgentState) -> dict[str, Any]:
         messages = [SystemMessage(content=policy), *state["messages"]]
+        if capture_prompts:
+            agent_prompts.append(render_prompt(messages))
         response, record = timed("agent_inference", lambda: llm.invoke(messages), clock=clock)
         agent_latency.append(record)
+        if capture_logprobs:
+            agent_interp.append(_step_uncertainty(response))
         return {"messages": [response]}
 
     def plan_calls_node(state: AgentState) -> dict[str, Any]:
@@ -328,6 +378,8 @@ def _build_agent_session(
         gate=gate,
         tool_latency=tool_latency,
         agent_latency=agent_latency,
+        agent_interp=agent_interp,
+        agent_prompts=agent_prompts,
     )
 
 
@@ -340,6 +392,8 @@ def build_airline_agent_session(
     llm: Any | None = None,
     environment: Any | None = None,
     clock: Clock = time.perf_counter,
+    capture_logprobs: bool = False,
+    capture_prompts: bool = False,
 ) -> AgentSession:
     """Live LangGraph airline agent. See `_build_agent_session` for the
     shared mechanics. Fast-path gate wired to `default_fast_rules()`
@@ -358,6 +412,8 @@ def build_airline_agent_session(
         llm=llm,
         environment=environment,
         clock=clock,
+        capture_logprobs=capture_logprobs,
+        capture_prompts=capture_prompts,
     )
 
 
@@ -370,6 +426,8 @@ def build_retail_agent_session(
     llm: Any | None = None,
     environment: Any | None = None,
     policy_override: str | None = None,
+    capture_logprobs: bool = False,
+    capture_prompts: bool = False,
 ) -> AgentSession:
     """Live LangGraph retail agent -- the retail counterpart of
     `build_airline_agent_session`, needed so retail crossings are reachable
@@ -388,6 +446,8 @@ def build_retail_agent_session(
         llm=llm,
         environment=environment,
         policy_override=policy_override,
+        capture_logprobs=capture_logprobs,
+        capture_prompts=capture_prompts,
     )
 
 
@@ -399,6 +459,8 @@ def build_weakened_retail_agent_session(
     base_url: str | None = None,
     llm: Any | None = None,
     environment: Any | None = None,
+    capture_logprobs: bool = False,
+    capture_prompts: bool = False,
 ) -> AgentSession:
     """dir 1: a deliberately UNDER-SPECIFIED retail agent -- same tools + gate as
     build_retail_agent_session, but its system prompt is weaken_policy(policy) so
@@ -415,4 +477,6 @@ def build_weakened_retail_agent_session(
         llm=llm,
         environment=base_env,
         policy_override=weaken_policy(base_env.policy),
+        capture_logprobs=capture_logprobs,
+        capture_prompts=capture_prompts,
     )
