@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 from langchain_core.messages import AIMessage
 
-from bossyk_sandbox.console.live import LiveResult, run_live_session
+from bossyk_sandbox.console.live import LiveResult, order_reader_from_toolkit, run_live_session
 from bossyk_sandbox.runtime.langgraph_agent import build_retail_agent_session
+from bossyk_sandbox.standing import StandingGrant
 
 # Drives the REAL LangGraph agent graph + REAL retail gate, but with a fake LLM
 # and a fake tau2 environment injected -- fully deterministic, no network, no
@@ -163,3 +165,102 @@ def test_run_live_session_enforces_the_gate_no_blocked_tool_runs() -> None:
     assert len(result.steps) == 5
     blocked = [s for s in result.steps if s.action.payload["gate_verdict"] == "block"]
     assert len(blocked) == 3
+
+
+# --- amount gating (P3): live wiring ------------------------------------------
+# The oracle (`standing_amount.resolve_amount`) needs order state, which lives
+# on the tau2 environment's toolkit -- `order_reader_from_toolkit` adapts it to
+# the `OrderReader` Protocol so `run_live_session` can resolve + stamp the
+# amount of each allowed action and thread it into `evaluate_authority`,
+# without this module (or `standing.py`) importing tau2 itself.
+
+
+def _priced_order(item_id: str, price: float) -> Any:
+    # Duck-types the slice of a real tau2 `Order` the adapter reads: `.items`
+    # (each with `.item_id`/`.price`) and `.payment_history` (unused by a
+    # refund, but present on a real order).
+    return SimpleNamespace(
+        items=[SimpleNamespace(item_id=item_id, price=price)], payment_history=[]
+    )
+
+
+class _PricedToolkit:
+    """Minimal tau2 toolkit stand-in that ALSO carries `.db.orders` (as the
+    real `RetailTools` does), so `order_reader_from_toolkit` can resolve
+    amounts against it."""
+
+    def __init__(self, orders: dict[str, Any]) -> None:
+        self.db = SimpleNamespace(orders=orders)
+
+    def use_tool(self, name: str, **args: Any) -> str:
+        return f"ok:{name}:{args}"
+
+    def get_tools(self) -> dict[str, Any]:
+        return {}
+
+
+class _PricedEnv:
+    policy = "You are a retail support agent."
+
+    def __init__(self, orders: dict[str, Any]) -> None:
+        self.tools = _PricedToolkit(orders)
+
+
+def _priced_refund_llm() -> Any:
+    # Two looked-up refunds (each gate-ALLOWed, same shape as
+    # `_standing_scenario_llm`): #R1 returns a $60 item, #R2 returns another
+    # $60 item. Count stays well within any generous max_count; the SECOND
+    # refund's cumulative amount (60 + 60 = 120) is what crosses a $100 budget.
+    calls = [
+        {"name": "get_order_details", "args": {"order_id": "#R1"}, "id": "l1"},
+        {
+            "name": "return_delivered_order_items",
+            "args": {
+                "order_id": "#R1",
+                "item_ids": ["item-a"],
+                "payment_method_id": "gift_card_1",
+            },
+            "id": "r1",
+        },
+        {"name": "get_order_details", "args": {"order_id": "#R2"}, "id": "l2"},
+        {
+            "name": "return_delivered_order_items",
+            "args": {
+                "order_id": "#R2",
+                "item_ids": ["item-b"],
+                "payment_method_id": "gift_card_1",
+            },
+            "id": "r2",
+        },
+    ]
+    return _FakeLLM([AIMessage(content="", tool_calls=calls), AIMessage(content="done")])
+
+
+def test_run_live_session_escalates_a_refund_that_crosses_the_amount_budget() -> None:
+    orders = {"#R1": _priced_order("item-a", 60.0), "#R2": _priced_order("item-b", 60.0)}
+    env = _PricedEnv(orders)
+    session = build_retail_agent_session(llm=_priced_refund_llm(), environment=env)
+    grants = {"refund": StandingGrant(boundary="refund", max_count=10, max_amount=100.0)}
+    reader = order_reader_from_toolkit(env.tools)
+
+    result = run_live_session(session, grants=grants, reader=reader)
+
+    # Both refunds are gate-ALLOWed (each has its prior lookup) and the count
+    # (2nd of a max_count=10) is nowhere near its ceiling -- ONLY the resolved
+    # amount (60 + 60 = 120 > 100) pushes the second refund over standing.
+    # A refund is irreversible, so over-authority escalates (not defer).
+    assert result.verdicts == ["allow", "allow", "allow", "allow"]
+    assert result.modes == ["allow", "allow", "allow", "escalate"]
+    assert len(result.hitl_queue) == 1
+    assert result.hitl_queue[0]["severity"] == "high"
+    assert result.hitl_queue[0]["tool_name"] == "return_delivered_order_items"
+
+
+def test_run_live_session_without_a_reader_never_resolves_amounts() -> None:
+    # Back-compat: no reader injected -> amount stays unresolved for every
+    # call, so an amount-gated grant would fail-safe to `over` on the very
+    # first action. This is the pre-P3 code path exercised elsewhere in this
+    # file (no `reader=`) staying green with a count-only grant, unaffected.
+    session = build_retail_agent_session(llm=_scripted_llm(), environment=_FakeEnv())
+    result = run_live_session(session)  # grants=None, reader=None
+    assert result.modes == ["allow", "redirect", "escalate", "step-up", "escalate"]

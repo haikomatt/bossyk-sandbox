@@ -11,10 +11,23 @@ consequence boundary before it exceeds standing." A grant is session-scoped by
 default; giving it a `window` (e.g. "1h") makes standing **time-bounded** so
 authority *expires* — a prior action older than the window no longer consumes
 it. `now` is always injected (never read from a real clock in this module) so
-evaluation stays pure and deterministic. Amount ceilings remain a deliberate
-follow-up (need an amount/outcome oracle; see the plan). Kept proprietary, not
-proposed to auditk-spec (per demonstrator §13); the shape is a v0.2 candidate if
-a second implementer appears.
+evaluation stays pure and deterministic.
+
+A grant may ALSO carry `max_amount`: cumulative-budget authority -- "how much
+value a session may move at a consequence boundary before it exceeds
+standing," gating by *value* rather than just count. Count is the unit-1
+special case of the same idea: sum the in-window consumed amounts (stamped on
+prior `TimedAction`s, exactly like `at`) plus the proposed action's resolved
+`amount`, and it is `over` if that exceeds `max_amount`. A grant with both
+`max_count` and `max_amount` is `over` if EITHER is exceeded. The amount
+itself is resolved upstream by the oracle (`standing_amount.resolve_amount`)
+and injected here, same pattern as `now` for windows -- this module never
+looks anything up itself. An unresolvable amount (`amount=None`) on an
+amount-gated grant is always `over`: it can never prove it's within budget, so
+it fails safe rather than silently allowing. `max_amount=None` (the default)
+keeps a grant exactly as before -- not amount-gated at all. Kept proprietary,
+not proposed to auditk-spec (per demonstrator §13); the shape is a v0.2
+candidate if a second implementer appears.
 """
 
 from __future__ import annotations
@@ -42,20 +55,31 @@ class StandingGrant:
 
     `window` time-bounds that count: `None` (default) is session-scoped (all
     prior actions count); a duration string (e.g. "1h", "30m", "2d") counts only
-    actions taken within the window ending at `now`, so authority expires."""
+    actions taken within the window ending at `now`, so authority expires.
+
+    `max_amount` (default `None`) additionally gates by cumulative value moved
+    (see the module docstring); `None` means the grant is not amount-gated at
+    all -- count is the only ceiling, byte-identical to a v0 grant."""
 
     boundary: str
     max_count: int
     window: str | None = None
+    max_amount: float | None = None
 
 
 @dataclass(frozen=True)
 class TimedAction:
     """A prior action paired with the wall-clock time it was taken (epoch
-    seconds). Windowed grants need timing; count-only grants ignore `at`."""
+    seconds). Windowed grants need timing; count-only grants ignore `at`.
+
+    `amount` (default `None`) is the action's resolved value, stamped at
+    record time by the caller (the standing_amount oracle resolves it, the
+    same moment `at` is stamped) -- `None` for actions that were never
+    amount-resolved (e.g. no amount-gated grant was in play)."""
 
     action: ProposedAction
     at: float
+    amount: float | None = None
 
 
 _WINDOW_UNITS: dict[str, float] = {"s": 1.0, "m": 60.0, "h": 3600.0, "d": 86400.0}
@@ -127,25 +151,56 @@ def _consumes_authority(
     return now - at < window
 
 
+def _consumed_amount(
+    item: ProposedAction | TimedAction,
+    boundary: str,
+    window: float | None,
+    now: float | None,
+) -> float:
+    """The wall-clock-filtered amount `item` contributes to `boundary`'s
+    cumulative spend, mirroring `_consumes_authority`'s window filtering
+    exactly. An item that doesn't consume authority at all (wrong boundary, or
+    expired under a windowed grant) contributes nothing; one that does but
+    carries no stamped amount (a bare `ProposedAction`, or a `TimedAction`
+    whose amount was never resolved) also contributes nothing -- an unknown
+    historical amount is never invented, it simply can't inflate the budget."""
+    if not _consumes_authority(item, boundary, window, now):
+        return 0.0
+    amount = item.amount if isinstance(item, TimedAction) else None
+    return amount if amount is not None else 0.0
+
+
 def evaluate_authority(
     proposed: ProposedAction,
     history: Sequence[ProposedAction | TimedAction],
     grants: dict[str, StandingGrant],
     *,
     now: float | None = None,
+    amount: float | None = None,
 ) -> AuthorityVerdict:
-    """Count-only authority for `proposed`, optionally time-bounded per grant.
+    """Authority for `proposed`: count-only by default, optionally ALSO
+    amount-gated (cumulative budget), optionally time-bounded per grant.
 
     Counts prior actions in `history` that hit the same boundary; the proposed
-    action is the (count+1)-th. If that exceeds the boundary's grant it is
-    `over`, else `within`. A tool with no boundary, or a boundary with no grant,
-    is `not_governed` (the caller falls back to its non-authority heuristic).
-    `history` is whatever the caller deems authority-consuming (e.g. the
-    session's allowed actions).
+    action is the (count+1)-th. If that exceeds the boundary's `max_count` it
+    is `over`. If the grant is also amount-gated (`max_amount` is not `None`),
+    the proposed action's resolved `amount` (from `standing_amount.resolve_amount`,
+    threaded in by the caller) is summed with the in-window consumed amounts
+    already stamped on `history`'s `TimedAction`s; exceeding `max_amount` is
+    ALSO `over` -- a grant is `over` if EITHER ceiling trips. An unresolvable
+    `amount` (`None`) on an amount-gated grant is always `over` (fail-safe:
+    it can never prove it's within budget). A tool with no boundary, or a
+    boundary with no grant, is `not_governed` (the caller falls back to its
+    non-authority heuristic). `history` is whatever the caller deems
+    authority-consuming (e.g. the session's allowed actions).
 
     For a **windowed** grant, pass timed `history` (`TimedAction`) and `now`
-    (epoch seconds): only actions within the window ending at `now` count, so
-    standing expires. Session-scoped grants ignore timing entirely.
+    (epoch seconds): only actions within the window ending at `now` count
+    towards EITHER ceiling, so standing (count and budget alike) expires.
+    Session-scoped grants ignore timing entirely. A grant with
+    `max_amount=None` (the default) is not amount-gated at all -- passing
+    `amount` has no effect, keeping evaluation byte-identical to a v0,
+    count-only grant.
     """
     boundary = boundary_for(proposed.tool_name)
     if boundary is None:
@@ -157,12 +212,38 @@ def evaluate_authority(
 
     window = parse_window(grant.window) if grant.window is not None else None
     nth = sum(1 for item in history if _consumes_authority(item, boundary, window, now)) + 1
-    if nth > grant.max_count:
-        return AuthorityVerdict(
-            "over",
-            f"{boundary}: action #{nth} exceeds standing max_count {grant.max_count}",
-            boundary,
-        )
-    return AuthorityVerdict(
-        "within", f"{boundary}: action #{nth} within standing max_count {grant.max_count}", boundary
-    )
+    over_count = nth > grant.max_count
+    count_reason = f"{boundary}: action #{nth} {{status}} standing max_count {grant.max_count}"
+
+    over_amount = False
+    amount_reason = ""
+    if grant.max_amount is not None:
+        if amount is None:
+            # Fail-safe (decision #2): an amount-gated grant with an
+            # unresolvable proposed amount can never prove it's within
+            # budget, so it is always `over` -- never silently allowed.
+            over_amount = True
+            amount_reason = (
+                f"{boundary}: amount unresolvable for an amount-gated grant "
+                f"(max_amount {grant.max_amount}) -- escalating (fail-safe)"
+            )
+        else:
+            consumed = sum(_consumed_amount(item, boundary, window, now) for item in history)
+            total = consumed + amount
+            over_amount = total > grant.max_amount
+            status = "exceeds" if over_amount else "within"
+            amount_reason = (
+                f"{boundary}: cumulative amount {total} {status} standing "
+                f"max_amount {grant.max_amount}"
+            )
+
+    if over_count or over_amount:
+        parts = [count_reason.format(status="exceeds")] if over_count else []
+        if amount_reason:
+            parts.append(amount_reason)
+        return AuthorityVerdict("over", " and ".join(parts), boundary)
+
+    parts = [count_reason.format(status="within")]
+    if amount_reason:
+        parts.append(amount_reason)
+    return AuthorityVerdict("within", " and ".join(parts), boundary)
