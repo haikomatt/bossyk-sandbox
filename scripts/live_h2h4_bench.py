@@ -304,6 +304,27 @@ def main() -> None:
     probes: list[ProbeDefinition] = load_regression_probes(corpus_path)
     print(f"Loaded {len(probes)} frozen crossings.\n")
 
+    # --- billable-run stop-gates (job #2 safety) -----------------------------
+    # Hard ceilings so a live sweep can never run away: cap the crossings
+    # processed, the cumulative judge tokens spent, and the wall-clock. Each is
+    # env-tunable; the loop aborts (does not crash) when any is hit and still
+    # writes the partial results gathered so far. Defaults sized for the
+    # 25-probe retail corpus (~6x the prior weak run's ~26k judge tokens; 20m).
+    max_crossings = int(os.environ.get("LIVE_H2_MAX_CROSSINGS", "25"))
+    max_tokens = int(os.environ.get("LIVE_H2_MAX_TOKENS", "150000"))
+    max_wall_s = float(os.environ.get("LIVE_H2_MAX_WALL_S", "1200"))
+    if len(probes) > max_crossings:
+        print(
+            f"stop-gate: corpus has {len(probes)} crossings; capping to "
+            f"LIVE_H2_MAX_CROSSINGS={max_crossings} (dropping {len(probes) - max_crossings})."
+        )
+        probes = probes[:max_crossings]
+    run_start = time.monotonic()
+    print(
+        f"stop-gates: max_crossings={max_crossings} max_tokens={max_tokens} "
+        f"max_wall_s={max_wall_s:.0f}\n"
+    )
+
     usage_records: list[JudgeCallRecord] = []
 
     def _on_policy_call(usage: TokenUsage, errored: bool) -> None:
@@ -320,8 +341,20 @@ def main() -> None:
     all_agent_latency: list[LatencyRecord] = []
     n_engaged = 0
     n_errored = 0
+    aborted_reason: str | None = None
     for index, probe in enumerate(probes, start=1):
         print(f"[{index}/{len(probes)}] replaying {probe.probe_id} ...")
+        # Stop-gate check BEFORE spending on this crossing (so a tripped
+        # ceiling costs nothing more): cumulative judge tokens + wall-clock.
+        spent_tokens = sum(record.usage.total_tokens for record in usage_records)
+        elapsed_s = time.monotonic() - run_start
+        if spent_tokens > max_tokens:
+            aborted_reason = f"judge tokens {spent_tokens} > LIVE_H2_MAX_TOKENS {max_tokens}"
+        elif elapsed_s > max_wall_s:
+            aborted_reason = f"wall-clock {elapsed_s:.0f}s > LIVE_H2_MAX_WALL_S {max_wall_s:.0f}s"
+        if aborted_reason is not None:
+            print(f"  STOP-GATE hit: {aborted_reason}. Aborting; writing partial results.")
+            break
         if index > 1 and inter_attempt_delay_s > 0:
             time.sleep(inter_attempt_delay_s)
         replay = replay_with_retry(probe, run_session)
@@ -432,6 +465,12 @@ def main() -> None:
         "n_crossings": len(scores),
         "n_attempts": len(probes),
         "n_errored": n_errored,
+        "aborted_reason": aborted_reason,
+        "stop_gates": {
+            "max_crossings": max_crossings,
+            "max_tokens": max_tokens,
+            "max_wall_s": max_wall_s,
+        },
         "engagement": _rate_to_dict(engagement),
         "crossings": [_score_to_dict(score) for score in scores],
         "live_h2_by_boundary": {
