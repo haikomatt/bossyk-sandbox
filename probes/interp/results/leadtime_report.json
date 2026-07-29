@@ -1,0 +1,166 @@
+{
+  "n_rollouts": 312,
+  "n_violation": 160,
+  "n_prompts": 26,
+  "layers": [
+    {
+      "layer": 7,
+      "offsets": [
+        {
+          "offset": 0,
+          "n": 312,
+          "residual_auroc": 0.5577302631578948,
+          "text_auroc": 1.0,
+          "residual_minus_text_ci_lo": -0.4974008314470972,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 1,
+          "n": 312,
+          "residual_auroc": 1.0,
+          "text_auroc": 1.0,
+          "residual_minus_text_ci_lo": 0.0,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 2,
+          "n": 312,
+          "residual_auroc": 1.0,
+          "text_auroc": 1.0,
+          "residual_minus_text_ci_lo": 0.0,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 4,
+          "n": 312,
+          "residual_auroc": 1.0,
+          "text_auroc": 1.0,
+          "residual_minus_text_ci_lo": 0.0,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 8,
+          "n": 312,
+          "residual_auroc": 1.0,
+          "text_auroc": 1.0,
+          "residual_minus_text_ci_lo": 0.0,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 16,
+          "n": 312,
+          "residual_auroc": 1.0,
+          "text_auroc": 0.9539473684210527,
+          "residual_minus_text_ci_lo": 0.017748868778280524,
+          "residual_beats_text": true
+        }
+      ]
+    },
+    {
+      "layer": 14,
+      "offsets": [
+        {
+          "offset": 0,
+          "n": 312,
+          "residual_auroc": 0.4541118421052632,
+          "text_auroc": 1.0,
+          "residual_minus_text_ci_lo": -0.5996376180793832,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 1,
+          "n": 312,
+          "residual_auroc": 1.0,
+          "text_auroc": 1.0,
+          "residual_minus_text_ci_lo": 0.0,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 2,
+          "n": 312,
+          "residual_auroc": 1.0,
+          "text_auroc": 1.0,
+          "residual_minus_text_ci_lo": 0.0,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 4,
+          "n": 312,
+          "residual_auroc": 1.0,
+          "text_auroc": 1.0,
+          "residual_minus_text_ci_lo": 0.0,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 8,
+          "n": 312,
+          "residual_auroc": 1.0,
+          "text_auroc": 1.0,
+          "residual_minus_text_ci_lo": 0.0,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 16,
+          "n": 312,
+          "residual_auroc": 1.0,
+          "text_auroc": 0.9539473684210527,
+          "residual_minus_text_ci_lo": 0.017748868778280524,
+          "residual_beats_text": true
+        }
+      ]
+    },
+    {
+      "layer": 27,
+      "offsets": [
+        {
+          "offset": 0,
+          "n": 312,
+          "residual_auroc": 0.522203947368421,
+          "text_auroc": 1.0,
+          "residual_minus_text_ci_lo": -0.5297835499256996,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 1,
+          "n": 312,
+          "residual_auroc": 1.0,
+          "text_auroc": 1.0,
+          "residual_minus_text_ci_lo": 0.0,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 2,
+          "n": 312,
+          "residual_auroc": 1.0,
+          "text_auroc": 1.0,
+          "residual_minus_text_ci_lo": 0.0,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 4,
+          "n": 312,
+          "residual_auroc": 1.0,
+          "text_auroc": 1.0,
+          "residual_minus_text_ci_lo": 0.0,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 8,
+          "n": 312,
+          "residual_auroc": 1.0,
+          "text_auroc": 1.0,
+          "residual_minus_text_ci_lo": 0.0,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 16,
+          "n": 312,
+          "residual_auroc": 1.0,
+          "text_auroc": 0.9539473684210527,
+          "residual_minus_text_ci_lo": 0.017748868778280524,
+          "residual_beats_text": true
+        }
+      ]
+    }
+  ]
+}
