@@ -26,6 +26,8 @@ import argparse
 import json
 import os
 import sys
+import time
+from collections.abc import Callable
 from pathlib import Path
 
 from langchain_core.messages import HumanMessage
@@ -55,30 +57,83 @@ def load_user_prompts(data: list[str]) -> list[str]:
     return [str(p) for p in data]
 
 
+_TRANSIENT_MARKERS = (
+    "503",
+    "502",
+    "500",
+    "overloaded",
+    "timeout",
+    "temporarily",
+    "429",
+    "rate limit",
+)
+
+
+def _is_transient(exc: Exception) -> bool:
+    """A provider hiccup worth retrying (503 'service overloaded', 5xx, rate
+    limit, timeout) vs a real bug. Matched on the message so it covers the
+    various SDK error classes without importing them."""
+    return any(m in str(exc).lower() for m in _TRANSIENT_MARKERS)
+
+
+def _reset_captures(session: AgentSession, start: int) -> None:
+    """Discard the in-place per-turn captures a failed prompt attempt left behind,
+    so a retry (or a skip) doesn't leave partial turns in the dataset. `del l[start:]`
+    is a safe no-op when the list is already shorter."""
+    del session.agent_prompts[start:]
+    del session.agent_latency[start:]
+    del session.agent_interp[start:]
+
+
 def drive_session(
     session: AgentSession,
     user_prompts: list[str],
     *,
     thread_prefix: str = "decisions",
+    max_attempts: int = 4,
+    sleeper: Callable[[float], None] = time.sleep,
 ) -> list[DecisionItem]:
     """Drive the agent over each user prompt, accepting every auto verdict, and
     build DecisionItems from the accumulated per-turn prompts + gate-blocked
     turns. Requires a session built with capture_prompts=True. Turn attribution:
-    at interrupt time `len(session.agent_prompts) - 1` is the current turn."""
+    at interrupt time `len(session.agent_prompts) - 1` is the current turn.
+
+    Each prompt is bounded-retried on a TRANSIENT provider error (e.g. Fireworks
+    503 'service overloaded') with capped backoff that IGNORES any Retry-After
+    (the agent runs max_retries=0 precisely to avoid an unbounded Retry-After
+    sleep; see langgraph_agent). A fresh thread_id per attempt avoids resuming a
+    half-failed checkpoint, and partial captures are discarded between attempts.
+    A prompt that never succeeds is skipped (its turns discarded) so one bad
+    prompt can't sink the whole run."""
     blocked: set[int] = set()
     for j, user_prompt in enumerate(user_prompts):
-        config = {"configurable": {"thread_id": f"{thread_prefix}-{j}"}}
-        result = session.graph.invoke(  # type: ignore[call-overload]
-            {"messages": [HumanMessage(content=user_prompt)]}, config=config
-        )
-        while "__interrupt__" in result:
-            payload = result["__interrupt__"][0].value
-            turn_index = len(session.agent_prompts) - 1
-            if payload["auto_verdict"] == "block":
-                blocked.add(turn_index)
-            result = session.graph.invoke(  # type: ignore[call-overload]
-                Command(resume=payload["auto_verdict"]), config=config
-            )
+        start = len(session.agent_prompts)
+        for attempt in range(max_attempts):
+            _reset_captures(session, start)  # clear any partial from a prior attempt
+            attempt_blocked: set[int] = set()
+            try:
+                config = {"configurable": {"thread_id": f"{thread_prefix}-{j}-{attempt}"}}
+                result = session.graph.invoke(  # type: ignore[call-overload]
+                    {"messages": [HumanMessage(content=user_prompt)]}, config=config
+                )
+                while "__interrupt__" in result:
+                    payload = result["__interrupt__"][0].value
+                    turn_index = len(session.agent_prompts) - 1
+                    if payload["auto_verdict"] == "block":
+                        attempt_blocked.add(turn_index)
+                    result = session.graph.invoke(  # type: ignore[call-overload]
+                        Command(resume=payload["auto_verdict"]), config=config
+                    )
+                blocked |= attempt_blocked
+                break  # prompt succeeded
+            except Exception as exc:
+                if attempt < max_attempts - 1 and _is_transient(exc):
+                    sleeper(min(2.0**attempt * 2.0, 20.0))  # capped backoff, ignore Retry-After
+                    continue
+                # persistent, or non-transient: discard this prompt's turns and move on
+                _reset_captures(session, start)
+                print(f"skipping prompt {j} after error: {exc}", file=sys.stderr)
+                break
     return build_decisions(session.agent_prompts, blocked)
 
 

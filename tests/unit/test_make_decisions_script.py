@@ -77,3 +77,45 @@ def test_drive_session_builds_decisions_from_captured_prompts() -> None:
     assert [it.step_id for it in items] == ["turn-0", "turn-1"]
     assert all(it.is_violation is False for it in items)
     assert "POLICY-X" in items[0].prompt
+
+
+class _FlakyLLM:
+    """Raises a transient (503) error on the first N calls, then succeeds."""
+
+    def __init__(self, fail_times: int) -> None:
+        self.calls = 0
+        self.fail_times = fail_times
+
+    def invoke(self, _messages: Any) -> AIMessage:
+        self.calls += 1
+        if self.calls <= self.fail_times:
+            raise RuntimeError("Error code: 503 - {'message': 'service overloaded'}")
+        return AIMessage(content="ok")
+
+
+def test_drive_session_retries_transient_503_then_succeeds() -> None:
+    module = _import_script()
+    session = build_airline_agent_session(
+        trace_id="t-flaky",
+        llm=_FlakyLLM(fail_times=2),  # fails twice, succeeds on the 3rd attempt
+        environment=_FakeEnv(tools=_NoTools(), policy="P"),
+        capture_prompts=True,
+    )
+    items = module.drive_session(session, ["hello"], sleeper=lambda _s: None)
+    assert len(items) == 1
+    assert items[0].is_violation is False
+    # partial captures from the two failed attempts were discarded, not accumulated
+    assert len(session.agent_prompts) == 1
+
+
+def test_drive_session_skips_prompt_that_never_recovers() -> None:
+    module = _import_script()
+    session = build_airline_agent_session(
+        trace_id="t-persistent-fail",
+        llm=_FlakyLLM(fail_times=99),  # never succeeds within max_attempts
+        environment=_FakeEnv(tools=_NoTools(), policy="P"),
+        capture_prompts=True,
+    )
+    items = module.drive_session(session, ["hello"], max_attempts=3, sleeper=lambda _s: None)
+    assert items == []  # skipped, run did not crash
+    assert session.agent_prompts == []  # no partial turns left behind
