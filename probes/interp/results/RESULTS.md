@@ -60,6 +60,37 @@ policy-compliance companion to the auditk drift probe.
 2. n=211 (35 viol / 46 err) — CIs are wide-ish; more n tightens them.
 3. T4 (last context token) only; T2 pre-statement detectability is future.
 
+## SAME-MODEL run (caveat 1 closed) — Qwen generates AND is probed
+
+Qwen2.5-7B served via vllm/vllm-openai (A100, torn down) generated the decisions
+(276 items, 51 viol / 225 compliant; coherence judge: 67 error / 209 coherent).
+Fresh capture (reportC.npz) + reprobe. Removes the gpt-oss→Qwen mismatch.
+
+Policy AUROC (5-fold CV, PCA=32) — same-model is HIGHER and stable:
+| layer | mismatch (gpt-oss→Qwen) | same-model (Qwen→Qwen) |
+|---|---|---|
+| 7  | 0.942 | 0.981 |
+| 14 | 0.935 | 0.995 |
+| 27 | 0.901 | 0.998 |
+
+Controls:
+- Beats shuffled (~0.46): yes, every layer, non-overlapping CIs.
+- Error confound: **~0.95** same-model (vs ~0.80 mismatch) — much stronger, because
+  everything is more decodable in same-model data AND Qwen's crossings are messier
+  (31/51 = 61% of violations are also incoherent, vs 17/35 = 49% for gpt-oss).
+- Paired policy>error (P>97.5%): layers **14, 27** same-model (vs 7/14/21/27
+  mismatch) — margin tightens (~0.03-0.05) but still significant at deep layers.
+- **Coherent-only subset (confound removed by construction, 20 viol / 189
+  compliant): policy still decodes 0.90-0.97** vs shuffled ~0.50. The decisive
+  control holds both ways.
+
+**Verdict:** caveat 1 CLOSED. Same-model generation strengthens the core finding
+(policy 0.98-1.0, stable, beats shuffled) — the signal was not a gpt-oss style
+artifact. Honest nuance: policy and general-failure are MORE entangled in
+same-model data (both ~0.95), so the policy-over-confound margin is deep-layer
+only; but the coherent-only subset shows policy is genuinely independent of
+failure. Remaining levers now: bigger n (tighten CIs) and T2 timepoint.
+
 ## Artifacts (.interp_data/, durable; npz too big for git)
-- decisions_judged.json (211, labelled) · reportB.npz (activations) · reportB.json
-- reprobe_pca64.json · reprobe_sweep.json
+- decisions_judged.json (211, gpt-oss) · reportB.npz · reprobe_pca64.json · reprobe_sweep.json
+- qwen_decisions_judged.json (276, same-model) · reportC.npz · reprobe_qwen_pca32.json
