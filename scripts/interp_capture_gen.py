@@ -166,12 +166,17 @@ def nnsight_gen_tracer(model_id: str, *, layers: list[int], dtype: str = "bfloat
     (templated_prompt, max_new_tokens, temperature, seed) -> (token_strings,
     {layer: [per-generated-token residual]}).
 
-    nnsight-0.3.7 generation idiom (VERIFY ON POD FIRST -- the single
-    version-sensitive spot): `with model.generate(prompt, max_new_tokens=M,
-    do_sample=True, temperature=T) as t:` then per layer save
-    `model.model.layers[L].output[0].save()` INSIDE the generate context; nnsight
-    accumulates one entry per generated step. Decode generated ids for
-    token_strings. Adjust here if an nnsight upgrade moves the generation API."""
+    Two-step, decoupled from the finicky generation-trace API (nnsight 0.3.7's
+    `.all()` on a layer proxy returns a 0-d tensor, not per-step states): (1)
+    generate to get the full token ids, (2) run the PROVEN static `.trace()` over
+    the full id sequence ONCE and read the residual at each generated position.
+
+    Alignment: in a full-sequence forward pass the hidden state at position p is
+    what predicts token p+1, so the state that DECIDES generated token g (absolute
+    position prompt_len+g) is at position prompt_len+g-1. Slicing
+    [prompt_len-1 : -1] gives exactly one residual per generated token, aligned so
+    `residuals[L][g]` is the 'about to emit token_strings[g]' state -- the
+    pre-emission position the lead-time sweep needs."""
     import torch  # noqa: PLC0415 -- pod-only
     from nnsight import LanguageModel  # noqa: PLC0415
 
@@ -179,38 +184,46 @@ def nnsight_gen_tracer(model_id: str, *, layers: list[int], dtype: str = "bfloat
 
     def tracer(prompt: str, *, max_new_tokens: int, temperature: float, seed: int) -> Any:
         torch.manual_seed(seed)
+        prompt_len = len(model.tokenizer(prompt)["input_ids"])
         with model.generate(
             prompt, max_new_tokens=max_new_tokens, do_sample=True, temperature=temperature
         ):
-            saved = {layer: model.model.layers[layer].output[0].all().save() for layer in layers}
             out_ids = model.generator.output.save()
-        # residuals: per layer, stack the per-step hidden states at the last position
-        residuals: dict[int, list[list[float]]] = {}
-        for layer, proxy in saved.items():
-            steps = proxy.value  # list/tensor of per-step layer outputs
-            residuals[layer] = [step[0, -1, :].float().cpu().tolist() for step in steps]
-        gen_ids = out_ids.value[0].tolist()
-        prompt_len = len(model.tokenizer(prompt)["input_ids"])
-        token_strings = [model.tokenizer.decode([tid]) for tid in gen_ids[prompt_len:]]
+        full_ids = out_ids.value[0]  # (prompt_len + n_gen,)
+        gen_ids = full_ids[prompt_len:].tolist()
+        token_strings = [model.tokenizer.decode([tid]) for tid in gen_ids]
+        # re-run the full sequence once and read the pre-emission residuals
+        with model.trace({"input_ids": full_ids.unsqueeze(0)}):
+            saved = {
+                layer: model.model.layers[layer].output[0][0, prompt_len - 1 : -1, :].save()
+                for layer in layers
+            }
+        residuals: dict[int, list[list[float]]] = {
+            layer: [row.float().cpu().tolist() for row in proxy.value]
+            for layer, proxy in saved.items()
+        }
         return token_strings, residuals
 
     return tracer
 
 
 def main(argv: list[str] | None = None) -> int:
-    from tau2.domains.retail.environment import get_environment as get_retail_environment
-
-    from bossyk_sandbox.env import load_project_env
-    from bossyk_sandbox.runtime.langgraph_agent import retail_tool_schemas, weaken_policy
-
-    load_project_env()
+    # NOTE: the pod only has nnsight/transformers/numpy -- NOT bossyk/langgraph/
+    # tau2. So the weakened policy + tool schemas are precomputed OFF-POD (via
+    # bossyk) and shipped as JSON (`--policy-file`, `--tools-file`); this script
+    # never imports the heavy agent stack.
     parser = argparse.ArgumentParser(description="during-generation per-token capture (H1)")
     parser.add_argument("--model", default="Qwen/Qwen2.5-7B-Instruct")
     parser.add_argument("--prompts", required=True, help="borderline prompts JSON (list of str)")
+    parser.add_argument(
+        "--policy-file", required=True, help="JSON string: the weakened system policy"
+    )
+    parser.add_argument(
+        "--tools-file", required=True, help="JSON list: the tau2 retail tool schemas"
+    )
     parser.add_argument("--out", required=True, help="npz path")
     parser.add_argument("--rollouts", type=int, default=16, help="samples per prompt")
     parser.add_argument("--temperature", type=float, default=1.0)
-    parser.add_argument("--strength", default="aggressive")
     parser.add_argument("--layers", default="7,14,27")
     parser.add_argument("--offsets", default="-16,-12,-8,-4,-2,-1")
     parser.add_argument("--max-new-tokens", type=int, default=64)
@@ -223,8 +236,8 @@ def main(argv: list[str] | None = None) -> int:
     layers = [int(x) for x in args.layers.split(",")]
     offsets = [int(x) for x in args.offsets.split(",")]
     prompts = [str(p) for p in json.loads(Path(args.prompts).read_text())]
-    policy = weaken_policy(get_retail_environment().policy, strength=args.strength)
-    tools = retail_tool_schemas()
+    policy = str(json.loads(Path(args.policy_file).read_text()))
+    tools = json.loads(Path(args.tools_file).read_text())
 
     tracer = nnsight_gen_tracer(args.model, layers=layers)
     # tokenizer for templating lives on the same model object
