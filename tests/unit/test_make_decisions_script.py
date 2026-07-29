@@ -81,6 +81,14 @@ def test_drive_session_builds_decisions_from_captured_prompts() -> None:
     assert [it.action for it in items] == ["ok", "ok"]
 
 
+def test_request_timed_out_is_transient() -> None:
+    module = _import_script()
+    # the openai SDK phrases a read timeout as "Request timed out." (no "timeout")
+    assert module._is_transient(RuntimeError("Request timed out."))
+    assert module._is_transient(RuntimeError("Error code: 503 - overloaded"))
+    assert not module._is_transient(ValueError("bad argument"))
+
+
 class _FlakyLLM:
     """Raises a transient (503) error on the first N calls, then succeeds."""
 

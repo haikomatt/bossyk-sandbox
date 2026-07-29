@@ -47,6 +47,7 @@ _TRANSIENT_MARKERS = (
     "500",
     "overloaded",
     "timeout",
+    "timed out",  # openai SDK phrases read timeouts as "Request timed out." (no "timeout")
     "temporarily",
     "429",
     "rate limit",

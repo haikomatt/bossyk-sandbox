@@ -113,3 +113,12 @@ def test_judge_items_persistent_transient_yields_none() -> None:
     llm = _ScriptedJudge(contents=[RuntimeError("503 overloaded")] * 4)
     verdicts = judge_items([("c", "a")], llm=llm, max_attempts=4, sleeper=lambda _s: None)
     assert verdicts == [None]
+
+
+def test_judge_items_retries_request_timed_out() -> None:
+    # "Request timed out." (no "timeout") must be treated as transient + retried
+    llm = _ScriptedJudge(
+        contents=[RuntimeError("Request timed out."), '{"coherent": true, "reason": "ok"}']
+    )
+    verdicts = judge_items([("c", "a")], llm=llm, sleeper=lambda _s: None)
+    assert verdicts[0] is not None and verdicts[0].is_error is False
