@@ -103,14 +103,19 @@ def build_npz_payload(
     return payload
 
 
-def nnsight_tracer(model_id: str, *, device_map: str = "auto") -> Tracer:
+def nnsight_tracer(model_id: str, *, device_map: str = "auto", dtype: str = "bfloat16") -> Tracer:
     """Build an nnsight-backed tracer: load the model once, return a closure that
     caches the residual stream at the LAST context token for the requested layers.
     Imports torch/nnsight lazily (pod-only). Returns plain float lists so the
-    orchestration stays torch-free downstream."""
+    orchestration stays torch-free downstream.
+
+    Loads in bf16 by default -- the proven combo (torch 2.4 + nnsight 0.3.7 +
+    transformers 4.46.3); fp32 OOMs a 44GB A40. The residual read stays float()
+    before leaving the GPU so the persisted npz is fp32 regardless of load dtype."""
+    import torch  # noqa: PLC0415 -- lazy, pod-only
     from nnsight import LanguageModel  # noqa: PLC0415 -- lazy, pod-only heavy import
 
-    model = LanguageModel(model_id, device_map=device_map)
+    model = LanguageModel(model_id, device_map=device_map, torch_dtype=getattr(torch, dtype))
 
     def tracer(prompt: str, layers: list[int]) -> dict[int, list[float]]:
         with model.trace(prompt):
@@ -134,6 +139,7 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="path to write the activations npz (default: <out> with .npz suffix)",
     )
+    parser.add_argument("--dtype", default="bfloat16", help="model load dtype (default: bfloat16)")
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args(argv)
 
@@ -143,7 +149,7 @@ def main(argv: list[str] | None = None) -> int:
 
     items = load_items(json.loads(Path(args.items).read_text()))
     layers = parse_layers(args.layers)
-    tracer = nnsight_tracer(args.model)
+    tracer = nnsight_tracer(args.model, dtype=args.dtype)
 
     # Capture ONCE (the expensive GPU pass), then persist + probe off the records.
     records = capture_records(items, layers, tracer)
