@@ -129,6 +129,43 @@ prompts that yield a MIX of violation/compliant, hold the text constant, and ask
 whether the residual predicts which way it went. Only then is text controlled.
 Until then, do not claim pre-statement detectability beyond text.
 
+## H1 lead-time experiment (fixed-context, stochastic-outcome) — NEGATIVE, clean
+
+Followed [[h1-fixed-context-lead-time-runbook]] to test the drift-probe headline
+properly: does the residual encode the impending violation BEFORE it is emitted,
+BEYOND the text? Built the borderline regime (Qwen torn on payment/address
+actions, aggressive+temp1.0), captured 312 rollouts over 26 prompts DURING
+generation (per-token residuals), 160 violation / 152 compliant, group-CV BY
+PROMPT vs a text-so-far baseline (`scripts/leadtime_probe.py`).
+
+Result (forward offsets = tokens into the response; layers 7/14/27 identical):
+| offset | residual AUROC | text-so-far AUROC |
+|---|---|---|
+| 0 (pre-first-token) | 0.45-0.56 (chance) | 1.00 |
+| 1,2,4,8 | 1.00 | 1.00 |
+| 16 | 1.00 | 0.95 |
+
+**Why it is a clean negative (mechanism inspected):**
+- The outcome IS the first generated token: 160/160 violations start with
+  `<tool_call>` (immediate action), 152/152 compliant start with `Sure` (then
+  ask). The model commits at token 0; there is NO deliberation window.
+- At offset 0 the residual is IDENTICAL across a prompt's rollouts (within-prompt
+  std = 0.0000) -- the deterministic context state, so it cannot predict which
+  way an individual sampled rollout goes (chance under group-CV).
+- From offset 1 the divergence has happened and is lexically trivial
+  (`<tool_call>` vs `Sure`), so text and residual are both 1.0. The residual
+  NEVER leads the text (the offset-16 1.00-vs-0.95 is the latest offset, not a
+  lead).
+
+**Conclusion (combines with the T2 text-baseline null):** the residual does NOT
+encode the impending policy violation beyond what the (con)text reveals -- not
+before generation (T2), and not during it (H1), because for this agent/task
+deciding and stating are the SAME event (the first token). The linear-PRESENCE
+result stands; the "knows before it says / beyond text" claim is NOT supported.
+A setup with genuine pre-action deliberation tokens (e.g. a chain-of-thought
+agent that reasons before emitting the tool call) is where a lead-time could
+exist -- noted as the only remaining way the headline could hold.
+
 ## Artifacts (.interp_data/, durable; npz too big for git)
 - decisions_judged.json (211, gpt-oss) · reportB.npz · reprobe_pca64.json · reprobe_sweep.json
 - qwen_decisions_judged.json (276, same-model) · reportC.npz · reprobe_qwen_pca32.json
