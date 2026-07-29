@@ -18,3 +18,4 @@ probes/regression/*-stub.json
 # F1 evidence-browser frontend: sources are committed, build output isn't
 frontend/node_modules/
 frontend/dist/
+.interp_data/
