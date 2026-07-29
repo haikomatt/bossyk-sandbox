@@ -115,6 +115,42 @@ def test_run_live_session_without_grants_never_defers() -> None:
     assert result.modes == ["allow"] * 6
 
 
+def _stepping_clock(step: float) -> Any:
+    # A deterministic injected clock: each call advances by `step` seconds, so a
+    # test controls how much wall time passes between the six live turns.
+    ticks = iter(i * step for i in range(1000))
+    return lambda: next(ticks)
+
+
+def test_windowed_grant_expires_standing_in_the_live_path() -> None:
+    # The three cancels land 2000s apart, so by the third (t=10000) the first two
+    # (t=2000, t=6000) are older than the 1h window -> the 3rd cancel is back
+    # WITHIN standing -> no defer. Same scenario, session-scoped, would defer.
+    from bossyk_sandbox.standing import StandingGrant
+
+    session = build_retail_agent_session(llm=_standing_scenario_llm(), environment=_FakeEnv())
+    grants = {"cancellation": StandingGrant("cancellation", max_count=2, window="1h")}
+
+    result = run_live_session(session, grants=grants, clock=_stepping_clock(2000.0))
+
+    assert result.modes == ["allow"] * 6  # window expired the earlier cancels
+    assert result.hitl_queue == []
+
+
+def test_windowed_grant_still_defers_within_the_window() -> None:
+    # Same window, but the turns are only 100s apart -> all three cancels fall
+    # inside the hour -> the 3rd is over standing -> defer (window is applied,
+    # not ignored).
+    from bossyk_sandbox.standing import StandingGrant
+
+    session = build_retail_agent_session(llm=_standing_scenario_llm(), environment=_FakeEnv())
+    grants = {"cancellation": StandingGrant("cancellation", max_count=2, window="1h")}
+
+    result = run_live_session(session, grants=grants, clock=_stepping_clock(100.0))
+
+    assert result.modes == ["allow", "allow", "allow", "allow", "allow", "defer"]
+
+
 def test_run_live_session_enforces_the_gate_no_blocked_tool_runs() -> None:
     # The driver resumes each interrupt with the gate's own verdict (no human
     # override), so a blocked write is never executed by the tau2 toolkit.
