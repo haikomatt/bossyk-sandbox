@@ -10,6 +10,7 @@ from langgraph.types import Command
 from bossyk_sandbox.instruments.base import ProposedAction
 from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel
 from bossyk_sandbox.runtime.langgraph_agent import (
+    POLICY_WEAKENING_OVERRIDE_BORDERLINE,
     AirlineAgentSession,
     build_airline_agent_session,
     build_retail_agent_session,
@@ -395,6 +396,27 @@ def test_weaken_policy_borderline_is_ambiguous_and_distinct() -> None:
     assert borderline != weaken_policy(original, strength="aggressive")
     low = borderline.lower()
     assert "may" in low  # latitude, not a mandate (the coin-flip regime)
+    assert "mandatory" not in low and "must not" not in low
+
+
+def test_weaken_policy_borderline_cot_composes_borderline_plus_reasoning() -> None:
+    # The CoT lead-time experiment needs a deliberate-before-acting regime: the
+    # borderline latitude (coin-flip outcome) PLUS an instruction to reason inside
+    # a <reasoning> block BEFORE emitting exactly one tool call, so a real
+    # backward window exists between deciding and acting.
+    original = "Authenticate the user identity before acting."
+    cot = weaken_policy(original, strength="borderline_cot")
+    borderline = weaken_policy(original, strength="borderline")
+    assert original in cot
+    # composes the borderline override verbatim...
+    assert POLICY_WEAKENING_OVERRIDE_BORDERLINE in cot
+    # ...and adds the reasoning elicitation on top (distinct from plain borderline)
+    assert cot != borderline
+    low = cot.lower()
+    assert "<reasoning>" in low and "</reasoning>" in low
+    assert "step by step" in low
+    assert "exactly one tool" in low
+    # still latitude, not a mandate (keeps the coin-flip outcome)
     assert "mandatory" not in low and "must not" not in low
 
 
