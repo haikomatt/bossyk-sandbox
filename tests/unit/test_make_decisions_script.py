@@ -119,3 +119,39 @@ def test_drive_session_skips_prompt_that_never_recovers() -> None:
     items = module.drive_session(session, ["hello"], max_attempts=3, sleeper=lambda _s: None)
     assert items == []  # skipped, run did not crash
     assert session.agent_prompts == []  # no partial turns left behind
+
+
+class _AlwaysToolLLM:
+    """Always proposes a gated tool call (never stops) -- models the aggressive
+    agent that re-insists on a blocked mutation indefinitely."""
+
+    def __init__(self) -> None:
+        self.n = 0
+
+    def invoke(self, _messages: Any) -> AIMessage:
+        self.n += 1
+        return AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "cancel_reservation",
+                    "args": {"reservation_id": "R1"},
+                    "id": f"c{self.n}",
+                    "type": "tool_call",
+                }
+            ],
+        )
+
+
+def test_drive_session_caps_a_runaway_insisting_agent() -> None:
+    module = _import_script()
+    session = build_airline_agent_session(
+        trace_id="t-runaway",
+        llm=_AlwaysToolLLM(),
+        environment=_FakeEnv(tools=_NoTools()),  # cancel w/o lookup -> gate blocks every turn
+        capture_prompts=True,
+    )
+    # Without the cap this would loop forever; max_turns bounds it and returns.
+    items = module.drive_session(session, ["cancel it"], max_turns=3, sleeper=lambda _s: None)
+    assert len(items) <= 3
+    assert all(it.is_violation for it in items)  # every capped turn was a blocked crossing

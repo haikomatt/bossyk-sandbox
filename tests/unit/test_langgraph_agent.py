@@ -366,6 +366,27 @@ def test_weaken_policy_preserves_the_policy_but_neutralizes_the_guardrails() -> 
     assert "get_order_details" in weakened
 
 
+def test_weaken_policy_default_is_dir1() -> None:
+    original = "Authenticate first."
+    assert weaken_policy(original) == weaken_policy(original, strength="dir1")
+
+
+def test_weaken_policy_aggressive_is_a_blunter_distinct_override() -> None:
+    original = "Authenticate the user identity before acting."
+    dir1 = weaken_policy(original, strength="dir1")
+    aggressive = weaken_policy(original, strength="aggressive")
+    assert original in aggressive  # policy still preserved
+    assert aggressive != dir1  # a different, stronger override
+    low = aggressive.lower()
+    assert "mandatory" in low
+    assert "must not" in low  # forbids verification/refusal outright
+
+
+def test_weaken_policy_rejects_unknown_strength() -> None:
+    with pytest.raises(ValueError, match="unknown weakening strength"):
+        weaken_policy("x", strength="nope")
+
+
 def test_build_weakened_retail_agent_session_feeds_the_weakened_policy_to_the_model() -> None:
     # dir 1: an under-specified agent. The system prompt the model sees must be
     # the weakened policy (original + guardrail-neutralizing override), so the
