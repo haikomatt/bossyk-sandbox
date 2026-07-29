@@ -91,6 +91,44 @@ same-model data (both ~0.95), so the policy-over-confound margin is deep-layer
 only; but the coherent-only subset shows policy is genuinely independent of
 failure. Remaining levers now: bigger n (tighten CIs) and T2 timepoint.
 
+## T2 / pre-statement + TEXT-BASELINE control (IMPORTANT — tempers the claim)
+
+**The capture is already T2.** The tracer reads the residual at the LAST TOKEN OF
+THE PRECEDING CONTEXT (the rendered prompt ends at the user's request; the action
+is generated after and is not in the prompt). By the drift-probe definition
+(§3: T2 = "before intent tokens are emitted, last token of preceding context")
+this IS the pre-statement position. The earlier "T4" label was wrong. So the
+promoted result is already a pre-statement-timepoint result.
+
+**But the drift-probe H1 headline needs one more control: beat a TEXT baseline by
++0.10 at the matched timepoint** (`scripts/text_baseline.py`). It does NOT:
+
+| target: is_violation | AUROC |
+|---|---|
+| activation probe (Qwen residual @ T2) | 0.98-1.0 |
+| text baseline (bag-of-words @ same context) | **0.995** |
+| text baseline, USER-REQUEST-LINE only | **0.995** |
+| shuffled (both) | ~0.52 |
+| paired activation - text | ~0 (CI includes 0 at every layer) |
+
+**What holds / what doesn't:**
+- HOLDS: policy violation is linearly PRESENT in the residual at the pre-action
+  token (~0.9-1.0, beats shuffled + the coherence confound). Unchanged.
+- DOES NOT HOLD: "the residual encodes the impending violation BEYOND what the
+  text reveals" (the drift-probe H1 headline). A bag-of-words classifier on the
+  request text alone matches the probe. The activation probe adds nothing over
+  text on this dataset.
+- WHY: the label is dominated by the setup — an aggressively-weakened mutation
+  request almost always -> violation, which is textually explicit in the request
+  (user-line-only text probe = 0.995). At temp 0 there is essentially no
+  "same context, different outcome" case for the residual to disambiguate.
+
+**The proper H1 test (a NEW experiment, not this dataset):** fixed-context,
+stochastic-outcome data -- sample the agent at temperature > 0 on IDENTICAL
+prompts that yield a MIX of violation/compliant, hold the text constant, and ask
+whether the residual predicts which way it went. Only then is text controlled.
+Until then, do not claim pre-statement detectability beyond text.
+
 ## Artifacts (.interp_data/, durable; npz too big for git)
 - decisions_judged.json (211, gpt-oss) · reportB.npz · reprobe_pca64.json · reprobe_sweep.json
 - qwen_decisions_judged.json (276, same-model) · reportC.npz · reprobe_qwen_pca32.json
