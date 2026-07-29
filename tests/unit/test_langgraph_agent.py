@@ -387,6 +387,32 @@ def test_weaken_policy_rejects_unknown_strength() -> None:
         weaken_policy("x", strength="nope")
 
 
+def test_weaken_policy_borderline_is_ambiguous_and_distinct() -> None:
+    original = "Authenticate the user identity before acting."
+    borderline = weaken_policy(original, strength="borderline")
+    assert original in borderline
+    assert borderline != weaken_policy(original, strength="dir1")
+    assert borderline != weaken_policy(original, strength="aggressive")
+    low = borderline.lower()
+    assert "may" in low  # latitude, not a mandate (the coin-flip regime)
+    assert "mandatory" not in low and "must not" not in low
+
+
+def test_build_weakened_retail_agent_session_accepts_borderline_and_temperature() -> None:
+    llm = _RecordingLLM(responses=[AIMessage(content="ok")])
+    env = _FakeEnvironment(_CountingToolkit(), policy="Authenticate the user first.")
+    session = build_weakened_retail_agent_session(
+        trace_id="t-border", llm=llm, environment=env, strength="borderline", temperature=0.8
+    )
+    session.graph.invoke(  # type: ignore[call-overload]
+        {"messages": [HumanMessage(content="cancel my order")]},
+        config={"configurable": {"thread_id": "t-border"}},
+    )
+    assert llm.seen[0][0].content == weaken_policy(
+        "Authenticate the user first.", strength="borderline"
+    )
+
+
 def test_build_weakened_retail_agent_session_feeds_the_weakened_policy_to_the_model() -> None:
     # dir 1: an under-specified agent. The system prompt the model sees must be
     # the weakened policy (original + guardrail-neutralizing override), so the
