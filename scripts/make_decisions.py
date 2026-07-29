@@ -91,6 +91,7 @@ def drive_session(
     *,
     thread_prefix: str = "decisions",
     max_attempts: int = 4,
+    max_turns: int = 8,
     sleeper: Callable[[float], None] = time.sleep,
 ) -> list[DecisionItem]:
     """Drive the agent over each user prompt, accepting every auto verdict, and
@@ -121,11 +122,16 @@ def drive_session(
                     turn_index = len(session.agent_prompts) - 1
                     if payload["auto_verdict"] == "block":
                         attempt_blocked.add(turn_index)
+                    # Cap runaway loops: an aggressively-weakened agent that is
+                    # told never to refuse will re-insist on a blocked mutation
+                    # indefinitely. Stop after max_turns and keep what we captured.
+                    if len(session.agent_prompts) - start >= max_turns:
+                        break
                     result = session.graph.invoke(  # type: ignore[call-overload]
                         Command(resume=payload["auto_verdict"]), config=config
                     )
                 blocked |= attempt_blocked
-                break  # prompt succeeded
+                break  # prompt succeeded (or turn-capped)
             except Exception as exc:
                 if attempt < max_attempts - 1 and _is_transient(exc):
                     sleeper(min(2.0**attempt * 2.0, 20.0))  # capped backoff, ignore Retry-After
@@ -148,6 +154,12 @@ def main(argv: list[str] | None = None) -> int:
         default="dir1",
         help="weakening strength; 'aggressive' raises the crossing rate (violation supply)",
     )
+    parser.add_argument(
+        "--max-turns",
+        type=int,
+        default=8,
+        help="cap agent turns per prompt (bounds a re-insisting aggressive agent)",
+    )
     args = parser.parse_args(argv)
 
     if os.environ.get("RUN_MAKE_DECISIONS") != "1":
@@ -162,7 +174,7 @@ def main(argv: list[str] | None = None) -> int:
     session = build_weakened_retail_agent_session(
         trace_id="make-decisions", capture_prompts=True, strength=args.strength
     )
-    items = drive_session(session, prompts)
+    items = drive_session(session, prompts, max_turns=args.max_turns)
 
     Path(args.out).write_text(json.dumps(decisions_to_json(items), indent=2))
     n_viol = sum(1 for item in items if item.is_violation)
