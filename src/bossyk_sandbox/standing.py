@@ -6,16 +6,21 @@ a **within-authority** action (allow / defer) from an **over-authority** one
 `console/modes.py`): "within authority, async-approve" is fundamentally a
 standing-model judgment the gate alone can't make.
 
-v0 scope (decisions locked 2026-07-28): **count-only, session-scoped** — no
-amounts, no wall-clock. Authority is "how many times this session may hit a
-consequence boundary before it exceeds standing." Amount ceilings and real time
-windows are deliberate follow-ups (need an amount/outcome oracle and a clock;
-see the plan). Kept proprietary, not proposed to auditk-spec (per demonstrator
-§13); the shape is a v0.2 candidate if a second implementer appears.
+v0 scope: **count-only** authority — "how many times a session may hit a
+consequence boundary before it exceeds standing." A grant is session-scoped by
+default; giving it a `window` (e.g. "1h") makes standing **time-bounded** so
+authority *expires* — a prior action older than the window no longer consumes
+it. `now` is always injected (never read from a real clock in this module) so
+evaluation stays pure and deterministic. Amount ceilings remain a deliberate
+follow-up (need an amount/outcome oracle; see the plan). Kept proprietary, not
+proposed to auditk-spec (per demonstrator §13); the shape is a v0.2 candidate if
+a second implementer appears.
 """
 
 from __future__ import annotations
 
+import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from bossyk_sandbox.instruments.base import ProposedAction
@@ -32,12 +37,39 @@ _TOOL_BOUNDARY: dict[str, str] = {
 
 @dataclass(frozen=True)
 class StandingGrant:
-    """A session-scoped, count-only authority grant for one consequence
-    boundary. `max_count` is how many times the boundary's action may be taken
-    in the session before it exceeds standing authority."""
+    """A count-only authority grant for one consequence boundary. `max_count` is
+    how many times the boundary's action may be taken before it exceeds standing.
+
+    `window` time-bounds that count: `None` (default) is session-scoped (all
+    prior actions count); a duration string (e.g. "1h", "30m", "2d") counts only
+    actions taken within the window ending at `now`, so authority expires."""
 
     boundary: str
     max_count: int
+    window: str | None = None
+
+
+@dataclass(frozen=True)
+class TimedAction:
+    """A prior action paired with the wall-clock time it was taken (epoch
+    seconds). Windowed grants need timing; count-only grants ignore `at`."""
+
+    action: ProposedAction
+    at: float
+
+
+_WINDOW_UNITS: dict[str, float] = {"s": 1.0, "m": 60.0, "h": 3600.0, "d": 86400.0}
+_WINDOW_RE = re.compile(r"(\d+)([smhd])")
+
+
+def parse_window(window: str) -> float:
+    """Parse a duration string ("45s", "30m", "1h", "2d") into seconds. Raises
+    ValueError on anything else — no bare numbers, decimals, signs, or spaces."""
+    match = _WINDOW_RE.fullmatch(window)
+    if match is None:
+        raise ValueError(f"invalid window {window!r}: expected e.g. '45s', '30m', '1h', '2d'")
+    value, unit = match.groups()
+    return int(value) * _WINDOW_UNITS[unit]
 
 
 @dataclass(frozen=True)
@@ -70,12 +102,39 @@ def boundary_for(tool_name: str) -> str | None:
     return _TOOL_BOUNDARY.get(tool_name)
 
 
+def _action_of(item: ProposedAction | TimedAction) -> ProposedAction:
+    return item.action if isinstance(item, TimedAction) else item
+
+
+def _consumes_authority(
+    item: ProposedAction | TimedAction,
+    boundary: str,
+    window: float | None,
+    now: float | None,
+) -> bool:
+    """Whether a prior `item` counts against `boundary`'s standing. Session-scoped
+    grants (no window) count every boundary match. A windowed grant counts a match
+    only if it falls within `(now - window, now]`. When the window can't be applied
+    -- no `now`, or an un-timed item -- the match still counts: missing time must
+    never grant *more* authority, so we err toward escalation."""
+    if boundary_for(_action_of(item).tool_name) != boundary:
+        return False
+    if window is None:
+        return True
+    at = item.at if isinstance(item, TimedAction) else None
+    if now is None or at is None:
+        return True
+    return now - at < window
+
+
 def evaluate_authority(
     proposed: ProposedAction,
-    history: list[ProposedAction],
+    history: Sequence[ProposedAction | TimedAction],
     grants: dict[str, StandingGrant],
+    *,
+    now: float | None = None,
 ) -> AuthorityVerdict:
-    """Count-only, session-scoped authority for `proposed`.
+    """Count-only authority for `proposed`, optionally time-bounded per grant.
 
     Counts prior actions in `history` that hit the same boundary; the proposed
     action is the (count+1)-th. If that exceeds the boundary's grant it is
@@ -83,6 +142,10 @@ def evaluate_authority(
     is `not_governed` (the caller falls back to its non-authority heuristic).
     `history` is whatever the caller deems authority-consuming (e.g. the
     session's allowed actions).
+
+    For a **windowed** grant, pass timed `history` (`TimedAction`) and `now`
+    (epoch seconds): only actions within the window ending at `now` count, so
+    standing expires. Session-scoped grants ignore timing entirely.
     """
     boundary = boundary_for(proposed.tool_name)
     if boundary is None:
@@ -92,7 +155,8 @@ def evaluate_authority(
     if grant is None:
         return AuthorityVerdict("not_governed", f"no standing grant for {boundary}", boundary)
 
-    nth = sum(1 for action in history if boundary_for(action.tool_name) == boundary) + 1
+    window = parse_window(grant.window) if grant.window is not None else None
+    nth = sum(1 for item in history if _consumes_authority(item, boundary, window, now)) + 1
     if nth > grant.max_count:
         return AuthorityVerdict(
             "over",
