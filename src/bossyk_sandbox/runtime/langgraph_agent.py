@@ -26,7 +26,7 @@ from bossyk_sandbox.interp.logprob_metrics import (
     parse_openai_logprobs,
     summarize,
 )
-from bossyk_sandbox.interp.prompt_render import render_prompt
+from bossyk_sandbox.interp.prompt_render import render_action, render_prompt
 from bossyk_sandbox.scenarios.runner import default_fast_rules, retail_fast_rules
 from bossyk_sandbox.scoring.latency import Clock, LatencyRecord, timed
 
@@ -94,6 +94,14 @@ class AirlineAgentSession:
     # One entry per agent turn, aligned with agent_interp; the mechanistic
     # capture (scripts/interp_capture.py) re-tokenises these on the pod.
     agent_prompts: list[str] = field(default_factory=list)
+    # Interpretability (white-box producer): per-agent-turn rendered ACTION (the
+    # response text + any tool calls the agent proposed), appended in place ONLY
+    # when built with capture_prompts=True. One entry per agent turn, aligned
+    # 1:1 with agent_prompts. This is the coherence judge's input -- the
+    # general-failure label (is_error) is a quality judgment on the ACTION, so
+    # the confound probe separates "the action is incoherent" from "the action
+    # violates policy" and from "the topic is out of scope".
+    agent_actions: list[str] = field(default_factory=list)
 
 
 AgentSession = AirlineAgentSession
@@ -286,12 +294,15 @@ def _build_agent_session(
     agent_latency: list[LatencyRecord] = []
     agent_interp: list[StepUncertainty] = []
     agent_prompts: list[str] = []
+    agent_actions: list[str] = []
 
     def agent_node(state: AgentState) -> dict[str, Any]:
         messages = [SystemMessage(content=policy), *state["messages"]]
         if capture_prompts:
             agent_prompts.append(render_prompt(messages))
         response, record = timed("agent_inference", lambda: llm.invoke(messages), clock=clock)
+        if capture_prompts:  # aligned 1:1 with agent_prompts; the action the model chose
+            agent_actions.append(render_action(response))
         agent_latency.append(record)
         if capture_logprobs:
             agent_interp.append(_step_uncertainty(response))
@@ -412,6 +423,7 @@ def _build_agent_session(
         agent_latency=agent_latency,
         agent_interp=agent_interp,
         agent_prompts=agent_prompts,
+        agent_actions=agent_actions,
     )
 
 

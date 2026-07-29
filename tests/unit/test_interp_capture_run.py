@@ -8,6 +8,7 @@ from bossyk_sandbox.interp.activation_capture import Timepoint
 from bossyk_sandbox.interp.capture_run import (
     DecisionItem,
     capture_records,
+    report_from_records,
     run_capture_report,
 )
 
@@ -68,3 +69,15 @@ def test_report_includes_general_failure_confound_when_error_labels_present() ->
     layer0 = report["layers"][0]
     assert "error" in layer0
     assert not math.isnan(layer0["policy"])
+
+
+def test_report_from_records_matches_run_capture_report_no_second_pass() -> None:
+    # report_from_records probes already-captured records (no tracer): the pod
+    # captures ONCE, then persists + probes off the same records.
+    items = _items()
+    records = capture_records(items, [0, 2], _fake_tracer)
+    report = report_from_records(records, items, [0, 2])
+    assert report["n_items"] == 40
+    for layer_scores in report["layers"].values():
+        assert layer_scores["policy"] > 0.9
+        assert layer_scores["shuffled"] <= 0.75

@@ -77,6 +77,16 @@ def test_drive_session_builds_decisions_from_captured_prompts() -> None:
     assert [it.step_id for it in items] == ["turn-0", "turn-1"]
     assert all(it.is_violation is False for it in items)
     assert "POLICY-X" in items[0].prompt
+    # each decision carries the agent's action (the judge's input), aligned per turn
+    assert [it.action for it in items] == ["ok", "ok"]
+
+
+def test_request_timed_out_is_transient() -> None:
+    module = _import_script()
+    # the openai SDK phrases a read timeout as "Request timed out." (no "timeout")
+    assert module._is_transient(RuntimeError("Request timed out."))
+    assert module._is_transient(RuntimeError("Error code: 503 - overloaded"))
+    assert not module._is_transient(ValueError("bad argument"))
 
 
 class _FlakyLLM:
