@@ -142,6 +142,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="produce decisions.json for activation capture")
     parser.add_argument("--out", required=True, help="path to write the decisions JSON")
     parser.add_argument("--prompts-file", help="JSON list of user prompts (default: built-in set)")
+    parser.add_argument(
+        "--strength",
+        choices=["dir1", "aggressive"],
+        default="dir1",
+        help="weakening strength; 'aggressive' raises the crossing rate (violation supply)",
+    )
     args = parser.parse_args(argv)
 
     if os.environ.get("RUN_MAKE_DECISIONS") != "1":
@@ -153,7 +159,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.prompts_file
         else DEFAULT_PROMPTS
     )
-    session = build_weakened_retail_agent_session(trace_id="make-decisions", capture_prompts=True)
+    session = build_weakened_retail_agent_session(
+        trace_id="make-decisions", capture_prompts=True, strength=args.strength
+    )
     items = drive_session(session, prompts)
 
     Path(args.out).write_text(json.dumps(decisions_to_json(items), indent=2))
