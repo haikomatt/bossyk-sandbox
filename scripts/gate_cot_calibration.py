@@ -198,7 +198,10 @@ def _sample_rows(
         msg = resp.choices[0].message
         content = msg.content or ""
         tool_calls = msg.tool_calls or []
-        first = tool_calls[0].function.name if tool_calls else None
+        # tool_calls[0] is a function|custom union; only the function variant
+        # (what the hermes parser emits) carries `.function`.
+        fn = getattr(tool_calls[0], "function", None) if tool_calls else None
+        first = fn.name if fn is not None else None
         return {
             "prompt_id": pid,
             "first_class": classify_first_tool(first),

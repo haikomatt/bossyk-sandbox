@@ -6,6 +6,7 @@ import importlib.util
 import sys
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 SCRIPT = Path(__file__).parent.parent.parent / "scripts" / "gate_cot_calibration.py"
 
@@ -29,7 +30,9 @@ def test_classify_first_tool_tri_class() -> None:
     assert m.classify_first_tool(None) == "none"  # text-only, not an action rollout
 
 
-def _rows(mutation: int, lookup: int, other: int, none: int, *, reasoning: int) -> list[dict]:
+def _rows(
+    mutation: int, lookup: int, other: int, none: int, *, reasoning: int
+) -> list[dict[str, Any]]:
     rows = []
     for cls, k in [("mutation", mutation), ("lookup", lookup), ("other", other), ("none", none)]:
         rows += [{"first_class": cls, "reasoning_tokens": reasoning} for _ in range(k)]
