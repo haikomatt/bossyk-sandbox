@@ -12,6 +12,7 @@ from auditk.schema import Step
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from tau2.domains.retail.environment import get_environment as get_retail_environment
 
 from bossyk_sandbox.compliance.attribution import CONTROLS_METADATA_KEY
 from bossyk_sandbox.compliance.frameworks import load_frameworks
@@ -21,6 +22,7 @@ from bossyk_sandbox.console.live import (
     authority_for,
     hitl_item,
     initial_input,
+    order_reader_from_toolkit,
     resolve_call,
     resume_after,
     sort_hitl_queue,
@@ -43,6 +45,7 @@ from bossyk_sandbox.runtime.langgraph_agent import (
 )
 from bossyk_sandbox.runtime.stub_agent import SCRIPTED_TOOL_CALLS
 from bossyk_sandbox.standing import TimedAction, retail_standing_grants
+from bossyk_sandbox.standing_amount import OrderReader, resolve_amount
 
 app = FastAPI(title="bossyk-sandbox console")
 app.include_router(artifacts_router)
@@ -275,14 +278,24 @@ async def _run_replay_session(
 
 
 async def _run_live_session(
-    session: ConsoleSession, agent_session: AgentSession, pacing_s: float = 1.0
+    session: ConsoleSession,
+    agent_session: AgentSession,
+    reader: OrderReader | None = None,
+    pacing_s: float = 1.0,
 ) -> None:
     """Non-interactive playback of a LIVE agent session: drive the real
     LangGraph graph (offloading each blocking LLM segment to a thread), derive
     the resolution mode per held call from the gate's own verdict, and broadcast
     the same event shape as the preset replay. Enforces the gate — a held call is
     resumed with its automatic verdict, never a human override — so no blocked
-    tool executes. BILLABLE: `agent_session` runs a real LLM per turn."""
+    tool executes. BILLABLE: `agent_session` runs a real LLM per turn.
+
+    `reader` (an `OrderReader` adapted from the live tau2 environment via
+    `order_reader_from_toolkit`) resolves each held call's amount for §F's
+    amount-gated grants; `None` (the default, and every call site before P3)
+    leaves amounts unresolved, which only matters once a grant sets
+    `max_amount` -- `retail_standing_grants()` stays count-only (decision #4),
+    so this is a no-op today, wired ready for an opt-in amount-gated policy."""
     graph = agent_session.graph
     config = thread_config(session.session_id)
     hitl_queue: list[dict[str, str]] = []
@@ -295,14 +308,15 @@ async def _run_live_session(
         while payload is not None:
             held = payload
             now = time.time()  # stamps allowed actions so windowed grants can expire
+            proposed = ProposedAction(
+                str(held["tool_name"]), cast(dict[str, Any], held["arguments"])
+            )
+            amount = resolve_amount(proposed, reader) if reader is not None else None
             verdict, decision = resolve_call(
-                held, authority=authority_for(held, history, grants, now=now)
+                held, authority=authority_for(held, history, grants, now=now, amount=amount)
             )
             if verdict is Verdict.ALLOW:
-                proposed = ProposedAction(
-                    str(held["tool_name"]), cast(dict[str, Any], held["arguments"])
-                )
-                history.append(TimedAction(proposed, now))
+                history.append(TimedAction(proposed, now, amount=amount))
             await _broadcast(
                 {
                     "type": "held",
@@ -405,7 +419,13 @@ async def start_live_session(pacing_s: float = 1.0) -> dict[str, str]:
     "live_disabled" BEFORE building the session or resolving any key, so a stray
     click or POST can never bill. With the flag but no key it returns
     "no_api_key" (the graph is constructed but never run). Shares the
-    single-session slot."""
+    single-session slot.
+
+    Resolves the real tau2 retail environment itself (rather than letting
+    `build_weakened_retail_agent_session` resolve one internally) so the SAME
+    environment/toolkit backs both the agent graph and the §F amount-oracle
+    reader (`order_reader_from_toolkit`) -- one object, one source of truth
+    for order state. Non-billable: no LLM call, just the local retail DB."""
     if os.environ.get("RUN_LIVE_CONSOLE") != "1":
         return {"status": "live_disabled"}
 
@@ -413,13 +433,19 @@ async def start_live_session(pacing_s: float = 1.0) -> dict[str, str]:
         if _sessions:
             return {"status": "already_running"}
         try:
-            agent_session = await asyncio.to_thread(build_weakened_retail_agent_session)
+            environment = await asyncio.to_thread(get_retail_environment)
+            agent_session = await asyncio.to_thread(
+                build_weakened_retail_agent_session, environment=environment
+            )
         except RuntimeError:
             return {"status": "no_api_key"}
+        reader = order_reader_from_toolkit(environment.tools)
         session_id = uuid4().hex
         session = ConsoleSession(session_id=session_id)
         _sessions[session_id] = session
-        session.task = asyncio.create_task(_run_live_session(session, agent_session, pacing_s))
+        session.task = asyncio.create_task(
+            _run_live_session(session, agent_session, reader, pacing_s)
+        )
     return {"status": "started", "session_id": session_id}
 
 

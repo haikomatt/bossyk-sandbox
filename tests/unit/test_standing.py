@@ -145,3 +145,115 @@ def test_windowed_grant_without_now_degrades_conservatively() -> None:
     # grant but no `now`, un-timed prior actions still count (err toward escalate).
     history = [_cancel(), _cancel()]
     assert evaluate_authority(_cancel(), history, HOURLY).status == "over"
+
+
+# --- amount gating (job #1, amount-gating oracle) ----------------------------
+# A grant may ALSO carry `max_amount`: cumulative budget semantics mirroring
+# count -- sum the in-window consumed amounts (stamped on prior TimedActions)
+# + the proposed action's resolved `amount`; `over` if it exceeds max_amount.
+# A grant may carry both max_count and max_amount and is `over` if EITHER
+# trips. `max_amount=None` (the default) must stay byte-identical to the
+# count-only behaviour exercised above.
+
+BUDGET = {"refund": StandingGrant(boundary="refund", max_count=10, max_amount=100.0)}
+
+
+def _timed_refund(at: float, amount: float | None, order_id: str = "#W2") -> TimedAction:
+    return TimedAction(_refund(order_id), at, amount=amount)
+
+
+def test_max_amount_defaults_to_none() -> None:
+    # Back-compat: existing construction is unchanged.
+    assert StandingGrant(boundary="cancellation", max_count=2).max_amount is None
+
+
+def test_timed_action_amount_defaults_to_none() -> None:
+    assert TimedAction(_cancel(), 0.0).amount is None
+
+
+def test_within_amount_budget() -> None:
+    verdict = evaluate_authority(_refund(), [], BUDGET, amount=50.0)
+    assert verdict.status == "within"
+
+
+def test_over_amount_budget() -> None:
+    verdict = evaluate_authority(_refund(), [], BUDGET, amount=150.0)
+    assert verdict.status == "over"
+    assert verdict.boundary == "refund"
+    assert "max_amount" in verdict.reason
+
+
+def test_cumulative_amount_budget_sums_prior_spend() -> None:
+    # 60 already spent + a proposed 50 = 110 > 100 -> over, even though each
+    # individual action is well within the per-action amount.
+    history = [_timed_refund(0.0, amount=60.0)]
+    verdict = evaluate_authority(_refund(), history, BUDGET, amount=50.0)
+    assert verdict.status == "over"
+
+
+def test_cumulative_amount_budget_within_when_spend_is_under() -> None:
+    history = [_timed_refund(0.0, amount=30.0)]
+    verdict = evaluate_authority(_refund(), history, BUDGET, amount=50.0)
+    assert verdict.status == "within"  # 30 + 50 = 80 <= 100
+
+
+def test_amount_budget_composes_with_wall_clock_windows() -> None:
+    # A windowed amount grant: expired spend frees budget, exactly like count.
+    windowed_budget = {
+        "refund": StandingGrant(boundary="refund", max_count=10, max_amount=100.0, window="1h")
+    }
+    now = 10_000.0
+    # this 90-spend is OUTSIDE the window (older than 3600s) -> doesn't count.
+    history = [_timed_refund(now - 4000, amount=90.0)]
+    verdict = evaluate_authority(_refund(), history, windowed_budget, amount=50.0, now=now)
+    assert verdict.status == "within"  # only the proposed 50 counts
+
+
+def test_amount_budget_composes_with_wall_clock_windows_still_in_window() -> None:
+    windowed_budget = {
+        "refund": StandingGrant(boundary="refund", max_count=10, max_amount=100.0, window="1h")
+    }
+    now = 10_000.0
+    # this 90-spend is INSIDE the window -> counts, pushing the total over.
+    history = [_timed_refund(now - 100, amount=90.0)]
+    verdict = evaluate_authority(_refund(), history, windowed_budget, amount=50.0, now=now)
+    assert verdict.status == "over"
+
+
+def test_count_and_amount_combined_over_if_either_trips_on_amount() -> None:
+    # Count is well within (1st of 10 allowed) but amount alone exceeds budget.
+    verdict = evaluate_authority(_refund(), [], BUDGET, amount=200.0)
+    assert verdict.status == "over"
+
+
+def test_count_and_amount_combined_over_if_either_trips_on_count() -> None:
+    # Amount is well within budget but count alone is exceeded.
+    tight_count = {"refund": StandingGrant(boundary="refund", max_count=1, max_amount=1000.0)}
+    history = [_timed_refund(0.0, amount=1.0)]
+    verdict = evaluate_authority(_refund(), history, tight_count, amount=1.0)
+    assert verdict.status == "over"
+    assert "max_count" in verdict.reason
+
+
+def test_unresolvable_amount_on_an_amount_gated_grant_escalates() -> None:
+    # Fail-safe (decision #2): amount=None on an amount-gated grant can never
+    # prove it's within budget, so it is ALWAYS over -- never silently allowed
+    # -- even with an empty history and a huge max_amount.
+    generous = {"refund": StandingGrant(boundary="refund", max_count=10, max_amount=1_000_000.0)}
+    verdict = evaluate_authority(_refund(), [], generous, amount=None)
+    assert verdict.status == "over"
+
+
+def test_max_amount_none_is_byte_identical_to_count_only_within() -> None:
+    # Back-compat: passing an `amount` to a grant with max_amount=None must
+    # not change anything -- the grant simply isn't amount-gated.
+    plain = evaluate_authority(_cancel(), [], GRANTS)
+    with_amount = evaluate_authority(_cancel(), [], GRANTS, amount=999.0)
+    assert with_amount == plain
+
+
+def test_max_amount_none_is_byte_identical_to_count_only_over() -> None:
+    history = [_cancel(), _cancel()]
+    plain = evaluate_authority(_cancel(), history, GRANTS)
+    with_amount = evaluate_authority(_cancel(), history, GRANTS, amount=None)
+    assert with_amount == plain
