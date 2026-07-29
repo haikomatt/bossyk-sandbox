@@ -36,6 +36,7 @@ class CaptureReport(TypedDict):
     n_violation: int
     layers: dict[int, dict[str, float]]  # layer -> {policy, shuffled, error?}
 
+
 # A tracer reads the model's residual stream: (prompt, layers) -> {layer:
 # residual vector at the target token}. nnsight-backed in production, fake in
 # tests. The ONLY thing that touches torch/the GPU.

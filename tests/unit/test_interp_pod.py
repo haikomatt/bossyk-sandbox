@@ -34,7 +34,8 @@ def _flag(argv: list[str], flag: str) -> str:
 
 
 def _env(argv: list[str]) -> dict[str, str]:
-    return json.loads(_flag(argv, "--env"))
+    parsed: dict[str, str] = json.loads(_flag(argv, "--env"))
+    return parsed
 
 
 def test_create_argv_shape_and_ports() -> None:
