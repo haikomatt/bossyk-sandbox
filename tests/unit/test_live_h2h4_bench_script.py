@@ -34,19 +34,13 @@ def test_live_h2h4_bench_script_imports_without_network_and_defines_main() -> No
     # retail-primary: the default domain is retail unless LIVE_H2_DOMAIN
     # overrides it.
     assert module.DOMAIN in {"airline", "retail"}
-    assert set(module._RUN_SESSION_BY_DOMAIN) == {"airline", "retail"}
-
-
-# --- bossyk-sandbox slice 3, phase 3a (RED): outreach live-path wiring ------
-# _RUN_SESSION_BY_DOMAIN is retail/airline-only today (the assertion above
-# locks that in); this is the new-behaviour test that fails until GREEN
-# registers "outreach" -> run_live_outreach_session. Deliberately a
-# SEPARATE test, not a change to the assertion above -- that one stays
-# exactly as committed until the registration actually lands.
-def test_run_session_by_domain_will_include_outreach() -> None:
-    module = _import_script()
-
-    assert "outreach" in module._RUN_SESSION_BY_DOMAIN
+    # Test-Integrity note: bossyk-sandbox slice 3, phase 3a registered
+    # "outreach" -> run_live_outreach_session (the zero-cost prerequisite
+    # for the outreach live run) -- this assumption was deliberately
+    # invalidated, not silently broken; see conditions.live_replay's
+    # run_live_outreach_session and this file's now-folded-in
+    # test_run_session_by_domain_will_include_outreach (RED).
+    assert set(module._RUN_SESSION_BY_DOMAIN) == {"airline", "retail", "outreach"}
 
 
 def test_corpus_path_defaults_to_the_per_domain_regression_file() -> None:

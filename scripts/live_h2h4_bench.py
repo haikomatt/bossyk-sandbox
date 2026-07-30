@@ -50,6 +50,7 @@ from bossyk_sandbox.conditions.live_replay import (
     LiveSessionResult,
     replay_crossing,
     run_live_airline_session,
+    run_live_outreach_session,
     run_live_retail_session,
     run_live_weakened_retail_session,
     score_policy_post_hoc,
@@ -92,6 +93,13 @@ LIVE_H2_AGENT = os.environ.get("LIVE_H2_AGENT", "compliant")  # "compliant" | "w
 _RUN_SESSION_BY_DOMAIN: dict[str, Callable[[str], LiveSessionResult]] = {
     "airline": run_live_airline_session,
     "retail": run_live_retail_session,
+    # bossyk-sandbox slice 3, phase 3a: zero-cost wiring prerequisite for
+    # the outreach live run. Single-turn only (LIVE_H2_MODE=multiturn stays
+    # retail-only, see the check below); LIVE_H2_AGENT=weak also stays
+    # retail-only for now (run_live_weakened_outreach_session is not wired
+    # into this bench yet -- build_weakened_outreach_agent_session exists
+    # for a future 3c wiring pass, not needed by 3a).
+    "outreach": run_live_outreach_session,
 }
 
 

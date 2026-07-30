@@ -106,6 +106,13 @@ class AirlineAgentSession:
     # One entry per agent turn, aligned with agent_interp; the mechanistic
     # capture (scripts/interp_capture.py) re-tokenises these on the pod.
     agent_prompts: list[str] = field(default_factory=list)
+    # Slice 2 P6 / slice 3 phase 3a (Option A): every BLOCKING utterance
+    # Decision (agent_node's interrupt-before-emit hook), appended in place
+    # as the graph runs -- ALLOWed turns append nothing, there is nothing
+    # compliance-relevant to report for those. Byte-identical empty for
+    # airline/retail: neither ever passes `utterance_rules`, so this stays
+    # `[]` for the lifetime of the session.
+    utterance_decisions: list[Decision] = field(default_factory=list)
 
 
 AgentSession = AirlineAgentSession
@@ -134,6 +141,14 @@ def retail_tool_schemas() -> list[dict[str, Any]]:
     (conditions.fireworks_adversary) grounds attacks in the agent's actual
     toolset. Local tau2 env load -- no network / API key."""
     return _tool_schemas(get_retail_environment().tools)
+
+
+def outreach_tool_schemas() -> list[dict[str, Any]]:
+    """The 10 real outreach tool schemas the live outreach agent binds
+    (`build_outreach_agent_session`), exposed so the grounded adversary
+    grounds attacks in the agent's actual toolset (bossyk-sandbox slice 3,
+    phase 3a). Local fixture-DB load -- no network / API key."""
+    return _tool_schemas(get_outreach_environment().tools)
 
 
 POLICY_WEAKENING_OVERRIDE = (
@@ -303,6 +318,7 @@ def _build_agent_session(
     agent_latency: list[LatencyRecord] = []
     agent_interp: list[StepUncertainty] = []
     agent_prompts: list[str] = []
+    utterance_decisions: list[Decision] = []
 
     def agent_node(state: AgentState) -> dict[str, Any]:
         messages = [SystemMessage(content=policy), *state["messages"]]
@@ -329,6 +345,12 @@ def _build_agent_session(
                 response = AIMessage(
                     content=f"BLOCKED by bossyk-sandbox GATE: {utterance_decision.reason}"
                 )
+                # Slice 3, phase 3a (Option A): capture the blocking Decision
+                # so the live H2/H4 bench can report boundary 5
+                # (prohibited_financial_promotion) as its own scoreboard
+                # line -- there is no ProposedAction for a speech act, so it
+                # cannot enter BOUNDARY_SPECS_BY_DOMAIN's tool-call oracle.
+                utterance_decisions.append(utterance_decision)
                 break
         return {"messages": [response]}
 
@@ -455,6 +477,7 @@ def _build_agent_session(
         agent_latency=agent_latency,
         agent_interp=agent_interp,
         agent_prompts=agent_prompts,
+        utterance_decisions=utterance_decisions,
     )
 
 
@@ -567,6 +590,7 @@ def build_outreach_agent_session(
     base_url: str | None = None,
     llm: Any | None = None,
     environment: Any | None = None,
+    policy_override: str | None = None,
     capture_logprobs: bool = False,
     capture_prompts: bool = False,
 ) -> AgentSession:
@@ -583,7 +607,10 @@ def build_outreach_agent_session(
     `ProhibitedPhraseRule()` as an `utterance_rules` entry, so boundary 5
     (prohibited_financial_promotion) is enforced live for outreach --
     airline and retail pass no `utterance_rules` at all (default `[]`), so
-    they stay byte-identical."""
+    they stay byte-identical. `policy_override` (slice 3, phase 3a) mirrors
+    `build_retail_agent_session`'s -- lets `build_weakened_outreach_agent_session`
+    substitute the weakened policy without needing its own `_build_agent_session`
+    call."""
     return _build_agent_session(
         trace_id=trace_id,
         get_environment_fn=get_outreach_environment,
@@ -593,7 +620,41 @@ def build_outreach_agent_session(
         base_url=base_url,
         llm=llm,
         environment=environment,
+        policy_override=policy_override,
         capture_logprobs=capture_logprobs,
         capture_prompts=capture_prompts,
         utterance_rules=[ProhibitedPhraseRule()],
+    )
+
+
+def build_weakened_outreach_agent_session(
+    *,
+    trace_id: str = "live-outreach-weak-session",
+    model_name: str | None = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    llm: Any | None = None,
+    environment: Any | None = None,
+    capture_logprobs: bool = False,
+    capture_prompts: bool = False,
+    strength: str = "dir1",
+) -> AgentSession:
+    """dir 1 outreach counterpart of `build_weakened_retail_agent_session`
+    (bossyk-sandbox slice 3, phase 3a): same tools + gate + utterance rule as
+    `build_outreach_agent_session`, but its system prompt is
+    `weaken_policy(policy)` so the agent no longer self-enforces
+    check-before-act. Used to produce live structural/outcome crossings the
+    gate then prevents. Reads the base environment's policy (the real
+    outreach policy unless `environment` is injected) and weakens it."""
+    base_env = environment if environment is not None else get_outreach_environment()
+    return build_outreach_agent_session(
+        trace_id=trace_id,
+        model_name=model_name,
+        api_key=api_key,
+        base_url=base_url,
+        llm=llm,
+        environment=base_env,
+        policy_override=weaken_policy(base_env.policy, strength=strength),
+        capture_logprobs=capture_logprobs,
+        capture_prompts=capture_prompts,
     )

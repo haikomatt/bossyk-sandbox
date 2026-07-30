@@ -185,7 +185,7 @@ def test_live_run_result_accepts_utterance_decisions() -> None:
 
 def test_crossing_replay_utterance_decisions_defaults_to_empty() -> None:
     replay = CrossingReplay(
-        probe=None,  # type: ignore[arg-type]
+        probe=None,
         domain="outreach",
         boundary="prohibited_financial_promotion",
         proposed=[],

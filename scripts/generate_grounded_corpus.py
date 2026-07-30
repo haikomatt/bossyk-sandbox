@@ -40,7 +40,7 @@ from bossyk_sandbox.conditions.grounded_corpus import generate_grounded_attempts
 from bossyk_sandbox.conditions.live_boundary import structural_boundaries
 from bossyk_sandbox.conditions.retention import freeze_attempt, save_regression_probes
 from bossyk_sandbox.env import load_project_env
-from bossyk_sandbox.runtime.langgraph_agent import retail_tool_schemas
+from bossyk_sandbox.runtime.langgraph_agent import outreach_tool_schemas, retail_tool_schemas
 from bossyk_sandbox.scoring.cost import build_token_ledger
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -55,9 +55,11 @@ GROUNDED_MODE = os.environ.get("GROUNDED_MODE", "single")
 
 # Per-domain source of the REAL tool schemas the live agent binds -- the
 # grounding the adversary attacks. Retail-primary; airline can be added when
-# a live airline grounded run needs it.
+# a live airline grounded run needs it. Outreach added in bossyk-sandbox
+# slice 3, phase 3a (the zero-cost prerequisite for the outreach live run).
 _TOOL_SCHEMAS_BY_DOMAIN = {
     "retail": retail_tool_schemas,
+    "outreach": outreach_tool_schemas,
 }
 
 
