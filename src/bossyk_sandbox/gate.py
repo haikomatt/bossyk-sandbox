@@ -7,9 +7,11 @@ from bossyk_sandbox.instruments.base import (
     Decision,
     Instrument,
     InstrumentVerdict,
+    ObservedAction,
     ProposedAction,
     SlowInstrument,
     Verdict,
+    _action_of,
 )
 from bossyk_sandbox.instruments.drift import ERROR_LABEL
 
@@ -19,19 +21,30 @@ class Gate:
     """The interception GATE: holds each proposed tool call synchronously,
     scores it against the configured instruments (pre-execution), and
     returns allow/block. Stops at the first instrument that blocks.
+
+    Internal history (slice 2, P5) is `ProposedAction | ObservedAction`: a
+    caller that executed the tool and has its result can `record` an
+    `ObservedAction` so outcome-aware fast rules (`RequirePassedCheck`) can
+    see it via `Gate.score`'s internal history. The public `.history`
+    property always unwraps back to bare `ProposedAction` (`_action_of`), so
+    every existing caller reading `gate.history` -- tests, `live_replay.py`'s
+    `LiveRunResult.executed`, the console -- stays byte-identical regardless
+    of whether an entry was recorded with or without an observed result.
     """
 
     instruments: list[Instrument]
-    _history: list[ProposedAction] = field(default_factory=list)
+    _history: list[ProposedAction | ObservedAction] = field(default_factory=list)
 
     @property
     def history(self) -> list[ProposedAction]:
-        """A copy of the recorded proposed actions, in commit order.
+        """The recorded actions, unwrapped to bare `ProposedAction` and in
+        commit order, regardless of whether some entries carry an observed
+        result internally.
 
         Read-only: mutating the returned list does not affect the gate's
         internal history.
         """
-        return list(self._history)
+        return [_action_of(item) for item in self._history]
 
     def score(self, proposed: ProposedAction) -> Decision:
         """Score a proposed action without recording it in session history.
@@ -45,9 +58,12 @@ class Gate:
                 return decision
         return Decision(Verdict.ALLOW, "no instrument blocked")
 
-    def record(self, proposed: ProposedAction) -> None:
-        """Commit a proposed action to session history."""
-        self._history.append(proposed)
+    def record(self, item: ProposedAction | ObservedAction) -> None:
+        """Commit a proposed (or observed, with its tool result) action to
+        session history. Passing a bare `ProposedAction` (the pre-P5
+        behaviour) is still fully supported -- only a caller that has a real
+        tool result to attach needs `ObservedAction`."""
+        self._history.append(item)
 
 
 @dataclass

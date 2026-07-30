@@ -37,6 +37,16 @@ entries:
   - id: model-risk
     ref: SS1/23
     title: Model risk management
+  - id: conc-3
+    ref: CONC 3
+    title: Financial promotions (consumer credit)
+- id: pecr
+  name: PECR (UK)
+  type: regulation
+  controls:
+  - id: reg-21
+    ref: reg. 21
+    title: Unsolicited direct marketing calls
 - id: hipaa
   name: HIPAA (US)
   type: regulation

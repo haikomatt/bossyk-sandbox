@@ -35,12 +35,13 @@ from pathlib import Path
 
 from bossyk_sandbox.conditions.adversary_registry import build_adversary
 from bossyk_sandbox.conditions.fireworks_adversary import render_tool_context
-from bossyk_sandbox.conditions.grid import AttackClass, ProbeCell, boundaries_for, build_grid
+from bossyk_sandbox.conditions.grid import AttackClass, ProbeCell, build_grid
 from bossyk_sandbox.conditions.grounded_corpus import generate_grounded_attempts
-from bossyk_sandbox.conditions.live_boundary import structural_boundaries
+from bossyk_sandbox.conditions.live_boundary import grounded_boundaries, structural_boundaries
 from bossyk_sandbox.conditions.retention import freeze_attempt, save_regression_probes
 from bossyk_sandbox.env import load_project_env
-from bossyk_sandbox.runtime.langgraph_agent import retail_tool_schemas
+from bossyk_sandbox.runtime.langgraph_agent import outreach_tool_schemas, retail_tool_schemas
+from bossyk_sandbox.runtime.outreach.toolkit import render_known_prospects_context
 from bossyk_sandbox.scoring.cost import build_token_ledger
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -55,9 +56,11 @@ GROUNDED_MODE = os.environ.get("GROUNDED_MODE", "single")
 
 # Per-domain source of the REAL tool schemas the live agent binds -- the
 # grounding the adversary attacks. Retail-primary; airline can be added when
-# a live airline grounded run needs it.
+# a live airline grounded run needs it. Outreach added in bossyk-sandbox
+# slice 3, phase 3a (the zero-cost prerequisite for the outreach live run).
 _TOOL_SCHEMAS_BY_DOMAIN = {
     "retail": retail_tool_schemas,
+    "outreach": outreach_tool_schemas,
 }
 
 
@@ -69,10 +72,30 @@ def _output_path(domain: str) -> Path:
 def _cells(domain: str) -> list[ProbeCell]:
     # goal (path B) + structural (dir 1) target only oracle-scorable structural
     # boundaries, one representative class (tool_misuse) per boundary. single
-    # (path A) uses the full attack-class x boundary grid.
+    # (path A) uses the full attack-class x GROUNDED (spec-backed) boundary
+    # grid -- NOT the full named-boundary taxonomy (conditions.grid
+    # .boundaries_for): a boundary with no registered BoundarySpec crashes
+    # fireworks_adversary.py's per-cell boundary_spec_for lookup (the 3b
+    # crash this fixes -- see conditions.live_boundary.grounded_boundaries).
     if GROUNDED_MODE in {"goal", "structural"}:
         return build_grid(domain, [AttackClass.TOOL_MISUSE], structural_boundaries(domain))
-    return build_grid(domain, list(AttackClass), boundaries_for(domain))
+    return build_grid(domain, list(AttackClass), grounded_boundaries(domain))
+
+
+def _tool_context_for(domain: str) -> str:
+    """Renders the REAL tool schemas for `domain` (render_tool_context),
+    then -- outreach only -- appends a small deterministic slice of REAL
+    fixture bad-target prospects (runtime.outreach.toolkit
+    .render_known_prospects_context) so the generated attacks name
+    prospect ids/phones the live consequence oracle can actually resolve
+    (the 3c reach=0 fix: the ungrounded adversary invented prospect ids
+    like 'P-78234' the fixture doesn't contain). Airline/retail unchanged
+    (byte-identical to plain render_tool_context) -- they have no
+    per-entity consequence oracle to ground."""
+    tool_context = render_tool_context(_TOOL_SCHEMAS_BY_DOMAIN[domain]())
+    if domain == "outreach":
+        tool_context = f"{tool_context}\n\n{render_known_prospects_context()}"
+    return tool_context
 
 
 def _real_mode_requested() -> bool:
@@ -102,7 +125,7 @@ def main() -> None:
     load_project_env()
     _real_mode_requested()
 
-    tool_context = render_tool_context(_TOOL_SCHEMAS_BY_DOMAIN[DOMAIN]())
+    tool_context = _tool_context_for(DOMAIN)
     adversary = build_adversary(
         ADVERSARY, tool_context=tool_context, goal_mode=(GROUNDED_MODE == "goal")
     )

@@ -331,3 +331,119 @@ def test_ungrounded_adversary_prompt_omits_the_grounding_directive() -> None:
     _, user_prompt = client.calls[0]
     assert "real tool" not in user_prompt.lower()
     assert "invent" not in user_prompt.lower()
+
+
+# --- hardened client config + bounded outer retry (the 22-min-stall fix) ---
+# Diagnosed root cause: build_fireworks_adversary's ChatOpenAI set NO timeout
+# and NO max_retries, so it inherited openai's 600s-per-call default +
+# langchain's max_retries=2 -- a single stale/transient connection blocked
+# the whole generation run in a long retry-wait (the unhardened-path version
+# of the NIM 10-hour-hang already fixed on the live-bench path). Mirrors
+# runtime.langgraph_agent's agent client (max_retries=0, explicit timeout)
+# and scripts/live_h2h4_bench.py's replay_with_retry (bounded outer retry,
+# capped backoff, ignores Retry-After, records "error" and continues rather
+# than hanging or propagating).
+
+
+def test_build_fireworks_adversary_client_has_a_bounded_timeout_and_no_retries(
+    monkeypatch: Any,
+) -> None:
+    from bossyk_sandbox.conditions.fireworks_adversary import (
+        FireworksChatClient,
+        build_fireworks_adversary,
+    )
+
+    monkeypatch.setenv("FIREWORKS_API_KEY", "fake-key-hermetic-test-only")
+
+    adversary = build_fireworks_adversary()
+
+    assert isinstance(adversary, FireworksAdversary)
+    assert isinstance(adversary.client, FireworksChatClient)
+    llm = adversary.client.llm
+    # max_retries=0: langchain/openai's own retry loop must be disabled --
+    # the bounded outer retry (below) is the only retry layer, so it can
+    # never compound with an inner unbounded one the way the NIM hang did.
+    assert llm.max_retries == 0  # type: ignore[attr-defined]
+    # A bounded, explicit timeout -- NOT the openai SDK's 600s-per-call
+    # default (None here means "inherit that default", the bug).
+    assert llm.request_timeout is not None  # type: ignore[attr-defined]
+    assert 0 < llm.request_timeout <= 120  # type: ignore[attr-defined]
+
+
+def _api_timeout() -> Exception:
+    import httpx
+    from openai import APITimeoutError
+
+    return APITimeoutError(request=httpx.Request("POST", "http://x"))
+
+
+@dataclass
+class _FlakyChatClient:
+    """Fake `ChatClient` that raises a provider API error the first
+    `fail_times` calls, then returns `result` -- mirrors
+    test_live_h2h4_bench_script.py's flaky `run_session` fakes for
+    `replay_with_retry`."""
+
+    result: ChatResult
+    fail_times: int = 0
+    calls: int = 0
+
+    def complete(self, system_prompt: str, user_prompt: str) -> ChatResult:
+        self.calls += 1
+        if self.calls <= self.fail_times:
+            raise _api_timeout()
+        return self.result
+
+
+def test_generate_attempts_retries_a_transient_api_error_and_recovers() -> None:
+    cell = ProbeCell("airline", AttackClass.JAILBREAK, "cancel_without_lookup")
+    client = _FlakyChatClient(result=ChatResult(text="payload"), fail_times=1)
+    slept: list[float] = []
+    adversary = FireworksAdversary(client=client, retry_sleeper=slept.append)
+
+    attempts = adversary.generate_attempts(cell, budget=1)
+
+    assert attempts[0].status == "ok"
+    assert attempts[0].payload == "payload"
+    assert client.calls == 2  # retried once, then recovered
+    assert slept  # backed off between tries (bounded, ignores Retry-After)
+
+
+def test_generate_attempts_records_error_after_max_tries_never_hangs_or_raises() -> None:
+    # THE stall this fixes: a persistently-failing call must be capped, not
+    # retried forever / left to the SDK's own unbounded retry-wait.
+    cell = ProbeCell("airline", AttackClass.JAILBREAK, "cancel_without_lookup")
+    client = _FlakyChatClient(result=ChatResult(text="unreachable"), fail_times=999)
+    slept: list[float] = []
+    adversary = FireworksAdversary(client=client, retry_sleeper=slept.append)
+
+    attempts = adversary.generate_attempts(cell, budget=1)
+
+    assert attempts[0].status == "error"
+    assert attempts[0].payload == ""
+    assert client.calls == 3  # capped at max_tries (mirrors replay_with_retry's 3)
+    assert len(slept) == 2  # slept between the 3 tries, not after the last
+
+
+def test_generate_attempts_retry_backoff_is_bounded_and_ignores_retry_after() -> None:
+    cell = ProbeCell("airline", AttackClass.JAILBREAK, "cancel_without_lookup")
+    client = _FlakyChatClient(result=ChatResult(text="unreachable"), fail_times=999)
+    slept: list[float] = []
+    adversary = FireworksAdversary(client=client, retry_sleeper=slept.append)
+
+    adversary.generate_attempts(cell, budget=1)
+
+    assert slept == [5.0, 10.0]  # capped backoff schedule, mirrors replay_with_retry
+
+
+def test_generate_attempts_with_budget_greater_than_one_retries_independently_per_attempt() -> None:
+    # Each attempt within a budget gets its own fresh retry budget -- one
+    # flaky attempt must not consume or poison another's retry allowance.
+    cell = ProbeCell("airline", AttackClass.JAILBREAK, "cancel_without_lookup")
+    client = _FlakyChatClient(result=ChatResult(text="payload"), fail_times=1)
+    adversary = FireworksAdversary(client=client, retry_sleeper=lambda _s: None)
+
+    attempts = adversary.generate_attempts(cell, budget=2)
+
+    assert all(attempt.status == "ok" for attempt in attempts)
+    assert client.calls == 3  # attempt 0: fail once + succeed (2); attempt 1: succeed (1)

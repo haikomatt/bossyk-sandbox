@@ -7,7 +7,11 @@ from pathlib import Path
 from bossyk_sandbox.instruments.base import Instrument
 from bossyk_sandbox.instruments.policy import default_policy_path
 from bossyk_sandbox.scenarios.loader import SCENARIOS_PATH
-from bossyk_sandbox.scenarios.runner import default_fast_rules, retail_fast_rules
+from bossyk_sandbox.scenarios.runner import (
+    default_fast_rules,
+    outreach_fast_rules,
+    retail_fast_rules,
+)
 
 
 @dataclass(frozen=True)
@@ -44,12 +48,22 @@ def _retail_domain() -> DomainConfig:
     )
 
 
+def _outreach_domain() -> DomainConfig:
+    return DomainConfig(
+        name="outreach",
+        scenarios_path=SCENARIOS_PATH.parent.parent / "outreach" / "scenarios.json",
+        policy_path=default_policy_path().parent / "outreach-outbound-v1.yaml",
+        fast_rules_factory=outreach_fast_rules,
+    )
+
+
 # Builders, not built instances -- each is called fresh inside `domain_config`
 # so a `BOSSYK_ROOT` override (or monkeypatch in a test) is honored at
 # lookup time rather than baked in at import time.
 _DOMAIN_BUILDERS: dict[str, Callable[[], DomainConfig]] = {
     "airline": _airline_domain,
     "retail": _retail_domain,
+    "outreach": _outreach_domain,
 }
 
 

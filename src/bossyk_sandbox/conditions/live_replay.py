@@ -23,7 +23,9 @@ from bossyk_sandbox.instruments.base import (
 from bossyk_sandbox.runtime.langgraph_agent import (
     AgentSession,
     build_airline_agent_session,
+    build_outreach_agent_session,
     build_retail_agent_session,
+    build_weakened_outreach_agent_session,
     build_weakened_retail_agent_session,
 )
 from bossyk_sandbox.scenarios.runner import VERDICT_METADATA_KEY
@@ -91,6 +93,12 @@ class LiveRunResult:
     # Voice-model sweep: wall-clock of each agent LLM inference this run (the
     # model's own response latency -- the voice-viability metric).
     agent_latency: list[LatencyRecord] = field(default_factory=list)
+    # Slice 3, phase 3a (Option A): every BLOCKING utterance Decision the
+    # session's agent_node captured (boundary 5, prohibited_financial_
+    # promotion) -- there is no ProposedAction for a speech act, so it
+    # cannot enter `proposed`/`executed` or the tool-call boundary oracle.
+    # Empty for airline/retail (they never pass utterance_rules).
+    utterance_decisions: list[Decision] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -110,6 +118,9 @@ class CrossingReplay:
     trace: Trace | None = None
     tool_latency: list[LatencyRecord] = field(default_factory=list)
     agent_latency: list[LatencyRecord] = field(default_factory=list)
+    # Slice 3, phase 3a (Option A): threaded through from the run result,
+    # same getattr-with-default pattern as tool_latency/agent_latency below.
+    utterance_decisions: list[Decision] = field(default_factory=list)
 
 
 def replay_crossing(
@@ -145,6 +156,7 @@ def replay_crossing(
         trace=getattr(result, "trace", None),
         tool_latency=list(getattr(result, "tool_latency", [])),
         agent_latency=list(getattr(result, "agent_latency", [])),
+        utterance_decisions=list(getattr(result, "utterance_decisions", [])),
     )
 
 
@@ -178,6 +190,7 @@ def _live_run_result(session: AgentSession, trace_id: str, agent_config_ref: str
         trace=trace,
         tool_latency=list(session.tool_latency),
         agent_latency=list(session.agent_latency),
+        utterance_decisions=list(session.utterance_decisions),
     )
 
 
@@ -213,6 +226,32 @@ def run_live_weakened_retail_session(payload: str) -> LiveRunResult:
     session = build_weakened_retail_agent_session(trace_id=trace_id)
     _drive_session(session, payload, trace_id)
     return _live_run_result(session, trace_id, agent_config_ref="live-h2h4-retail-weak@0.1")
+
+
+def run_live_outreach_session(payload: str) -> LiveRunResult:
+    """Outreach counterpart of `run_live_retail_session` (bossyk-sandbox
+    slice 3, phase 3a). Single-turn only -- multiturn stays retail-only,
+    not lifted for outreach this phase. Same caveats: real, network-touching,
+    billable -- never called by the deterministic suite, only
+    scripts/live_h2h4_bench.py does, gated behind RUN_LIVE_H2_E2E=1."""
+    trace_id = f"live-h2-outreach-{uuid.uuid4()}"
+    session = build_outreach_agent_session(trace_id=trace_id)
+    _drive_session(session, payload, trace_id)
+    return _live_run_result(session, trace_id, agent_config_ref="live-h2h4-outreach@0.1")
+
+
+def run_live_weakened_outreach_session(payload: str) -> LiveRunResult:
+    """dir 1: like `run_live_outreach_session` but against the
+    UNDER-SPECIFIED (weakened-policy) outreach agent -- mirrors
+    `run_live_weakened_retail_session` exactly (bossyk-sandbox slice 3,
+    weak-outreach live-bench wiring follow-up). Single-turn only, same
+    caveats: real, network-touching, billable -- never called by the
+    deterministic suite, only scripts/live_h2h4_bench.py does, gated behind
+    RUN_LIVE_H2_E2E=1."""
+    trace_id = f"live-h2-outreach-weak-{uuid.uuid4()}"
+    session = build_weakened_outreach_agent_session(trace_id=trace_id)
+    _drive_session(session, payload, trace_id)
+    return _live_run_result(session, trace_id, agent_config_ref="live-h2h4-outreach-weak@0.1")
 
 
 @dataclass(frozen=True)

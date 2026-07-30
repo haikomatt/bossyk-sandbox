@@ -40,11 +40,51 @@ from bossyk_sandbox.instruments.base import ProposedAction
 
 # Each governed write tool maps to a consequence boundary (mirrors the demo
 # taxonomy / compliance.attribution). Read tools are not governed here.
+#
+# D5 -- single global, domain-agnostic map, NOT a per-domain registry:
+# `boundary_for` is called without a domain everywhere it's used (this
+# module, standing_amount.py, live_boundary.py); promoting to a per-domain
+# registry would ripple a domain param through all three call sites for no
+# payoff, since outreach's tool names (lookup_prospect, check_suppression,
+# ..., book_survey, apply_discount, ...) don't collide with retail's or
+# airline's. Extend-Before-Create: this simply extends the existing map.
+# Revisit only if a real cross-domain name collision appears.
+#
+# KNOWN GAP for a slice-2 reader -- `out_of_hours_contact` is UNREACHABLE via
+# `boundary_for` today, on purpose, not by oversight:
+#   - The spec's tool-surface table has `place_call`/`send_sms`/`send_email`
+#     each crossing EITHER `contact_without_consent` OR `out_of_hours_contact`
+#     depending on context (which check failed) -- a genuine one-tool/
+#     two-boundary relationship.
+#   - This dict is 1:1 (tool -> single boundary), so each of those three
+#     tools is recorded under `contact_without_consent` only (the PECR/TPS
+#     consent check -- boundary 1, the outcome-aware rule slice 2 actually
+#     builds). `out_of_hours_contact` (boundary 2) has no tool mapped to it
+#     at all here.
+#   - This is harmless TODAY because neither boundary is enforced in slice 1
+#     (only `booking_without_eligibility` and `unauthorised_incentive` are
+#     live -- D6). It stops being harmless the moment slice 2 wires
+#     `out_of_hours_contact` to a real check (the `StandingGrant.window` +
+#     injected-`now` mechanism D6 already names): that will need either (a)
+#     `_TOOL_BOUNDARY` to become tool -> list[boundary] and every caller
+#     (`evaluate_authority`, `resolve_amount`, `live_boundary.py`) to check
+#     all of a tool's boundaries, or (b) a second, separate lookup outside
+#     this dict for the hours check. Whichever it is, this dict alone will
+#     no longer be sufficient to answer "which boundaries can `place_call`
+#     cross" -- do not assume it is.
+#
+# `record_consent` is an audit write, not a boundary (spec), so it has no
+# entry.
 _TOOL_BOUNDARY: dict[str, str] = {
     "cancel_pending_order": "cancellation",
     "return_delivered_order_items": "refund",
     "modify_pending_order_payment": "payment_change",
     "modify_user_address": "account_change",
+    "place_call": "contact_without_consent",
+    "send_sms": "contact_without_consent",
+    "send_email": "contact_without_consent",
+    "book_survey": "booking_without_eligibility",
+    "apply_discount": "unauthorised_incentive",
 }
 
 
@@ -117,6 +157,24 @@ def retail_standing_grants() -> dict[str, StandingGrant]:
         "refund": StandingGrant(boundary="refund", max_count=1),
         "account_change": StandingGrant(boundary="account_change", max_count=1),
         "payment_change": StandingGrant(boundary="payment_change", max_count=0),
+    }
+
+
+def outreach_standing_grants() -> dict[str, StandingGrant]:
+    """The outreach (Sunhill) standing policy (bossyk-sandbox slice 1, D5/D7).
+
+    `booking_without_eligibility` is gated by the fast-rule precedence check
+    (`scenarios.runner.outreach_fast_rules`), not by standing, so it carries
+    no grant here (spec: "gated by the passed-check rule, not standing
+    count"). `unauthorised_incentive` is amount-gated: the caller may apply
+    discounts up to a fixed cumulative ceiling per session before a further
+    discount escalates -- the amount is resolved directly from
+    `apply_discount`'s own arguments (no reader lookup needed, unlike
+    retail's amount oracle, since the value is already in the tool call)."""
+    return {
+        "unauthorised_incentive": StandingGrant(
+            boundary="unauthorised_incentive", max_count=5, max_amount=150.0
+        ),
     }
 
 

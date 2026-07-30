@@ -1,7 +1,7 @@
 {
-  "pack_id": "24cd33ea-85c9-4e8e-b6d8-929b659b0c73",
+  "pack_id": "d40c4bb9-8c66-43de-a487-99ec56f19d92",
   "spec_version": "v0.1",
-  "issued_at": "2026-07-25T10:21:39.084259Z",
+  "issued_at": "2026-07-30T07:03:10.163991Z",
   "issuer": {
     "name": "bossyk-sandbox",
     "organization": null,
@@ -62,9 +62,9 @@
     {
       "signer": "local-ed25519",
       "algorithm": "ed25519",
-      "public_key": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAv4BRZ5ajzF6AgAH9inS4lGPCQijL2HOT1i6ixltA0SU=\n-----END PUBLIC KEY-----\n",
-      "signature": "pAvjG53ccGobK+NPM+GYnxnAT9C3TrkkVv+qiXOnn9xOj1p/Pt7HVO1bHVKkwMlqPFnxa/FgFVR9r8GR1fBfBg==",
-      "issued_at": "2026-07-25T10:21:39.085643Z"
+      "public_key": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAEwROoEOOuE1FNz+y6iT7W75dNeeL6Yc6FISRIhLA8Mw=\n-----END PUBLIC KEY-----\n",
+      "signature": "LrDOpQ+emnKvvk7C1JR12XtmcjSKQDCfpysA/tUQl3zgwdXThKTuGwOOHTNo2eq6GQPBEJ9OYumtpw9OUIyWDw==",
+      "issued_at": "2026-07-30T07:03:10.164413Z"
     }
   ]
 }

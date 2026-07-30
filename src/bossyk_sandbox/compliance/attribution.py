@@ -24,9 +24,11 @@ enforces it, so this module stays pure (no catalogue load at tag time).
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel
 
-from bossyk_sandbox.instruments.base import ProposedAction, Verdict
+from bossyk_sandbox.instruments.base import Decision, ProposedAction, Verdict
 
 # Namespaced like `bossyk_sandbox_verdict` (scenarios/runner.py): the tags
 # ride in the auditk Step's free-form metadata dict, no schema change.
@@ -77,17 +79,61 @@ _ACTION_CONTROLS: dict[str, tuple[str, tuple[str, ...]]] = {
         "data-class:personal-data",
         ("hipaa:access-logging", "iso-27001:a-5-15"),
     ),
+    # Outreach (bossyk-sandbox slice 2, P7) -- boundary 1
+    # (contact_without_consent): PECR reg 21 governs live marketing calls
+    # to a number that hasn't consented / is TPS-registered.
+    "place_call": ("boundary:contact_without_consent", ("pecr:reg-21",)),
+    "send_sms": ("boundary:contact_without_consent", ("pecr:reg-21",)),
+    "send_email": ("boundary:contact_without_consent", ("pecr:reg-21",)),
+    # Outreach boundary 3 (booking_without_eligibility) and boundary 4
+    # (unauthorised_incentive): both are Consumer Duty consumer-harm acts
+    # (booking an ineligible prospect / exceeding discount authority),
+    # mirroring the existing cancellation->consumer-duty mapping above.
+    "book_survey": ("boundary:booking_without_eligibility", ("fca:consumer-duty",)),
+    "apply_discount": ("boundary:unauthorised_incentive", ("fca:consumer-duty",)),
 }
+
+# Tool names whose Tier-C control is discharged by a REPRODUCIBLE CHECK
+# (deterministic -- the evidence pack can drop the "directional mapping"
+# disclaimer for it), not merely a structural/directional inference
+# (judged, ControlTag's default). Outreach's boundaries 1/3/4 each have a
+# genuine external oracle backing them -- the suppression-list result
+# (RequirePassedCheck on check_suppression), the eligibility result
+# (RequirePassedCheck on check_eligibility), and the discount amount
+# (already in apply_discount's own arguments) -- so their discharge is
+# reproducible offline from the signed trace. Airline/retail's existing
+# Tier-C tags (a cancellation tool "is" a consumer-facing mutation; a
+# user-lookup tool "is" a personal-data access) have no such oracle behind
+# them -- they stay judged, unchanged, by not appearing here.
+_DETERMINISTIC_ACTION_TOOLS: frozenset[str] = frozenset(
+    {"place_call", "send_sms", "send_email", "book_survey", "apply_discount"}
+)
+
+# Boundary 5 (prohibited_financial_promotion): the control a BLOCKED
+# utterance discharges. The closed regulated-phrase-list match
+# (instruments.utterance_rule.ProhibitedPhraseRule) is reproducible offline
+# from the recorded text, so this is deterministic -- unlike every Tier C
+# tool-call tag above, there is no ProposedAction here at all (see
+# `controls_for_utterance`).
+_UTTERANCE_BLOCKED_CONTROLS: tuple[str, ...] = ("fca:conc-3",)
 
 
 class ControlTag(BaseModel):
     """One compliance control an attested action discharges, with the
     `basis` for why it applies (substrate, verdict:gated, verdict:blocked,
     verdict:overridden). `ref` is a `<framework-id>:<control-id>` that
-    resolves against the shared catalogue."""
+    resolves against the shared catalogue.
+
+    `discharge` (bossyk-sandbox slice 2, P7) distinguishes a control backed
+    by a REPRODUCIBLE CHECK ("deterministic" -- the evidence pack can drop
+    the "directional mapping" disclaimer for it) from one that is only a
+    structural/directional inference ("judged"). Defaults to "judged" --
+    the honest status quo before this phase -- so every existing call site
+    that builds a `ControlTag` without naming `discharge` is unaffected."""
 
     ref: str
     basis: str
+    discharge: Literal["deterministic", "judged"] = "judged"
 
 
 def controls_for_step(
@@ -110,7 +156,10 @@ def controls_for_step(
     action = _ACTION_CONTROLS.get(proposed.tool_name)
     if action is not None:
         basis, refs = action
-        tags += [ControlTag(ref=ref, basis=basis) for ref in refs]
+        discharge: Literal["deterministic", "judged"] = (
+            "deterministic" if proposed.tool_name in _DETERMINISTIC_ACTION_TOOLS else "judged"
+        )
+        tags += [ControlTag(ref=ref, basis=basis, discharge=discharge) for ref in refs]
 
     seen: set[str] = set()
     deduped: list[ControlTag] = []
@@ -120,3 +169,24 @@ def controls_for_step(
         seen.add(tag.ref)
         deduped.append(tag)
     return deduped
+
+
+def controls_for_utterance(decision: Decision) -> list[ControlTag]:
+    """The compliance controls a scored UTTERANCE discharges (bossyk-sandbox
+    slice 2, P7; boundary 5, prohibited_financial_promotion). Unlike
+    `controls_for_step`, there is no `ProposedAction` here -- P6's
+    `agent_node` scores free text against `UtteranceInstrument.score`, with
+    no tool call involved at all -- so this is a separate, narrower entry
+    point that needs only the `Decision` the utterance rule produced.
+
+    Only fires on BLOCK, mirroring `controls_for_step`'s `verdict:blocked`
+    tier (the block IS the compliance-relevant event): an ALLOWed utterance
+    (no regulated phrase found) discharges nothing. The regulated-phrase
+    match is reproducible offline from the recorded text, so the control is
+    tagged `discharge="deterministic"`."""
+    if decision.verdict is not Verdict.BLOCK:
+        return []
+    return [
+        ControlTag(ref=ref, basis="utterance:blocked", discharge="deterministic")
+        for ref in _UTTERANCE_BLOCKED_CONTROLS
+    ]

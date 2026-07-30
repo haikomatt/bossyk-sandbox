@@ -34,13 +34,89 @@ def test_live_h2h4_bench_script_imports_without_network_and_defines_main() -> No
     # retail-primary: the default domain is retail unless LIVE_H2_DOMAIN
     # overrides it.
     assert module.DOMAIN in {"airline", "retail"}
-    assert set(module._RUN_SESSION_BY_DOMAIN) == {"airline", "retail"}
+    # Test-Integrity note: bossyk-sandbox slice 3, phase 3a registered
+    # "outreach" -> run_live_outreach_session (the zero-cost prerequisite
+    # for the outreach live run) -- this assumption was deliberately
+    # invalidated, not silently broken; see conditions.live_replay's
+    # run_live_outreach_session and this file's now-folded-in
+    # test_run_session_by_domain_will_include_outreach (RED).
+    assert set(module._RUN_SESSION_BY_DOMAIN) == {"airline", "retail", "outreach"}
 
 
 def test_corpus_path_defaults_to_the_per_domain_regression_file() -> None:
     module = _import_script()
 
     assert module._corpus_path("retail") == module.REGRESSION_PROBES_DIR / "retail.json"
+
+
+# --- bossyk-sandbox slice 3 (RED): utterance-line scoreboard dispatch ------
+# Matt's decision: pull the 3c utterance-line piece forward so the outreach
+# re-run demonstrates boundary 5 too. Proposed dispatch: a new
+# `_score_replay(replay, policy_verdicts)` picks `score_crossing` for a
+# tool-call boundary (has_boundary_spec resolves) and
+# `score_utterance_crossing` otherwise (see test_utterance_crossing_score.py
+# for that function's own spec) -- `main()`'s loop would call THIS instead
+# of `score_crossing` directly. Not implemented in this RED pass.
+
+
+def _fake_probe(probe_id: str, family: str) -> Any:
+    from auditk.adapters.protocols import Stimulus
+    from auditk.schema import ExpectedBehavior, ProbeDefinition
+
+    ProbeDefinition.model_rebuild()
+    return ProbeDefinition(
+        probe_id=probe_id,
+        family=family,
+        version="0.1",
+        kind="jailbreak",
+        stimulus=Stimulus(channel="user", payload={"text": "test"}),
+        expected_behavior=ExpectedBehavior(should_refuse=True),
+    )
+
+
+def test_score_replay_dispatches_to_score_crossing_for_a_tool_call_boundary() -> None:
+    from bossyk_sandbox.conditions.live_replay import CrossingReplay
+    from bossyk_sandbox.instruments.base import ProposedAction
+    from bossyk_sandbox.scoring.live_h2 import CrossingScore
+
+    module = _import_script()
+    replay = CrossingReplay(
+        probe=_fake_probe("retail-cancel_without_auth-jailbreak-0", "retail-cancel_without_auth"),
+        domain="retail",
+        boundary="cancel_without_auth",
+        proposed=[ProposedAction("cancel_pending_order", {"order_id": "#W1"})],
+        executed=[],
+    )
+
+    score = module._score_replay(replay, [])
+
+    assert isinstance(score, CrossingScore)
+    assert score.reached is True
+
+
+def test_score_replay_dispatches_to_score_utterance_crossing_for_the_utterance_boundary() -> None:
+    from bossyk_sandbox.conditions.live_replay import CrossingReplay
+    from bossyk_sandbox.instruments.base import Decision, Verdict
+    from bossyk_sandbox.scoring.live_h2 import UtteranceCrossingScore
+
+    module = _import_script()
+    blocked = Decision(Verdict.BLOCK, "utterance contains regulated phrase '0% finance'")
+    replay = CrossingReplay(
+        probe=_fake_probe(
+            "outreach-prohibited_financial_promotion-jailbreak-0",
+            "outreach-prohibited_financial_promotion",
+        ),
+        domain="outreach",
+        boundary="prohibited_financial_promotion",
+        proposed=[],
+        executed=[],
+        utterance_decisions=[blocked],
+    )
+
+    score = module._score_replay(replay, [])
+
+    assert isinstance(score, UtteranceCrossingScore)
+    assert score.reached is True
 
 
 def test_corpus_path_honors_the_live_h2_corpus_override(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -106,6 +182,79 @@ def test_run_session_for_weak_agent_is_the_weakened_runner(
     module = _import_script()
 
     assert module._run_session_for("retail") is module.run_live_weakened_retail_session
+
+
+# --- weak-outreach live-bench wiring (RED): _run_session_for's weak branch
+# was hardcoded to run_live_weakened_retail_session regardless of domain --
+# build_weakened_outreach_agent_session exists (3a) but nothing wired it
+# into the bench. Proposed fix: a _WEAK_SESSION_BY_DOMAIN registry, and the
+# weak branch dispatches on it instead of hardcoding retail.
+
+
+def test_weak_session_by_domain_will_include_outreach() -> None:
+    module = _import_script()
+
+    assert "outreach" in module._WEAK_SESSION_BY_DOMAIN
+
+
+def test_weak_session_by_domain_retail_entry_is_unchanged() -> None:
+    module = _import_script()
+
+    assert module._WEAK_SESSION_BY_DOMAIN["retail"] is module.run_live_weakened_retail_session
+
+
+def test_run_session_for_weak_outreach_resolves_the_weakened_outreach_runner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LIVE_H2_AGENT", "weak")
+    module = _import_script()
+
+    assert module._run_session_for("outreach") is module.run_live_weakened_outreach_session
+
+
+def test_real_mode_requested_permits_weak_plus_outreach(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Hermetic: _real_mode_requested() is a pure env-var guard -- it never
+    # makes a network call or touches a real client, so monkeypatching
+    # RUN_LIVE_H2_E2E here (auto-reverted after the test) never spends
+    # anything, exactly like this file's other env-gated tests.
+    monkeypatch.setenv("RUN_LIVE_H2_E2E", "1")
+    monkeypatch.setenv("FIREWORKS_API_KEY", "fake-key-hermetic-test-only")
+    monkeypatch.setenv("LIVE_H2_DOMAIN", "outreach")
+    monkeypatch.setenv("LIVE_H2_AGENT", "weak")
+    module = _import_script()
+
+    assert module._real_mode_requested() is True
+
+
+def test_real_mode_requested_still_rejects_weak_plus_airline_with_a_clear_message(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("RUN_LIVE_H2_E2E", "1")
+    monkeypatch.setenv("FIREWORKS_API_KEY", "fake-key-hermetic-test-only")
+    monkeypatch.setenv("LIVE_H2_DOMAIN", "airline")
+    monkeypatch.setenv("LIVE_H2_AGENT", "weak")
+    module = _import_script()
+
+    with pytest.raises(SystemExit):
+        module._real_mode_requested()
+
+    captured = capsys.readouterr()
+    assert "LIVE_H2_AGENT=weak" in captured.err
+    assert "airline" in captured.err
+
+
+def test_real_mode_requested_still_permits_weak_plus_retail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Regression guard: the relaxed guard must not stop permitting the
+    # existing weak+retail path.
+    monkeypatch.setenv("RUN_LIVE_H2_E2E", "1")
+    monkeypatch.setenv("FIREWORKS_API_KEY", "fake-key-hermetic-test-only")
+    monkeypatch.setenv("LIVE_H2_DOMAIN", "retail")
+    monkeypatch.setenv("LIVE_H2_AGENT", "weak")
+    module = _import_script()
+
+    assert module._real_mode_requested() is True
 
 
 # --- latency budget wiring (§15B+) -------------------------------------------
