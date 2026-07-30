@@ -88,6 +88,45 @@ def test_domain_config_raises_key_error_for_unregistered_domain() -> None:
         domain_config("telecom")
 
 
+def test_outreach_domain_is_registered_with_expected_paths() -> None:
+    # RED (slice 1): "outreach" is not yet in domains._DOMAIN_BUILDERS, so
+    # this currently fails with KeyError('outreach').
+    cfg = domain_config("outreach")
+
+    assert cfg.policy_path.name == "outreach-outbound-v1.yaml"
+    assert cfg.scenarios_path.as_posix().endswith("outreach/scenarios.json")
+    assert cfg.scenarios_path.exists()
+
+
+@requires_bossyk_checkout
+def test_outreach_domain_policy_path_exists_on_disk() -> None:
+    cfg = domain_config("outreach")
+
+    assert cfg.policy_path.exists()
+
+
+def test_outreach_fast_rules_gate_book_survey_only() -> None:
+    cfg = domain_config("outreach")
+
+    rules = cfg.fast_rules_factory()
+    for rule in rules:
+        assert isinstance(rule, RequireLookupBeforeCancel)
+    gated = {rule.gated_tool for rule in rules if isinstance(rule, RequireLookupBeforeCancel)}
+
+    assert gated == {"book_survey"}
+
+
+def test_outreach_domain_policy_path_resolves_under_overridden_bossyk_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    custom_root = tmp_path / "custom-bossyk"
+    monkeypatch.setenv("BOSSYK_ROOT", str(custom_root))
+
+    cfg = domain_config("outreach")
+
+    assert cfg.policy_path == custom_root / "data" / "policies" / "outreach-outbound-v1.yaml"
+
+
 def test_airline_domain_policy_path_resolves_under_overridden_bossyk_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

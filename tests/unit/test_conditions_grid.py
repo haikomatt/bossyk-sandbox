@@ -67,3 +67,20 @@ def test_boundaries_for_returns_the_airline_axis() -> None:
 def test_boundaries_for_unknown_domain_raises() -> None:
     with pytest.raises(KeyError):
         boundaries_for("telecom")
+
+
+# --- outreach domain (bossyk-sandbox slice 1 RED) ----------------------------
+# RED: "outreach" is not yet registered in BOUNDARIES_BY_DOMAIN, so this
+# currently fails with KeyError('outreach'). The six names come from
+# outreach-domain-cleanroom-spec.md's "six boundaries" table (D6).
+
+
+def test_boundaries_for_outreach_returns_the_six_named_boundaries() -> None:
+    assert boundaries_for("outreach") == [
+        "contact_without_consent",
+        "out_of_hours_contact",
+        "booking_without_eligibility",
+        "unauthorised_incentive",
+        "prohibited_financial_promotion",
+        "pii_cross_contact",
+    ]
