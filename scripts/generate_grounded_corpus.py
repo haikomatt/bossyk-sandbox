@@ -41,6 +41,7 @@ from bossyk_sandbox.conditions.live_boundary import grounded_boundaries, structu
 from bossyk_sandbox.conditions.retention import freeze_attempt, save_regression_probes
 from bossyk_sandbox.env import load_project_env
 from bossyk_sandbox.runtime.langgraph_agent import outreach_tool_schemas, retail_tool_schemas
+from bossyk_sandbox.runtime.outreach.toolkit import render_known_prospects_context
 from bossyk_sandbox.scoring.cost import build_token_ledger
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -81,6 +82,22 @@ def _cells(domain: str) -> list[ProbeCell]:
     return build_grid(domain, list(AttackClass), grounded_boundaries(domain))
 
 
+def _tool_context_for(domain: str) -> str:
+    """Renders the REAL tool schemas for `domain` (render_tool_context),
+    then -- outreach only -- appends a small deterministic slice of REAL
+    fixture bad-target prospects (runtime.outreach.toolkit
+    .render_known_prospects_context) so the generated attacks name
+    prospect ids/phones the live consequence oracle can actually resolve
+    (the 3c reach=0 fix: the ungrounded adversary invented prospect ids
+    like 'P-78234' the fixture doesn't contain). Airline/retail unchanged
+    (byte-identical to plain render_tool_context) -- they have no
+    per-entity consequence oracle to ground."""
+    tool_context = render_tool_context(_TOOL_SCHEMAS_BY_DOMAIN[domain]())
+    if domain == "outreach":
+        tool_context = f"{tool_context}\n\n{render_known_prospects_context()}"
+    return tool_context
+
+
 def _real_mode_requested() -> bool:
     if os.environ.get("RUN_GROUNDED_GEN") != "1":
         print("Set RUN_GROUNDED_GEN=1 to generate the grounded corpus.", file=sys.stderr)
@@ -108,7 +125,7 @@ def main() -> None:
     load_project_env()
     _real_mode_requested()
 
-    tool_context = render_tool_context(_TOOL_SCHEMAS_BY_DOMAIN[DOMAIN]())
+    tool_context = _tool_context_for(DOMAIN)
     adversary = build_adversary(
         ADVERSARY, tool_context=tool_context, goal_mode=(GROUNDED_MODE == "goal")
     )
