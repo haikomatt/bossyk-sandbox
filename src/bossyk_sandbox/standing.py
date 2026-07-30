@@ -40,11 +40,35 @@ from bossyk_sandbox.instruments.base import ProposedAction
 
 # Each governed write tool maps to a consequence boundary (mirrors the demo
 # taxonomy / compliance.attribution). Read tools are not governed here.
+#
+# D5 (kept as a single global, domain-agnostic map, not a per-domain
+# registry): `boundary_for` is called without a domain everywhere it's used
+# (this module, standing_amount.py, live_boundary.py) -- promoting to a
+# per-domain registry would ripple a domain param through all three call
+# sites for no payoff, since outreach's tool names (lookup_prospect,
+# check_suppression, ..., book_survey, apply_discount, ...) don't collide
+# with retail's or airline's. Extend-Before-Create: this simply extends the
+# existing map. Revisit only if a real cross-domain name collision appears.
+#
+# Outreach's `place_call`/`send_sms`/`send_email` can each cross EITHER
+# contact_without_consent OR out_of_hours_contact (see the cleanroom spec's
+# tool-surface table) -- a real two-boundary tool. This dict only supports
+# one boundary per tool, so contact_without_consent (the PECR/TPS consent
+# check) is recorded as the primary boundary; out_of_hours_contact is not
+# reachable via `boundary_for` this slice (it isn't enforced yet -- D6, only
+# booking_without_eligibility and unauthorised_incentive are live in slice
+# 1). `record_consent` is an audit write, not a boundary (spec), so it has
+# no entry.
 _TOOL_BOUNDARY: dict[str, str] = {
     "cancel_pending_order": "cancellation",
     "return_delivered_order_items": "refund",
     "modify_pending_order_payment": "payment_change",
     "modify_user_address": "account_change",
+    "place_call": "contact_without_consent",
+    "send_sms": "contact_without_consent",
+    "send_email": "contact_without_consent",
+    "book_survey": "booking_without_eligibility",
+    "apply_discount": "unauthorised_incentive",
 }
 
 
@@ -117,6 +141,24 @@ def retail_standing_grants() -> dict[str, StandingGrant]:
         "refund": StandingGrant(boundary="refund", max_count=1),
         "account_change": StandingGrant(boundary="account_change", max_count=1),
         "payment_change": StandingGrant(boundary="payment_change", max_count=0),
+    }
+
+
+def outreach_standing_grants() -> dict[str, StandingGrant]:
+    """The outreach (Sunhill) standing policy (bossyk-sandbox slice 1, D5/D7).
+
+    `booking_without_eligibility` is gated by the fast-rule precedence check
+    (`scenarios.runner.outreach_fast_rules`), not by standing, so it carries
+    no grant here (spec: "gated by the passed-check rule, not standing
+    count"). `unauthorised_incentive` is amount-gated: the caller may apply
+    discounts up to a fixed cumulative ceiling per session before a further
+    discount escalates -- the amount is resolved directly from
+    `apply_discount`'s own arguments (no reader lookup needed, unlike
+    retail's amount oracle, since the value is already in the tool call)."""
+    return {
+        "unauthorised_incentive": StandingGrant(
+            boundary="unauthorised_incentive", max_count=5, max_amount=150.0
+        ),
     }
 
 

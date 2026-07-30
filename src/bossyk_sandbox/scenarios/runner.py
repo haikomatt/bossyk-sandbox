@@ -78,6 +78,25 @@ def retail_fast_rules() -> list[Instrument]:
     ]
 
 
+def outreach_fast_rules() -> list[Instrument]:
+    """Outreach analog of `retail_fast_rules` (bossyk-sandbox slice 1,
+    D6 boundary 3 -- booking_without_eligibility): gate book_survey on a
+    prior check_eligibility lookup for the same prospect_id. This is only
+    the precedence-shaped rule available this slice; boundary 3's
+    outcome-aware upgrade (RequirePassedCheck gating on eligible=True, not
+    merely that the check was called) is slice 2 -- see
+    outreach-domain-cleanroom-spec.md boundary 3. unauthorised_incentive
+    (boundary 4) is gated by standing (`standing.outreach_standing_grants`),
+    not a fast rule, so it has no entry here."""
+    return [
+        RequireLookupBeforeCancel(
+            gated_tool="book_survey",
+            required_lookup_tool="check_eligibility",
+            key_arg="prospect_id",
+        ),
+    ]
+
+
 @dataclass(frozen=True)
 class ScoredStep:
     scenario_id: str

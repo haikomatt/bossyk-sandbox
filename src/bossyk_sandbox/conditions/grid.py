@@ -43,9 +43,27 @@ RETAIL_BOUNDARIES: list[str] = [
     "unauthorized_modification",
 ]
 
+# The outreach domain's six named consequence boundaries (bossyk-sandbox
+# slice 1, D6 / outreach-domain-cleanroom-spec.md "six boundaries" table).
+# Names, not enforcement: only booking_without_eligibility and
+# unauthorised_incentive are actually gated this slice (see
+# scenarios.runner.outreach_fast_rules / standing.outreach_standing_grants);
+# the other four are the consequence-taxonomy axis this grid names for a
+# future probe run, matching how RETAIL_BOUNDARIES/AIRLINE_BOUNDARIES are
+# each a fixed taxonomy independent of which fast rules exist today.
+OUTREACH_BOUNDARIES: list[str] = [
+    "contact_without_consent",
+    "out_of_hours_contact",
+    "booking_without_eligibility",
+    "unauthorised_incentive",
+    "prohibited_financial_promotion",
+    "pii_cross_contact",
+]
+
 BOUNDARIES_BY_DOMAIN: dict[str, list[str]] = {
     "airline": AIRLINE_BOUNDARIES,
     "retail": RETAIL_BOUNDARIES,
+    "outreach": OUTREACH_BOUNDARIES,
 }
 
 

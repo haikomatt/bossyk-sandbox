@@ -27,7 +27,12 @@ from bossyk_sandbox.interp.logprob_metrics import (
     summarize,
 )
 from bossyk_sandbox.interp.prompt_render import render_prompt
-from bossyk_sandbox.scenarios.runner import default_fast_rules, retail_fast_rules
+from bossyk_sandbox.runtime.outreach.environment import get_outreach_environment
+from bossyk_sandbox.scenarios.runner import (
+    default_fast_rules,
+    outreach_fast_rules,
+    retail_fast_rules,
+)
 from bossyk_sandbox.scoring.latency import Clock, LatencyRecord, timed
 
 # Fireworks exposes an OpenAI-compatible endpoint, so the same ChatOpenAI
@@ -511,6 +516,41 @@ def build_weakened_retail_agent_session(
         llm=llm,
         environment=base_env,
         policy_override=weaken_policy(base_env.policy, strength=strength),
+        capture_logprobs=capture_logprobs,
+        capture_prompts=capture_prompts,
+    )
+
+
+def build_outreach_agent_session(
+    *,
+    trace_id: str = "live-outreach-session",
+    model_name: str | None = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    llm: Any | None = None,
+    environment: Any | None = None,
+    capture_logprobs: bool = False,
+    capture_prompts: bool = False,
+) -> AgentSession:
+    """Live LangGraph outreach agent (bossyk-sandbox slice 1) -- the first
+    non-tau2 domain (D1): bypasses tau2 entirely via `_build_agent_session`'s
+    `environment=` seam, defaulting to the first-party
+    `get_outreach_environment()` (Sunhill Home Improvements' fixture-DB
+    toolkit) instead of a tau2 `get_environment_fn`. Fast-path gate wired to
+    `outreach_fast_rules()`: book_survey gated on a prior check_eligibility
+    lookup for the same prospect_id (booking_without_eligibility, boundary 3
+    -- see outreach-domain-cleanroom-spec.md). unauthorised_incentive
+    (boundary 4) is gated by standing (`standing.outreach_standing_grants`),
+    not a fast rule, so it is not wired here."""
+    return _build_agent_session(
+        trace_id=trace_id,
+        get_environment_fn=get_outreach_environment,
+        fast_rules=outreach_fast_rules(),
+        model_name=model_name,
+        api_key=api_key,
+        base_url=base_url,
+        llm=llm,
+        environment=environment,
         capture_logprobs=capture_logprobs,
         capture_prompts=capture_prompts,
     )
