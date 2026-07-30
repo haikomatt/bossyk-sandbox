@@ -53,11 +53,16 @@ def _write(tmp_path: Path, registry: dict[str, Any]) -> Path:
 # --- the committed package catalogue ----------------------------------
 
 
-def test_committed_catalogue_loads_with_the_six_frameworks() -> None:
+def test_committed_catalogue_loads_with_the_seven_frameworks() -> None:
+    # Test-Integrity note: bossyk-sandbox slice 2, P7 added the "pecr"
+    # framework (PECR reg 21, outreach boundary 1) alongside the existing
+    # six -- this assumption is deliberately invalidated, not silently
+    # broken; see compliance/frameworks.yaml and attribution.py's
+    # _ACTION_CONTROLS outreach entries.
     registry = load_frameworks()
 
     ids = [framework.id for framework in registry.entries]
-    assert ids == ["eu-ai-act", "fca", "hipaa", "iso-42001", "iso-27001", "soc2"]
+    assert ids == ["eu-ai-act", "fca", "pecr", "hipaa", "iso-42001", "iso-27001", "soc2"]
     assert "not legal advice" in registry.disclaimer.lower()
     # every control the story's substrate/verdict tags will emit must resolve
     resolvable = {f"{f.id}:{c.id}" for f in registry.entries for c in f.controls}
