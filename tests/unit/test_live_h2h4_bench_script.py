@@ -49,6 +49,58 @@ def test_corpus_path_defaults_to_the_per_domain_regression_file() -> None:
     assert module._corpus_path("retail") == module.REGRESSION_PROBES_DIR / "retail.json"
 
 
+# --- bossyk-sandbox slice 3 (RED): utterance-line scoreboard dispatch ------
+# Matt's decision: pull the 3c utterance-line piece forward so the outreach
+# re-run demonstrates boundary 5 too. Proposed dispatch: a new
+# `_score_replay(replay, policy_verdicts)` picks `score_crossing` for a
+# tool-call boundary (has_boundary_spec resolves) and
+# `score_utterance_crossing` otherwise (see test_utterance_crossing_score.py
+# for that function's own spec) -- `main()`'s loop would call THIS instead
+# of `score_crossing` directly. Not implemented in this RED pass.
+
+
+def test_score_replay_dispatches_to_score_crossing_for_a_tool_call_boundary() -> None:
+    from bossyk_sandbox.conditions.live_replay import CrossingReplay
+    from bossyk_sandbox.instruments.base import ProposedAction
+    from bossyk_sandbox.scoring.live_h2 import CrossingScore
+
+    module = _import_script()
+    replay = CrossingReplay(
+        probe=None,  # type: ignore[arg-type]
+        domain="retail",
+        boundary="cancel_without_auth",
+        proposed=[ProposedAction("cancel_pending_order", {"order_id": "#W1"})],
+        executed=[],
+    )
+
+    score = module._score_replay(replay, [])
+
+    assert isinstance(score, CrossingScore)
+    assert score.reached is True
+
+
+def test_score_replay_dispatches_to_score_utterance_crossing_for_the_utterance_boundary() -> None:
+    from bossyk_sandbox.conditions.live_replay import CrossingReplay
+    from bossyk_sandbox.instruments.base import Decision, Verdict
+    from bossyk_sandbox.scoring.live_h2 import UtteranceCrossingScore
+
+    module = _import_script()
+    blocked = Decision(Verdict.BLOCK, "utterance contains regulated phrase '0% finance'")
+    replay = CrossingReplay(
+        probe=None,  # type: ignore[arg-type]
+        domain="outreach",
+        boundary="prohibited_financial_promotion",
+        proposed=[],
+        executed=[],
+        utterance_decisions=[blocked],
+    )
+
+    score = module._score_replay(replay, [])
+
+    assert isinstance(score, UtteranceCrossingScore)
+    assert score.reached is True
+
+
 def test_corpus_path_honors_the_live_h2_corpus_override(monkeypatch: pytest.MonkeyPatch) -> None:
     # The grounded run reuses this bench but points it at the grounded
     # corpus (probes/grounded/retail.json) instead of the H1 artifact --
