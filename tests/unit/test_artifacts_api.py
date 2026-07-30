@@ -18,10 +18,11 @@ def test_story_endpoint_returns_full_story() -> None:
     resp = client.get("/api/story")
     assert resp.status_code == 200
     body = resp.json()
-    assert len(body["acts"]) == 6
-    # 23: the 20 research claims + 3 enforcement-delivery claims (Act 6 --
-    # resolution modes, the async HITL queue, and standing-authority defer).
-    assert len(body["claims"]) == 23
+    assert len(body["acts"]) == 7
+    # 27: the 23 prior claims + the 4 interp-arc claims in the new Act 4
+    # ("Why not just read the model?" -- three honest negatives plus the
+    # govern-effects-and-attest synthesis).
+    assert len(body["claims"]) == 27
     claim = body["claims"][0]
     for field in (
         "id",
