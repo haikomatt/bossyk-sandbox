@@ -32,6 +32,13 @@ def test_generate_grounded_corpus_script_imports_without_network_and_defines_mai
     assert module.DOMAIN in {"airline", "retail"}
 
 
+# --- bossyk-sandbox slice 3, phase 3a (RED): outreach live-path wiring ------
+def test_tool_schemas_by_domain_will_include_outreach() -> None:
+    module = _import_script()
+
+    assert "outreach" in module._TOOL_SCHEMAS_BY_DOMAIN
+
+
 def test_output_path_single_mode_is_the_domain_corpus(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GROUNDED_MODE", raising=False)
     module = _import_script()
