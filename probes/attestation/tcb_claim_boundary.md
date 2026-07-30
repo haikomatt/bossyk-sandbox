@@ -63,8 +63,9 @@ nothing about fidelity *before or during* signing.
 
 ## The mitigation ladder (Part C)
 
-Ranked by what each rung buys against what it costs. The current product sits
-on rung 1; the recommended next build is rung 4.
+Ranked by what each rung buys against what it costs. The product now sits on
+**rung 4 for the bindable subset** (built, see below); rung 3 co-signature is
+the remaining collusion-resistant gap.
 
 1. **Status quo: trust the operator.** Honest claim only: integrity after
    signing, given an honest signer. Free. This is where we are.
@@ -74,13 +75,35 @@ on rung 1; the recommended next build is rung 4.
 3. **Independent co-signer / second enforcement point.** A separately-operated
    gate co-signs, so a forgery requires collusion between two independently
    run enforcers. Medium cost.
-4. **External-oracle binding (the bossyk-native rung).** Bind the trace to
-   independently-observable effects, the outreach check-outcome oracles, a real
-   clock, the suppression list, so a forged trace contradicts checkable
-   reality. A forged "clean" run that claims a suppressed number was never
-   dialled can be refuted against the dialler's own record. Effects are
-   externally verifiable even when intent is not. This is the cheap, in-house
-   rung and it ties directly to the outreach domain work. Recommended next.
+4. **External-oracle binding (the bossyk-native rung). BUILT for the
+   reproducible-oracle subset.** Bind the trace to independently-observable
+   effects, the outreach check-outcome oracles, a real clock, the suppression
+   list, so a forged trace contradicts checkable reality. A forged "clean" run
+   that claims a suppressed number was never dialled is refuted against the
+   oracle's own record. Effects are externally verifiable even when intent is
+   not. This is the cheap, in-house rung and it ties directly to the outreach
+   domain work.
+   - **Slice 1 (`evidence/oracle_binding.py`):** the oracle result a
+     `RequirePassedCheck` decision relied on is bound into the attested step's
+     signed metadata (an `OracleObservation`: check, key, claimed result,
+     snapshot ref). Signed and tamper-evident; check-free traces are
+     byte-identical.
+   - **Slice 2 (`evidence/oracle_reverify.py`):** `verify_against_oracle`
+     re-checks each bound observation against an independent, snapshot-pinned
+     oracle. The Part-A forgeries now FAIL re-verification while still passing
+     signature verification: *relabel* is caught as a `contradict` (claimed
+     result != oracle truth); *omit* is caught as an omission (a key the oracle
+     logged as queried that no bound observation accounts for).
+   - **Honest limits (enforced, not hidden):** (i) binding into the same
+     key-signed payload buys nothing alone, the value is the *independent*
+     re-check; (ii) only violations reducing to a checkable effect/precondition
+     are bindable, so utterance boundaries stay `unbindable`; (iii) a check with
+     no oracle or a mismatched snapshot is reported `unbindable`, never a false
+     contradiction.
+   - **Remaining gap:** the oracle here is verifier-reproducible, not
+     independently *attested*. A forger who also controls the oracle's data is
+     only caught once the oracle co-signs its observations with a separate key
+     (rung 3 overlap, below). Not built here.
 5. **TEE / remote attestation / measured boot.** Hardware-rooted proof that the
    code producing the trace is the expected, un-tampered code. Strongest,
    most expensive, the enterprise endgame. Named, not built here.
@@ -105,8 +128,14 @@ it.
 
 - **Publish the claim boundary now.** It is already slotted into the CISO
   threat-model doc (blind spot #2) and the assurance positioning note.
-- **Scope external-oracle binding (rung 4) as the next build.** It is the
-  cheapest rung that attacks capture fidelity rather than only post-hoc
-  tampering, and it reuses the outreach domain's outcome oracles.
+- **Rung 4 is built for the reproducible-oracle subset** (`oracle_binding.py` +
+  `oracle_reverify.py`): the bound-and-signed observation is re-checkable
+  against an independent oracle, so a relabelled or omitted violation is
+  falsifiable by an auditor who holds the oracle. The updated claim: *for
+  boundaries with a reproducible oracle, a signed bossyk trace is falsifiable
+  against that oracle.*
+- **Next: rung 3 co-signature** (independent oracle attests its own observations
+  with a separate key) to close the remaining collusion case, and wire the three
+  live runtime call sites to bind real histories.
 - **Name TEE / remote attestation (rung 5) as the endgame**, for the enterprise
   tier, not now.
