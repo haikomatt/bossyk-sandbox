@@ -138,6 +138,23 @@ def test_valid_story_loads(tmp_path: Path) -> None:
     assert story.claims[1].verdict == "pending"
 
 
+def test_seven_act_story_loads(tmp_path: Path) -> None:
+    # The act count is not fixed at six: a story may define any contiguous
+    # 1..N run of acts. The demo grew a 7th act ("Why not just read the
+    # model?"), so a seven-act story must load and bind a claim on act 7.
+    story_dict = {
+        "acts": [_act(n) for n in range(1, 8)],
+        "claims": [_claim(id="seventh-act-claim", act=7)],
+    }
+    path = _write_story(tmp_path, story_dict)
+
+    story = load_story(path)
+
+    assert len(story.acts) == 7
+    assert {a.act for a in story.acts} == {1, 2, 3, 4, 5, 6, 7}
+    assert story.claims[0].act == 7
+
+
 def test_duplicate_claim_id_raises_naming_the_id(tmp_path: Path) -> None:
     story_dict = {
         "acts": _six_acts(),
@@ -153,12 +170,11 @@ def test_duplicate_claim_id_raises_naming_the_id(tmp_path: Path) -> None:
 
 
 def test_claim_referencing_unknown_act_raises_naming_the_offender(tmp_path: Path) -> None:
-    # 6 act entries, but two both numbered 5 -- no act is numbered 6, so a
-    # claim referencing act=6 has nothing to bind to.
-    acts = [_act(1), _act(2), _act(3), _act(4), _act(5), _act(5)]
+    # A valid 1..6 act run, but a claim points at act 7, which no act
+    # defines -- the claim has nothing to bind to.
     story_dict = {
-        "acts": acts,
-        "claims": [_claim(id="orphan-claim", act=6)],
+        "acts": _six_acts(),
+        "claims": [_claim(id="orphan-claim", act=7)],
     }
     path = _write_story(tmp_path, story_dict)
 
@@ -211,10 +227,10 @@ def test_claim_id_must_be_kebab_slug(tmp_path: Path) -> None:
         load_story(path)
 
 
-def test_claim_act_out_of_range_raises(tmp_path: Path) -> None:
+def test_claim_act_below_one_raises(tmp_path: Path) -> None:
     story_dict = {
         "acts": _six_acts(),
-        "claims": [_claim(id="bad-act-claim", act=7)],
+        "claims": [_claim(id="bad-act-claim", act=0)],
     }
     path = _write_story(tmp_path, story_dict)
 
@@ -222,15 +238,31 @@ def test_claim_act_out_of_range_raises(tmp_path: Path) -> None:
         load_story(path)
 
 
-def test_acts_must_be_exactly_six(tmp_path: Path) -> None:
+def test_acts_must_be_contiguously_numbered_from_one(tmp_path: Path) -> None:
+    # Not a fixed count, but a contiguous 1..N run: a gap (here act 6 is
+    # missing, 7 present instead) is rejected so act numbers stay a clean
+    # 1..N the claims can bind to.
     story_dict = {
-        "acts": [_act(n) for n in range(1, 6)],  # only 5
+        "acts": [_act(1), _act(2), _act(3), _act(4), _act(5), _act(7)],
         "claims": [_claim(id="only-claim", act=1)],
     }
     path = _write_story(tmp_path, story_dict)
 
-    with pytest.raises(ValueError, match="6"):
+    with pytest.raises(ValueError, match="contiguous"):
         load_story(path)
+
+
+def test_a_single_act_story_is_valid(tmp_path: Path) -> None:
+    # N can be 1: the lower edge of the contiguous-1..N rule.
+    story_dict = {
+        "acts": [_act(1)],
+        "claims": [_claim(id="only-claim", act=1)],
+    }
+    path = _write_story(tmp_path, story_dict)
+
+    story = load_story(path)
+
+    assert [a.act for a in story.acts] == [1]
 
 
 def test_claims_must_be_non_empty(tmp_path: Path) -> None:
