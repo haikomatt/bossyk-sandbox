@@ -184,6 +184,79 @@ def test_run_session_for_weak_agent_is_the_weakened_runner(
     assert module._run_session_for("retail") is module.run_live_weakened_retail_session
 
 
+# --- weak-outreach live-bench wiring (RED): _run_session_for's weak branch
+# was hardcoded to run_live_weakened_retail_session regardless of domain --
+# build_weakened_outreach_agent_session exists (3a) but nothing wired it
+# into the bench. Proposed fix: a _WEAK_SESSION_BY_DOMAIN registry, and the
+# weak branch dispatches on it instead of hardcoding retail.
+
+
+def test_weak_session_by_domain_will_include_outreach() -> None:
+    module = _import_script()
+
+    assert "outreach" in module._WEAK_SESSION_BY_DOMAIN
+
+
+def test_weak_session_by_domain_retail_entry_is_unchanged() -> None:
+    module = _import_script()
+
+    assert module._WEAK_SESSION_BY_DOMAIN["retail"] is module.run_live_weakened_retail_session
+
+
+def test_run_session_for_weak_outreach_resolves_the_weakened_outreach_runner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LIVE_H2_AGENT", "weak")
+    module = _import_script()
+
+    assert module._run_session_for("outreach") is module.run_live_weakened_outreach_session
+
+
+def test_real_mode_requested_permits_weak_plus_outreach(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Hermetic: _real_mode_requested() is a pure env-var guard -- it never
+    # makes a network call or touches a real client, so monkeypatching
+    # RUN_LIVE_H2_E2E here (auto-reverted after the test) never spends
+    # anything, exactly like this file's other env-gated tests.
+    monkeypatch.setenv("RUN_LIVE_H2_E2E", "1")
+    monkeypatch.setenv("FIREWORKS_API_KEY", "fake-key-hermetic-test-only")
+    monkeypatch.setenv("LIVE_H2_DOMAIN", "outreach")
+    monkeypatch.setenv("LIVE_H2_AGENT", "weak")
+    module = _import_script()
+
+    assert module._real_mode_requested() is True
+
+
+def test_real_mode_requested_still_rejects_weak_plus_airline_with_a_clear_message(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("RUN_LIVE_H2_E2E", "1")
+    monkeypatch.setenv("FIREWORKS_API_KEY", "fake-key-hermetic-test-only")
+    monkeypatch.setenv("LIVE_H2_DOMAIN", "airline")
+    monkeypatch.setenv("LIVE_H2_AGENT", "weak")
+    module = _import_script()
+
+    with pytest.raises(SystemExit):
+        module._real_mode_requested()
+
+    captured = capsys.readouterr()
+    assert "LIVE_H2_AGENT=weak" in captured.err
+    assert "airline" in captured.err
+
+
+def test_real_mode_requested_still_permits_weak_plus_retail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Regression guard: the relaxed guard must not stop permitting the
+    # existing weak+retail path.
+    monkeypatch.setenv("RUN_LIVE_H2_E2E", "1")
+    monkeypatch.setenv("FIREWORKS_API_KEY", "fake-key-hermetic-test-only")
+    monkeypatch.setenv("LIVE_H2_DOMAIN", "retail")
+    monkeypatch.setenv("LIVE_H2_AGENT", "weak")
+    module = _import_script()
+
+    assert module._real_mode_requested() is True
+
+
 # --- latency budget wiring (§15B+) -------------------------------------------
 
 
