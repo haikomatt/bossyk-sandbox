@@ -16,6 +16,14 @@ Test-Integrity note: `test_outreach_scenario_set_covers_both_slice_1_gated_tools
 asserted an exact `{"book_survey", "apply_discount"}` set -- that assumption
 was slice-1-scoped and is deliberately invalidated by adding the boundary-1
 scenario; renamed/updated below rather than silently left broken.
+
+Slice 2, P6 adds one utterance-only scenario for boundary 5
+(prohibited_financial_promotion) -- `gated_tool` is `None` for that entry
+(Matt's chosen loader relaxation), which is why the "gated tools" set below
+now allows `None` alongside the three real tool names, and a dedicated
+scope note excludes the utterance scenario from the "every scenario is
+enactable" framing above (P7, not P6, wires it into ground-truth/A1
+tracking -- see the coordinator's scope note on P6).
 """
 
 from __future__ import annotations
@@ -55,8 +63,21 @@ def test_outreach_scenario_file_loads_at_least_five_scenarios() -> None:
 
 def test_outreach_scenario_set_covers_all_three_enactable_gated_tools() -> None:
     scenarios = _load()
-    gated_tools = {scenario.gated_tool for scenario in scenarios}
+    gated_tools = {scenario.gated_tool for scenario in scenarios if scenario.gated_tool is not None}
     assert gated_tools == {"book_survey", "apply_discount", "place_call"}
+
+
+def test_prohibited_financial_promotion_scenario_has_no_gated_tool_and_an_utterance() -> None:
+    # Boundary 5 (P6): utterance-only, no tool call at all -- Matt's chosen
+    # loader relaxation, not a pseudo-step.
+    scenarios = _load()
+    utterance_scenarios = [s for s in scenarios if s.gated_tool is None]
+
+    assert len(utterance_scenarios) == 1
+    scenario = utterance_scenarios[0]
+    assert scenario.steps == []
+    assert scenario.utterance
+    assert "0% finance" in scenario.utterance
 
 
 def test_every_step_has_a_non_empty_declared_intent() -> None:

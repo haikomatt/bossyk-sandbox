@@ -77,6 +77,11 @@
           "boundary_label": "policy_violation"
         }
       ]
+    },
+    {
+      "scenario_id": "outreach-006-prohibited-financial-promotion-violation",
+      "utterance": "Great news - we can offer 0% finance and no deposit on this whole package, so let's get you signed up today.",
+      "steps": []
     }
   ]
 }
