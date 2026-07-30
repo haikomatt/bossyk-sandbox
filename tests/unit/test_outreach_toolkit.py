@@ -30,6 +30,8 @@ from bossyk_sandbox.runtime.outreach.toolkit import (
     OutreachToolkit,
     Prospect,
     build_fixture_prospects,
+    known_bad_target_prospects,
+    render_known_prospects_context,
 )
 
 
@@ -254,3 +256,100 @@ def test_get_outreach_environment_policy_names_the_fictional_tenant() -> None:
     env = get_outreach_environment()
 
     assert "Sunhill" in env.policy
+
+
+# --- known-bad-target prospects (bossyk-sandbox slice 3c fix) ------------
+# The 3c live run measured reach=0: the grounded adversary invented prospect
+# ids (P-78234, PRO-12345...) that don't exist in the fixture, so the
+# consequence oracle correctly couldn't confirm any crossing. These helpers
+# ground the outreach adversary in REAL fixture bad-target entities it can
+# actually attack.
+
+
+def test_known_bad_target_prospects_returns_suppressed_ineligible_and_clean_buckets() -> None:
+    buckets = known_bad_target_prospects()
+
+    assert set(buckets) == {"suppressed", "ineligible", "clean"}
+    assert buckets["suppressed"]
+    assert buckets["ineligible"]
+    assert buckets["clean"]
+
+
+def test_known_bad_target_prospects_suppressed_bucket_is_on_tps_or_opted_out() -> None:
+    buckets = known_bad_target_prospects()
+
+    for prospect in buckets["suppressed"]:
+        assert prospect.on_tps or prospect.opted_out
+
+
+def test_known_bad_target_prospects_ineligible_bucket_is_not_eligible() -> None:
+    buckets = known_bad_target_prospects()
+
+    for prospect in buckets["ineligible"]:
+        assert prospect.eligible is False
+
+
+def test_known_bad_target_prospects_clean_bucket_is_eligible_and_not_suppressed() -> None:
+    buckets = known_bad_target_prospects()
+
+    for prospect in buckets["clean"]:
+        assert prospect.eligible is True
+        assert prospect.on_tps is False
+        assert prospect.opted_out is False
+
+
+def test_known_bad_target_prospects_is_deterministic_across_calls() -> None:
+    first = known_bad_target_prospects()
+    second = known_bad_target_prospects()
+
+    assert first == second
+
+
+def test_known_bad_target_prospects_buckets_are_sorted_by_prospect_id() -> None:
+    buckets = known_bad_target_prospects()
+
+    for bucket in buckets.values():
+        ids = [p.prospect_id for p in bucket]
+        assert ids == sorted(ids)
+
+
+def test_render_known_prospects_context_includes_a_known_suppressed_prospect_id() -> None:
+    # P-0007 is deterministically on_tps=True under build_fixture_prospects'
+    # default seed (i % 7 == 0) -- a fixed, reproducible fixture fact.
+    context = render_known_prospects_context()
+
+    assert "P-0007" in context
+
+
+def test_render_known_prospects_context_includes_a_known_ineligible_prospect_id() -> None:
+    # P-0005 is deterministically ineligible (non-homeowner, i % 5 == 0)
+    # under build_fixture_prospects' default seed.
+    context = render_known_prospects_context()
+
+    assert "P-0005" in context
+
+
+def test_render_known_prospects_context_includes_phone_numbers_for_suppressed_prospects() -> None:
+    buckets = known_bad_target_prospects()
+    context = render_known_prospects_context()
+
+    for prospect in buckets["suppressed"]:
+        assert prospect.phone in context
+
+
+def test_render_known_prospects_context_is_deterministic_across_calls() -> None:
+    first = render_known_prospects_context()
+    second = render_known_prospects_context()
+
+    assert first == second
+
+
+def test_render_known_prospects_context_accepts_an_explicit_prospects_dict() -> None:
+    suppressed = _prospect(prospect_id="P-9001", phone="+441135559001", on_tps=True)
+    ineligible = _prospect(
+        prospect_id="P-9002", phone="+441135559002", homeowner=False, eligible=False
+    )
+    context = render_known_prospects_context({p.prospect_id: p for p in (suppressed, ineligible)})
+
+    assert "P-9001" in context
+    assert "P-9002" in context

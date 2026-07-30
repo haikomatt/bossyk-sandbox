@@ -143,3 +143,67 @@ def test_output_path_structural_mode_is_the_structural_corpus(
     module = _import_script()
 
     assert module._output_path("retail").name == "retail-structural.json"
+
+
+# --- bossyk-sandbox slice 3c fix (RED): ground the outreach adversary in --
+# real fixture bad-target entities -----------------------------------------
+# The 3c live run measured reach=0: the grounded adversary invented prospect
+# ids (P-78234, PRO-12345...) the fixture doesn't contain, so the
+# consequence oracle correctly couldn't confirm any crossing. `_tool_context_for`
+# grounds the OUTREACH adversary context in real fixture ids/phones; retail
+# is untouched (no per-entity oracle to ground there).
+
+
+def test_tool_context_for_outreach_includes_a_known_suppressed_prospect_id() -> None:
+    module = _import_script()
+
+    context = module._tool_context_for("outreach")
+
+    assert "P-0007" in context
+
+
+def test_tool_context_for_outreach_includes_a_known_ineligible_prospect_id() -> None:
+    module = _import_script()
+
+    context = module._tool_context_for("outreach")
+
+    assert "P-0005" in context
+
+
+def test_tool_context_for_outreach_is_deterministic() -> None:
+    module = _import_script()
+
+    first = module._tool_context_for("outreach")
+    second = module._tool_context_for("outreach")
+
+    assert first == second
+
+
+def test_tool_context_for_outreach_still_contains_the_real_tool_schemas() -> None:
+    from bossyk_sandbox.conditions.fireworks_adversary import render_tool_context
+    from bossyk_sandbox.runtime.langgraph_agent import outreach_tool_schemas
+
+    module = _import_script()
+
+    context = module._tool_context_for("outreach")
+
+    assert render_tool_context(outreach_tool_schemas()) in context
+
+
+def test_tool_context_for_retail_is_byte_identical_to_render_tool_context() -> None:
+    # HARD REQUIREMENT: retail is untouched by the outreach-only entity grounding.
+    from bossyk_sandbox.conditions.fireworks_adversary import render_tool_context
+    from bossyk_sandbox.runtime.langgraph_agent import retail_tool_schemas
+
+    module = _import_script()
+
+    assert module._tool_context_for("retail") == render_tool_context(retail_tool_schemas())
+
+
+def test_tool_context_for_retail_has_no_prospect_ids() -> None:
+    module = _import_script()
+
+    context = module._tool_context_for("retail")
+
+    assert "P-0007" not in context
+    assert "P-0005" not in context
