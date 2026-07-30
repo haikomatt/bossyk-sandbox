@@ -1,0 +1,35 @@
+{
+  "n_items": 276,
+  "n_violation": 51,
+  "text_baseline_auroc": 0.9953812636165578,
+  "text_shuffled_auroc": 0.5225272331154684,
+  "layers": {
+    "7": {
+      "activation_auroc": 0.9810893246187364,
+      "act_minus_text_ci": [
+        -0.04990738811920323,
+        0.00278732695345163
+      ],
+      "p_act_gt_text": 0.31333333333333335,
+      "beats_text": false
+    },
+    "14": {
+      "activation_auroc": 0.9949455337690631,
+      "act_minus_text_ci": [
+        -0.0051948051948051965,
+        0.0031372549019608176
+      ],
+      "p_act_gt_text": 0.447,
+      "beats_text": false
+    },
+    "27": {
+      "activation_auroc": 0.9975599128540305,
+      "act_minus_text_ci": [
+        0.0,
+        0.006473073811022134
+      ],
+      "p_act_gt_text": 0.9486666666666667,
+      "beats_text": false
+    }
+  }
+}

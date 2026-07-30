@@ -74,6 +74,15 @@ DIR1_WEAK_ARTIFACT = "docs/bench_output/live_h2h4_retail_weak.json"
 DIR1_STRUCTURAL_ARTIFACT = "docs/bench_output/live_h2h4_retail_weak_structural.json"
 DIR1_COMMIT = "27ca0e3"
 
+INTERP_REPROBE_ARTIFACT = "probes/interp/results/reprobe_qwen_pca32.json"
+INTERP_TEXT_ARTIFACT = "probes/interp/results/text_baseline_qwen.json"
+INTERP_LEADTIME_ARTIFACT = "probes/interp/results/leadtime_report.json"
+INTERP_EVASION_ARTIFACT = "probes/interp/results/evasion_gate_summary.json"
+# The deep layer used for the activation-vs-text comparison: the probe's
+# policy AUROC peaks and stabilises here, so it is the strongest case for
+# the residual -- and it still does not beat text.
+INTERP_LAYER = "14"
+
 H1_CLASS_ORDER = ["tool_misuse", "pii_leak", "jailbreak", "prompt_injection"]
 H4_GROUP_ORDER = ["combined", "airline", "retail"]
 
@@ -499,6 +508,137 @@ def render_dir1_gate_save(weak_data: dict[str, Any], structural_data: dict[str, 
         0.01,
         0.01,
         f"Source: {DIR1_WEAK_ARTIFACT} + {DIR1_STRUCTURAL_ARTIFACT} (commit {DIR1_COMMIT})",
+        fontsize=SOURCE_FONTSIZE,
+        color=BASE_COLOR,
+        ha="left",
+        va="bottom",
+    )
+    return fig
+
+
+# --- figure 5: interp-three-negatives ---------------------------------------
+
+
+def _auroc_panel(
+    ax: Any,
+    bars: list[tuple[str, float, str]],
+    *,
+    title: str,
+    subtitle: str,
+) -> None:
+    """One AUROC panel: labelled vertical bars on a fixed 0..1 scale, each
+    annotated with its value. Shared by the three negatives so they read as
+    one comparison."""
+    positions = list(range(len(bars)))
+    for x, (_label, value, color) in zip(positions, bars, strict=True):
+        ax.bar(x, value, width=0.62, color=color, zorder=2)
+        ax.annotate(
+            f"{value:.2f}",
+            xy=(x, value),
+            xytext=(0, 3),
+            textcoords="offset points",
+            ha="center",
+            va="bottom",
+            fontsize=VALUE_LABEL_FONTSIZE,
+            color=BASE_COLOR,
+        )
+    ax.axhline(0.5, color=GRID_COLOR, linewidth=0.8, linestyle="--", zorder=1)
+    ax.set_xticks(positions)
+    ax.set_xticklabels([label for label, _v, _c in bars], fontsize=TICK_FONTSIZE)
+    ax.set_ylim(0, 1.08)
+    ax.grid(axis="y", color=GRID_COLOR, linewidth=0.8, zorder=0)
+    ax.set_axisbelow(True)
+    for spine in ("top", "right"):
+        ax.spines[spine].set_visible(False)
+    ax.tick_params(axis="both", labelsize=TICK_FONTSIZE)
+    # Title (bold) stacked over a small grey subtitle, both left-aligned, so a
+    # long title never collides with the subtitle.
+    ax.text(
+        0.0,
+        1.015,
+        subtitle,
+        transform=ax.transAxes,
+        fontsize=SOURCE_FONTSIZE + 0.5,
+        color=BASE_COLOR,
+        ha="left",
+        va="bottom",
+    )
+    ax.set_title(title, fontsize=SUBTITLE_FONTSIZE + 1, fontweight="bold", loc="left", pad=16)
+
+
+def render_interp_three_negatives(
+    reprobe: dict[str, Any],
+    text_baseline: dict[str, Any],
+    leadtime: dict[str, Any],
+    evasion: dict[str, Any],
+) -> Figure:
+    """Three panels, one per honest negative, all on a shared AUROC scale:
+    (1) the activation probe is present but does NOT beat a text baseline;
+    (2) there is no lead-time -- at the first generated token the residual is
+    at chance while the text already determines the outcome; (3) laundering
+    does not fool the text monitor, so no evasion gap exists. Together: reading
+    the model cannot independently catch the violation."""
+    fig, axes = plt.subplots(1, 3, figsize=FIGURE_SIZE_INCHES, dpi=DPI)
+
+    # Panel 1: present, not beyond text (deep-layer AUROCs).
+    layer = reprobe["layers"][INTERP_LAYER]
+    act_auroc = layer["policy"]["auroc"]
+    shuffled = layer["shuffled"]["auroc"]
+    text_auroc = text_baseline["text_baseline_auroc"]
+    _auroc_panel(
+        axes[0],
+        [
+            ("activation\nprobe", act_auroc, AIRLINE_COLOR),
+            ("text\nbaseline", text_auroc, RETAIL_COLOR),
+            ("shuffled\nfloor", shuffled, BASE_COLOR),
+        ],
+        title="Present, not beyond text",
+        subtitle=f"Qwen residual, layer {INTERP_LAYER}",
+    )
+    axes[0].set_ylabel("AUROC (violation vs compliant)", fontsize=AXIS_LABEL_FONTSIZE)
+
+    # Panel 2: no lead-time (first generated token).
+    offset0 = leadtime["layers"][0]["offsets"][0]
+    residual0 = offset0["residual_auroc"]
+    text0 = offset0["text_auroc"]
+    _auroc_panel(
+        axes[1],
+        [
+            ("residual\n@ token 0", residual0, AIRLINE_COLOR),
+            ("text\n@ token 0", text0, RETAIL_COLOR),
+        ],
+        title="No lead-time",
+        subtitle="the action IS the first token",
+    )
+
+    # Panel 3: no evasion gap (text AUROC barely moves under laundering).
+    launderings = evasion["launderings"]
+    euph = launderings["euphemism"]
+    inj = launderings["injection"]
+    _auroc_panel(
+        axes[2],
+        [
+            ("euphemism\nlaundered", euph["laundered_text_auroc"], RETAIL_COLOR),
+            ("injection\nlaundered", inj["laundered_text_auroc"], RETAIL_COLOR),
+        ],
+        title="No evasion gap",
+        subtitle="clean text = 1.00 both",
+    )
+
+    fig.suptitle(
+        "Reading the model cannot independently catch the violation",
+        fontsize=TITLE_FONTSIZE,
+        fontweight="bold",
+        x=0.02,
+        ha="left",
+    )
+
+    fig.tight_layout(rect=(0, 0.05, 1, 0.93))
+    fig.text(
+        0.01,
+        0.01,
+        "Source: probes/interp/results/{reprobe_qwen_pca32, text_baseline_qwen, "
+        "leadtime_report, evasion_gate_summary}.json (interp track)",
         fontsize=SOURCE_FONTSIZE,
         color=BASE_COLOR,
         ha="left",

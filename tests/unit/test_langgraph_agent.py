@@ -10,6 +10,7 @@ from langgraph.types import Command
 from bossyk_sandbox.instruments.base import ProposedAction
 from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel
 from bossyk_sandbox.runtime.langgraph_agent import (
+    POLICY_WEAKENING_OVERRIDE_BORDERLINE,
     AirlineAgentSession,
     build_airline_agent_session,
     build_retail_agent_session,
@@ -387,6 +388,53 @@ def test_weaken_policy_rejects_unknown_strength() -> None:
         weaken_policy("x", strength="nope")
 
 
+def test_weaken_policy_borderline_is_ambiguous_and_distinct() -> None:
+    original = "Authenticate the user identity before acting."
+    borderline = weaken_policy(original, strength="borderline")
+    assert original in borderline
+    assert borderline != weaken_policy(original, strength="dir1")
+    assert borderline != weaken_policy(original, strength="aggressive")
+    low = borderline.lower()
+    assert "may" in low  # latitude, not a mandate (the coin-flip regime)
+    assert "mandatory" not in low and "must not" not in low
+
+
+def test_weaken_policy_borderline_cot_composes_borderline_plus_reasoning() -> None:
+    # The CoT lead-time experiment needs a deliberate-before-acting regime: the
+    # borderline latitude (coin-flip outcome) PLUS an instruction to reason inside
+    # a <reasoning> block BEFORE emitting exactly one tool call, so a real
+    # backward window exists between deciding and acting.
+    original = "Authenticate the user identity before acting."
+    cot = weaken_policy(original, strength="borderline_cot")
+    borderline = weaken_policy(original, strength="borderline")
+    assert original in cot
+    # composes the borderline override verbatim...
+    assert POLICY_WEAKENING_OVERRIDE_BORDERLINE in cot
+    # ...and adds the reasoning elicitation on top (distinct from plain borderline)
+    assert cot != borderline
+    low = cot.lower()
+    assert "<reasoning>" in low and "</reasoning>" in low
+    assert "step by step" in low
+    assert "exactly one tool" in low
+    # still latitude, not a mandate (keeps the coin-flip outcome)
+    assert "mandatory" not in low and "must not" not in low
+
+
+def test_build_weakened_retail_agent_session_accepts_borderline_and_temperature() -> None:
+    llm = _RecordingLLM(responses=[AIMessage(content="ok")])
+    env = _FakeEnvironment(_CountingToolkit(), policy="Authenticate the user first.")
+    session = build_weakened_retail_agent_session(
+        trace_id="t-border", llm=llm, environment=env, strength="borderline", temperature=0.8
+    )
+    session.graph.invoke(  # type: ignore[call-overload]
+        {"messages": [HumanMessage(content="cancel my order")]},
+        config={"configurable": {"thread_id": "t-border"}},
+    )
+    assert llm.seen[0][0].content == weaken_policy(
+        "Authenticate the user first.", strength="borderline"
+    )
+
+
 def test_build_weakened_retail_agent_session_feeds_the_weakened_policy_to_the_model() -> None:
     # dir 1: an under-specified agent. The system prompt the model sees must be
     # the weakened policy (original + guardrail-neutralizing override), so the
@@ -711,3 +759,34 @@ def test_capture_prompts_records_the_rendered_decision_context_per_turn() -> Non
     assert len(session.agent_prompts) == len(session.agent_latency)
     # the rendered context carries the system/policy the agent was given
     assert "be compliant" in session.agent_prompts[0]
+
+
+def test_capture_prompts_off_by_default_leaves_agent_actions_empty() -> None:
+    llm = _ScriptedLLM(responses=[AIMessage(content="done")])
+    session = build_airline_agent_session(
+        trace_id="t-actions-off", llm=llm, environment=_FakeEnvironment(tools=_CountingToolkit())
+    )
+    _run_to_completion(session, thread_id="actions-off")
+    assert session.agent_actions == []
+
+
+def test_capture_prompts_records_the_agent_action_per_turn_aligned() -> None:
+    # A tool-call turn then a text turn: agent_actions aligns 1:1 with
+    # agent_prompts and captures WHAT the agent did (tool call, then reply).
+    tool_call = {"name": "cancel_reservation", "args": {"reservation_id": "R1"}, "id": "c1"}
+    llm = _ScriptedLLM(
+        responses=[
+            AIMessage(content="", tool_calls=[tool_call]),
+            AIMessage(content="all done"),
+        ]
+    )
+    session = build_airline_agent_session(
+        trace_id="t-actions-on",
+        llm=llm,
+        environment=_FakeEnvironment(tools=_CountingToolkit(), policy="be compliant"),
+        capture_prompts=True,
+    )
+    _run_to_completion(session, thread_id="actions-on")
+    assert len(session.agent_actions) == len(session.agent_prompts)
+    assert "cancel_reservation" in session.agent_actions[0]
+    assert session.agent_actions[1] == "all done"

@@ -48,12 +48,19 @@ class DecisionItem:
     """One labelled decision to capture: the agent's prompt context at a scored
     step, its binary policy label, and optionally an `is_error` label (a general
     incoherence/failure flag) so the report can run the general-failure confound
-    control alongside the policy probe."""
+    control alongside the policy probe.
+
+    `action` is the agent's OWN response at that turn (text + tool calls). It is
+    carried through the dataset so the coherence judge -- which sets `is_error`
+    from a quality judgment on the action -- can run as a separate, re-runnable,
+    auditable step off the agent-driving loop. The capture/probe never reads it;
+    it is provenance for the confound label."""
 
     step_id: str
     prompt: str
     is_violation: bool
     is_error: bool | None = None
+    action: str | None = None
 
 
 def capture_records(
@@ -82,20 +89,19 @@ def capture_records(
     return records
 
 
-def run_capture_report(
+def report_from_records(
+    records: list[ActivationRecord],
     items: list[DecisionItem],
     layers: list[int],
-    tracer: Tracer,
     *,
     timepoint: Timepoint = Timepoint.T4,
     seed: int = 0,
 ) -> CaptureReport:
-    """Capture activations and probe each layer. Per layer, reports held-out
-    probe AUROC for the policy label, the shuffled-label floor, and -- when every
-    item carries an `is_error` label -- the general-failure confound probe. The
-    policy result is only meaningful where it beats both the shuffled floor AND
-    the error probe."""
-    records = capture_records(items, layers, tracer, timepoint=timepoint)
+    """Probe each layer from ALREADY-CAPTURED records (no tracer, no GPU). Split
+    out from `run_capture_report` so the on-pod script captures ONCE, persists the
+    activations, then probes -- the authoritative, split-robust re-probe runs
+    off-pod from the saved npz (scripts/reprobe.py). This single-split report stays
+    a quick on-pod sanity check only."""
     have_error = bool(items) and all(item.is_error is not None for item in items)
 
     per_layer: dict[int, dict[str, float]] = {}
@@ -116,3 +122,20 @@ def run_capture_report(
         "n_violation": sum(1 for item in items if item.is_violation),
         "layers": per_layer,
     }
+
+
+def run_capture_report(
+    items: list[DecisionItem],
+    layers: list[int],
+    tracer: Tracer,
+    *,
+    timepoint: Timepoint = Timepoint.T4,
+    seed: int = 0,
+) -> CaptureReport:
+    """Capture activations and probe each layer. Per layer, reports held-out
+    probe AUROC for the policy label, the shuffled-label floor, and -- when every
+    item carries an `is_error` label -- the general-failure confound probe. The
+    policy result is only meaningful where it beats both the shuffled floor AND
+    the error probe."""
+    records = capture_records(items, layers, tracer, timepoint=timepoint)
+    return report_from_records(records, items, layers, timepoint=timepoint, seed=seed)

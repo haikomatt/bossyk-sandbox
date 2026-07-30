@@ -42,6 +42,43 @@ def test_load_items_parses_optional_error_label() -> None:
     assert items[1].is_error is None
 
 
+def test_build_npz_payload_shapes_and_label_encoding() -> None:
+    module = _import_script()
+    from bossyk_sandbox.interp.capture_run import DecisionItem, capture_records
+
+    def fake_tracer(prompt: str, layers: list[int]) -> dict[int, list[float]]:
+        base = 3.0 if "VIOL" in prompt else -3.0
+        return {layer: [base, 0.5, -0.5] for layer in layers}
+
+    items = [
+        DecisionItem(step_id="s0", prompt="VIOL", is_violation=True, is_error=True),
+        DecisionItem(step_id="s1", prompt="ok", is_violation=False, is_error=False),
+        DecisionItem(step_id="s2", prompt="ok", is_violation=False, is_error=None),  # unjudged
+    ]
+    layers = [0, 2]
+    records = capture_records(items, layers, fake_tracer)
+    payload = module.build_npz_payload(records, items, layers)
+
+    assert payload["layers"].tolist() == [0, 2]
+    assert payload["step_ids"].tolist() == ["s0", "s1", "s2"]
+    assert payload["is_violation"].tolist() == [True, False, False]
+    assert payload["is_error"].tolist() == [1, 0, -1]  # -1 == unjudged, not fabricated False
+    assert payload["X_0"].shape == (3, 3)
+    assert payload["X_2"].shape == (3, 3)
+
+
+def test_load_items_round_trips_optional_action() -> None:
+    module = _import_script()
+    items = module.load_items(
+        [
+            {"step_id": "s1", "prompt": "p1", "is_violation": True, "action": "cancel(W1)"},
+            {"step_id": "s2", "prompt": "p2", "is_violation": False},  # action absent -> None
+        ]
+    )
+    assert items[0].action == "cancel(W1)"
+    assert items[1].action is None
+
+
 def test_parse_layers() -> None:
     module = _import_script()
     assert module.parse_layers("0,8,16,24,31") == [0, 8, 16, 24, 31]

@@ -31,3 +31,21 @@ def render_prompt(messages: list[Any]) -> str:
             line = f"{line} [tool_calls: {rendered}]"
         lines.append(line)
     return "\n".join(lines)
+
+
+def render_action(response: Any) -> str:
+    """Render an agent turn's OWN response -- its ACTION -- to a compact string:
+    the message text plus any tool calls it proposed. This is what the coherence
+    judge reads ("what did the agent DO"), distinct from `render_prompt`'s "what
+    did the agent SEE". Duck-typed on `.content` / `.tool_calls`; an empty
+    response degrades to a sentinel rather than "" so the judge never gets a
+    blank input."""
+    content = getattr(response, "content", "") or ""
+    tool_calls = getattr(response, "tool_calls", None)
+    parts: list[str] = []
+    if content:
+        parts.append(str(content).strip())
+    if tool_calls:
+        rendered = "; ".join(f"{call['name']}({call['args']})" for call in tool_calls)
+        parts.append(f"tool_calls: {rendered}")
+    return " | ".join(p for p in parts if p) or "(no action)"

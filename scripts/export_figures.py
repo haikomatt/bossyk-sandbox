@@ -19,10 +19,15 @@ from bossyk_sandbox.figures import (
     DIR1_WEAK_ARTIFACT,
     H1_ARTIFACT,
     H4_ARTIFACT,
+    INTERP_EVASION_ARTIFACT,
+    INTERP_LEADTIME_ARTIFACT,
+    INTERP_REPROBE_ARTIFACT,
+    INTERP_TEXT_ARTIFACT,
     SMACTR_ARTIFACT,
     render_dir1_gate_save,
     render_h1_blindspot_by_class,
     render_h4_prevention_waterfall,
+    render_interp_three_negatives,
     render_smactr_before_after,
     save_figure,
 )
@@ -61,6 +66,14 @@ def export_all(output_dir: Path) -> list[Path]:
     dir1_structural = _load(DIR1_STRUCTURAL_ARTIFACT)
     fig4 = render_dir1_gate_save(dir1_weak, dir1_structural)
     written.extend(save_figure(fig4, output_dir, "dir1-gate-save"))
+
+    fig5 = render_interp_three_negatives(
+        _load(INTERP_REPROBE_ARTIFACT),
+        _load(INTERP_TEXT_ARTIFACT),
+        _load(INTERP_LEADTIME_ARTIFACT),
+        _load(INTERP_EVASION_ARTIFACT),
+    )
+    written.extend(save_figure(fig5, output_dir, "interp-three-negatives"))
 
     return written
 

@@ -103,14 +103,17 @@ class StoryClaim(BaseModel):
 
     @field_validator("act")
     @classmethod
-    def _act_in_range(cls, value: int) -> int:
-        if not 1 <= value <= 6:
-            raise ValueError(f"claim act {value} must be between 1 and 6")
+    def _act_at_least_one(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError(f"claim act {value} must be >= 1")
         return value
 
 
 class StoryAct(BaseModel):
-    """One of the demo's 6 acts: a title + the question it answers."""
+    """One of the demo's acts: a title + the question it answers. The act
+    count is not fixed -- the story just requires a contiguous 1..N run
+    (see `Story`), so a new act extends the narrative without a schema
+    change."""
 
     act: int
     title: str
@@ -118,14 +121,18 @@ class StoryAct(BaseModel):
 
     @field_validator("act")
     @classmethod
-    def _act_in_range(cls, value: int) -> int:
-        if not 1 <= value <= 6:
-            raise ValueError(f"act {value} must be between 1 and 6")
+    def _act_at_least_one(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError(f"act {value} must be >= 1")
         return value
 
 
 class Story(BaseModel):
-    """The whole narrative: exactly 6 acts, at least one claim. Cross-
+    """The whole narrative: a contiguous 1..N run of acts (N >= 1) and at
+    least one claim. The act count is deliberately not pinned to a magic
+    number so the narrative can grow an act without a schema change; what
+    is enforced is that the act numbers are exactly 1..N with no gaps or
+    duplicates, so every claim's `act` binds to a real act. Cross-
     referential checks (claim ids unique, every claim's act actually
     defined, artifact_refs/figure_ids exist on disk) are load_story's job,
     not this model's -- they need a repo root and the filesystem, which a
@@ -137,8 +144,14 @@ class Story(BaseModel):
 
     @model_validator(mode="after")
     def _validate_shape(self) -> Story:
-        if len(self.acts) != 6:
-            raise ValueError(f"story must define exactly 6 acts, got {len(self.acts)}")
+        if not self.acts:
+            raise ValueError("story must define at least one act")
+        act_numbers = sorted(act.act for act in self.acts)
+        if act_numbers != list(range(1, len(act_numbers) + 1)):
+            raise ValueError(
+                "story acts must be contiguously numbered 1..N with no gaps or "
+                f"duplicates, got {act_numbers}"
+            )
         if not self.claims:
             raise ValueError("story must define at least one claim")
         return self
@@ -192,9 +205,10 @@ def load_story(path: Path | str, *, frameworks_path: Path | str | None = None) -
 
     - claim ids are unique across the story;
     - every claim's `act` matches an `act` value actually present in
-      `acts` (note: `Story` only requires exactly 6 act entries, each
-      individually in range 1-6 -- it does not require them to be a
-      1..6 bijection, so this check is not vacuous);
+      `acts` (note: `Story` requires the acts to be a contiguous 1..N run,
+      but a claim's `act` only has to be >= 1, so a claim can still name an
+      act beyond N -- e.g. act 7 of a six-act story -- and this check is
+      what catches it);
     - every `artifact_refs` path exists on disk, relative to the repo
       root;
     - every `figure_ids` entry has a corresponding

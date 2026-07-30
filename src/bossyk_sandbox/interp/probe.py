@@ -24,6 +24,7 @@ suite free of sklearn/torch. torch/nnsight belong to the pod-only capture script
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -151,6 +152,159 @@ def probe_report(
     return {
         name: probe_auroc(x, labels, seed=seed, l2=l2) for name, labels in labels_by_name.items()
     }
+
+
+def _pca_fit(x_train: Array, k: int) -> tuple[Array, Array]:
+    """Fit PCA on training rows only (no leakage): center, SVD, keep the top-k
+    right-singular vectors as components. Returns (mean, components (k, d)). k is
+    clamped to the number of components SVD can produce."""
+    mean = x_train.mean(axis=0)
+    _u, _s, vt = np.linalg.svd(x_train - mean, full_matrices=False)
+    k = min(k, vt.shape[0])
+    return mean, vt[:k]
+
+
+def _pca_apply(x: Array, mean: Array, components: Array) -> Array:
+    """Project rows onto fitted PCA components: (x - train_mean) @ Vᵀ."""
+    return (x - mean) @ components.T
+
+
+def _stratified_folds(y: NDArray[np.bool_], n_splits: int, seed: int) -> list[IntArray]:
+    """Deterministic stratified k-fold: shuffle each class, deal round-robin into
+    folds, so every fold holds ~the same positive/negative ratio -- the fix for
+    the tiny-N single-class test folds that made a single 30% split unstable."""
+    rng = np.random.default_rng(seed)
+    folds: list[list[int]] = [[] for _ in range(n_splits)]
+    for cls in (np.where(y)[0], np.where(~y)[0]):
+        for i, idx in enumerate(rng.permutation(cls)):
+            folds[i % n_splits].append(int(idx))
+    return [np.array(sorted(f), dtype=np.intp) for f in folds]
+
+
+def crossval_oof_scores(
+    x: list[list[float]] | Array,
+    y: list[bool] | Array,
+    *,
+    n_splits: int = 5,
+    l2: float = 1.0,
+    n_components: int | None = None,
+    seed: int = 0,
+) -> tuple[Array, NDArray[np.bool_]]:
+    """Stratified k-fold out-of-fold probe scores: each sample is scored exactly
+    once, by a probe trained on the OTHER folds. Optional per-fold PCA
+    (`n_components`) fit on the training rows only, then the standardised L2
+    logistic probe. Returns (oof_scores, y) in original order.
+
+    This is the small-n stability fix: instead of one 30%-holdout AUROC (which
+    swung 1.00->0.31 across layers at d=3584>>n=68 because a single split is
+    high-variance), every sample gets a held-out prediction, and AUROC over all n
+    of them (`probe_auroc_cv`) is far less split-dependent. `n_splits` is clamped
+    down to the smaller class count; if that is < 2 the scores are all-nan (a CV
+    is undefined)."""
+    xa = np.asarray(x, dtype=np.float64)
+    ya = np.asarray(y, dtype=bool)
+    n = len(xa)
+    n_splits = min(n_splits, int(ya.sum()), int((~ya).sum()))
+    oof = np.full(n, np.nan, dtype=np.float64)
+    if n_splits < 2:
+        return oof, ya
+    for test_idx in _stratified_folds(ya, n_splits, seed):
+        train_mask = np.ones(n, dtype=bool)
+        train_mask[test_idx] = False
+        x_train, x_test = xa[train_mask], xa[test_idx]
+        if n_components is not None:
+            mean, comps = _pca_fit(x_train, n_components)
+            x_train, x_test = _pca_apply(x_train, mean, comps), _pca_apply(x_test, mean, comps)
+        probe = train_probe(x_train, ya[train_mask], l2=l2)
+        oof[test_idx] = probe_scores(probe, x_test)
+    return oof, ya
+
+
+def probe_auroc_cv(
+    x: list[list[float]] | Array,
+    y: list[bool] | Array,
+    *,
+    n_splits: int = 5,
+    l2: float = 1.0,
+    n_components: int | None = None,
+    seed: int = 0,
+) -> float:
+    """Cross-validated held-out AUROC: rank-AUROC over the out-of-fold scores.
+    `nan` when the CV is undefined (a class too small to stratify)."""
+    oof, ya = crossval_oof_scores(
+        x, y, n_splits=n_splits, l2=l2, n_components=n_components, seed=seed
+    )
+    mask = ~np.isnan(oof)
+    if mask.sum() == 0:
+        return float("nan")
+    return auroc(oof[mask].tolist(), ya[mask].tolist())
+
+
+def bootstrap_auroc_ci(
+    scores: Array,
+    y: NDArray[np.bool_],
+    *,
+    n_boot: int = 1000,
+    alpha: float = 0.05,
+    seed: int = 0,
+) -> tuple[float, float]:
+    """Percentile bootstrap CI for the AUROC of `scores` vs `y`: resample the
+    (score, label) pairs with replacement `n_boot` times, take the central
+    `1-alpha` percentile band of the resampled AUROCs. Single-class resamples are
+    skipped. Returns (nan, nan) if fewer than 2 valid resamples -- an honest 'no
+    interval', not a fake point. This is the confidence the single-split number
+    never had."""
+    mask = ~np.isnan(scores)
+    s, yv = scores[mask], y[mask]
+    n = len(s)
+    if n < 2:
+        return (float("nan"), float("nan"))
+    rng = np.random.default_rng(seed)
+    boots: list[float] = []
+    for _ in range(n_boot):
+        idx = rng.integers(0, n, size=n)
+        val = auroc(s[idx].tolist(), yv[idx].tolist())
+        if not math.isnan(val):
+            boots.append(val)
+    if len(boots) < 2:
+        return (float("nan"), float("nan"))
+    lo = float(np.percentile(boots, 100 * alpha / 2))
+    hi = float(np.percentile(boots, 100 * (1 - alpha / 2)))
+    return (lo, hi)
+
+
+def probe_cv_report(
+    x: list[list[float]] | Array,
+    labels_by_name: dict[str, list[bool]],
+    *,
+    n_splits: int = 5,
+    l2: float = 1.0,
+    n_components: int | None = None,
+    n_boot: int = 1000,
+    alpha: float = 0.05,
+    seed: int = 0,
+) -> dict[str, dict[str, float]]:
+    """Cross-validated probe report with confidence intervals for several label
+    vectors over the SAME activations -- the robust replacement for `probe_report`
+    (single split, no CI). Per label: CV AUROC + a bootstrap CI + the positive
+    count. The policy label is only a result if its CI clears BOTH the shuffled
+    floor AND the coherence-error confound (compare the intervals, not the point
+    estimates)."""
+    out: dict[str, dict[str, float]] = {}
+    for name, labels in labels_by_name.items():
+        oof, ya = crossval_oof_scores(
+            x, labels, n_splits=n_splits, l2=l2, n_components=n_components, seed=seed
+        )
+        lo, hi = bootstrap_auroc_ci(oof, ya, n_boot=n_boot, alpha=alpha, seed=seed)
+        mask = ~np.isnan(oof)
+        point = auroc(oof[mask].tolist(), ya[mask].tolist()) if mask.sum() else float("nan")
+        out[name] = {
+            "auroc": point,
+            "ci_lo": lo,
+            "ci_hi": hi,
+            "n_pos": float(int(np.asarray(labels, dtype=bool).sum())),
+        }
+    return out
 
 
 def logit_lens(
