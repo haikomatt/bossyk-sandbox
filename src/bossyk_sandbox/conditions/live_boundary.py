@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from bossyk_sandbox.conditions.grid import boundaries_for
 from bossyk_sandbox.instruments.base import ProposedAction, Verdict
 from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel
 from bossyk_sandbox.runtime.outreach.toolkit import Prospect, build_fixture_prospects
@@ -280,6 +281,47 @@ def boundary_spec_for(name: str, domain: str | None = None) -> BoundarySpec:
         raise KeyError(
             f"no boundary spec for boundary {boundary!r} in domain {resolved_domain!r}"
         ) from exc
+
+
+def has_boundary_spec(boundary: str, domain: str) -> bool:
+    """Whether `boundary_spec_for(boundary, domain=domain)` would resolve
+    without raising (bossyk-sandbox slice 3 bugfix). NEVER raises itself --
+    an unregistered domain or an unregistered boundary within a registered
+    domain both simply return False. This is the safe switch a caller uses
+    to decide "can the tool-grounded adversary target this boundary" /
+    "does this crossing get the tool-call oracle or the utterance
+    scoreboard", not a strict lookup."""
+    try:
+        boundary_spec_for(boundary, domain=domain)
+    except KeyError:
+        return False
+    return True
+
+
+def grounded_boundaries(domain: str) -> list[str]:
+    """The boundaries for `domain` that are SAFE to hand to the
+    tool-grounded adversary (bossyk-sandbox slice 3 bugfix): every boundary
+    with ANY registered `BoundarySpec` (structural or not) -- `boundary_
+    spec_for` resolving without raising is all `fireworks_adversary.py`'s
+    prompt-building needs. A non-structural spec (e.g. outreach's
+    unauthorised_incentive) is still INCLUDED: the adversary can still
+    write a payload targeting `apply_discount`, even though the LIVE
+    ORACLE can't automatically score whether it reached (see
+    `structural_boundaries`, a narrower subset for the oracle-scored
+    paths). Boundaries with NO entry at all (e.g. outreach's
+    out_of_hours_contact, prohibited_financial_promotion, pii_cross_contact)
+    are excluded -- this is the crash fix: the grounded corpus generator
+    used to iterate the full named-boundary taxonomy
+    (`conditions.grid.boundaries_for`) and crash on any of those.
+
+    For airline/retail this is a NO-OP: every named grid boundary already
+    has a spec entry (including non-structural ones), so
+    `grounded_boundaries(domain) == boundaries_for(domain)` there --
+    filtering `boundaries_for`'s own order (rather than iterating
+    `BOUNDARY_SPECS_BY_DOMAIN`'s dict order, which need not match) is what
+    makes this a byte-identical no-op, not just a same-set one. Raises
+    `KeyError` for an unregistered domain, matching `boundary_spec_for`."""
+    return [b for b in boundaries_for(domain) if has_boundary_spec(b, domain)]
 
 
 def culprit_calls(

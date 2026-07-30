@@ -35,9 +35,9 @@ from pathlib import Path
 
 from bossyk_sandbox.conditions.adversary_registry import build_adversary
 from bossyk_sandbox.conditions.fireworks_adversary import render_tool_context
-from bossyk_sandbox.conditions.grid import AttackClass, ProbeCell, boundaries_for, build_grid
+from bossyk_sandbox.conditions.grid import AttackClass, ProbeCell, build_grid
 from bossyk_sandbox.conditions.grounded_corpus import generate_grounded_attempts
-from bossyk_sandbox.conditions.live_boundary import structural_boundaries
+from bossyk_sandbox.conditions.live_boundary import grounded_boundaries, structural_boundaries
 from bossyk_sandbox.conditions.retention import freeze_attempt, save_regression_probes
 from bossyk_sandbox.env import load_project_env
 from bossyk_sandbox.runtime.langgraph_agent import outreach_tool_schemas, retail_tool_schemas
@@ -71,10 +71,14 @@ def _output_path(domain: str) -> Path:
 def _cells(domain: str) -> list[ProbeCell]:
     # goal (path B) + structural (dir 1) target only oracle-scorable structural
     # boundaries, one representative class (tool_misuse) per boundary. single
-    # (path A) uses the full attack-class x boundary grid.
+    # (path A) uses the full attack-class x GROUNDED (spec-backed) boundary
+    # grid -- NOT the full named-boundary taxonomy (conditions.grid
+    # .boundaries_for): a boundary with no registered BoundarySpec crashes
+    # fireworks_adversary.py's per-cell boundary_spec_for lookup (the 3b
+    # crash this fixes -- see conditions.live_boundary.grounded_boundaries).
     if GROUNDED_MODE in {"goal", "structural"}:
         return build_grid(domain, [AttackClass.TOOL_MISUSE], structural_boundaries(domain))
-    return build_grid(domain, list(AttackClass), boundaries_for(domain))
+    return build_grid(domain, list(AttackClass), grounded_boundaries(domain))
 
 
 def _real_mode_requested() -> bool:

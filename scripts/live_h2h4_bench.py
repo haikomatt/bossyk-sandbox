@@ -44,6 +44,7 @@ from auditk.schema import ProbeDefinition
 from openai import APIError
 
 from bossyk_sandbox.conditions.adversary import TokenUsage
+from bossyk_sandbox.conditions.live_boundary import has_boundary_spec
 from bossyk_sandbox.conditions.live_multiturn import run_live_multiturn_retail_session
 from bossyk_sandbox.conditions.live_replay import (
     CrossingReplay,
@@ -58,6 +59,7 @@ from bossyk_sandbox.conditions.live_replay import (
 from bossyk_sandbox.conditions.retention import load_regression_probes
 from bossyk_sandbox.domains import domain_config
 from bossyk_sandbox.env import load_project_env
+from bossyk_sandbox.instruments.base import InstrumentVerdict
 from bossyk_sandbox.instruments.policy import build_default_policy_instrument
 from bossyk_sandbox.runtime.langgraph_agent import _resolve_agent_config
 from bossyk_sandbox.scoring.cost import JudgeCallRecord, JudgeLedgerEntry, build_judge_token_ledger
@@ -71,10 +73,12 @@ from bossyk_sandbox.scoring.live_h2 import (
     CrossingScore,
     GroupSummary,
     RateWithCI,
+    UtteranceCrossingScore,
     by_attack_class,
     by_boundary,
     live_h4,
     score_crossing,
+    score_utterance_crossing,
 )
 from bossyk_sandbox.scoring.orthogonality import wilson_interval
 
@@ -214,6 +218,36 @@ def _score_to_dict(score: CrossingScore) -> dict[str, object]:
     }
 
 
+def _score_replay(
+    replay: CrossingReplay, policy_verdicts: list[InstrumentVerdict]
+) -> CrossingScore | UtteranceCrossingScore:
+    """Dispatches per crossing (bossyk-sandbox slice 3 -- the utterance-line
+    piece pulled forward): `score_crossing` (the tool-call oracle) when the
+    boundary has a registered `BoundarySpec`, `score_utterance_crossing`
+    (3a's `utterance_decisions` threading) otherwise. Boundary 5
+    (prohibited_financial_promotion) has no `BoundarySpec` at all -- there
+    is no `ProposedAction` for a speech act -- so `score_crossing`'s
+    `boundary_spec_for` lookup would raise `KeyError` for it."""
+    if has_boundary_spec(replay.boundary, domain=replay.domain):
+        return score_crossing(replay, policy_verdicts)
+    return score_utterance_crossing(replay)
+
+
+def _utterance_score_to_dict(score: UtteranceCrossingScore) -> dict[str, object]:
+    return {
+        "probe_id": score.probe_id,
+        "domain": score.domain,
+        "boundary": score.boundary,
+        "reached": score.reached,
+        "prevented": score.prevented,
+        "n_decisions": len(score.decisions),
+        "control_tags": [
+            {"ref": tag.ref, "basis": tag.basis, "discharge": tag.discharge}
+            for tag in score.control_tags
+        ],
+    }
+
+
 def _judge_ledger_to_dict(ledger: dict[str, JudgeLedgerEntry]) -> dict[str, object]:
     return {
         instrument: {
@@ -344,6 +378,12 @@ def main() -> None:
     inter_attempt_delay_s = float(os.environ.get("LIVE_H2_PACE_S", "2"))
 
     scores: list[CrossingScore] = []
+    # Slice 3: crossings for a boundary with no BoundarySpec (boundary 5,
+    # prohibited_financial_promotion) are scored separately -- see
+    # _score_replay -- and reported as their own scoreboard line, not mixed
+    # into `scores` (which every downstream by_boundary/by_attack_class/
+    # live_h4 call below assumes is pure CrossingScore).
+    utterance_scores: list[UtteranceCrossingScore] = []
     all_latency: list[LatencyRecord] = []
     all_action_latency: list[LatencyRecord] = []
     all_agent_latency: list[LatencyRecord] = []
@@ -384,12 +424,19 @@ def main() -> None:
         scored = score_policy_post_hoc(replay, policy)
         all_latency.extend(scored.latency)
 
-        score = score_crossing(replay, scored.verdicts)
-        scores.append(score)
-        print(
-            f"    reached={score.reached} prevented={score.prevented} "
-            f"detected={score.detected} caught={score.caught}"
-        )
+        score = _score_replay(replay, scored.verdicts)
+        if isinstance(score, UtteranceCrossingScore):
+            utterance_scores.append(score)
+            print(
+                f"    [utterance:{score.boundary}] reached={score.reached} "
+                f"prevented={score.prevented}"
+            )
+        else:
+            scores.append(score)
+            print(
+                f"    reached={score.reached} prevented={score.prevented} "
+                f"detected={score.detected} caught={score.caught}"
+            )
 
     judge_ledger = build_judge_token_ledger(usage_records)
     # Combine policy (judge) + agent-inference records so the `latency` block
@@ -418,6 +465,15 @@ def main() -> None:
 
     _print_group_summaries("boundary", boundary_groups)
     _print_group_summaries("attack class", class_groups)
+
+    if utterance_scores:
+        n_utterance_reached = sum(1 for s in utterance_scores if s.reached)
+        print("\n-- utterance boundaries (no tool-call oracle; interrupt-before-emit) --")
+        print(f"  n_crossings={len(utterance_scores)} reached={n_utterance_reached}")
+        for s in utterance_scores:
+            if s.reached:
+                refs = ", ".join(tag.ref for tag in s.control_tags) or "(none)"
+                print(f"    {s.probe_id}: prevented={s.prevented} control_tags=[{refs}]")
 
     print("\n-- engagement (agent proposed >=1 tool call) --")
     print(
@@ -481,6 +537,7 @@ def main() -> None:
         },
         "engagement": _rate_to_dict(engagement),
         "crossings": [_score_to_dict(score) for score in scores],
+        "utterance_crossings": [_utterance_score_to_dict(score) for score in utterance_scores],
         "live_h2_by_boundary": {
             key: _group_summary_to_dict(value) for key, value in boundary_groups.items()
         },

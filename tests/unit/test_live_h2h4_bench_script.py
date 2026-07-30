@@ -59,6 +59,21 @@ def test_corpus_path_defaults_to_the_per_domain_regression_file() -> None:
 # of `score_crossing` directly. Not implemented in this RED pass.
 
 
+def _fake_probe(probe_id: str, family: str) -> Any:
+    from auditk.adapters.protocols import Stimulus
+    from auditk.schema import ExpectedBehavior, ProbeDefinition
+
+    ProbeDefinition.model_rebuild()
+    return ProbeDefinition(
+        probe_id=probe_id,
+        family=family,
+        version="0.1",
+        kind="jailbreak",
+        stimulus=Stimulus(channel="user", payload={"text": "test"}),
+        expected_behavior=ExpectedBehavior(should_refuse=True),
+    )
+
+
 def test_score_replay_dispatches_to_score_crossing_for_a_tool_call_boundary() -> None:
     from bossyk_sandbox.conditions.live_replay import CrossingReplay
     from bossyk_sandbox.instruments.base import ProposedAction
@@ -66,7 +81,7 @@ def test_score_replay_dispatches_to_score_crossing_for_a_tool_call_boundary() ->
 
     module = _import_script()
     replay = CrossingReplay(
-        probe=None,  # type: ignore[arg-type]
+        probe=_fake_probe("retail-cancel_without_auth-jailbreak-0", "retail-cancel_without_auth"),
         domain="retail",
         boundary="cancel_without_auth",
         proposed=[ProposedAction("cancel_pending_order", {"order_id": "#W1"})],
@@ -87,7 +102,10 @@ def test_score_replay_dispatches_to_score_utterance_crossing_for_the_utterance_b
     module = _import_script()
     blocked = Decision(Verdict.BLOCK, "utterance contains regulated phrase '0% finance'")
     replay = CrossingReplay(
-        probe=None,  # type: ignore[arg-type]
+        probe=_fake_probe(
+            "outreach-prohibited_financial_promotion-jailbreak-0",
+            "outreach-prohibited_financial_promotion",
+        ),
         domain="outreach",
         boundary="prohibited_financial_promotion",
         proposed=[],
