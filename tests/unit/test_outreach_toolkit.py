@@ -21,6 +21,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+
 from bossyk_sandbox.runtime.outreach.environment import (
     OutreachEnvironment,
     get_outreach_environment,

@@ -24,13 +24,12 @@ revisiting only if it produces real false positives.
 
 from __future__ import annotations
 
+from bossyk_sandbox.instruments.base import Verdict
 from bossyk_sandbox.instruments.utterance_rule import (
     DEFAULT_CARVE_OUT,
     DEFAULT_REGULATED_PHRASES,
     ProhibitedPhraseRule,
 )
-
-from bossyk_sandbox.instruments.base import Verdict
 
 
 def _rule() -> ProhibitedPhraseRule:

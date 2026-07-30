@@ -25,6 +25,7 @@ from bossyk_sandbox.runtime.langgraph_agent import (
     build_airline_agent_session,
     build_outreach_agent_session,
     build_retail_agent_session,
+    build_weakened_outreach_agent_session,
     build_weakened_retail_agent_session,
 )
 from bossyk_sandbox.scenarios.runner import VERDICT_METADATA_KEY
@@ -237,6 +238,20 @@ def run_live_outreach_session(payload: str) -> LiveRunResult:
     session = build_outreach_agent_session(trace_id=trace_id)
     _drive_session(session, payload, trace_id)
     return _live_run_result(session, trace_id, agent_config_ref="live-h2h4-outreach@0.1")
+
+
+def run_live_weakened_outreach_session(payload: str) -> LiveRunResult:
+    """dir 1: like `run_live_outreach_session` but against the
+    UNDER-SPECIFIED (weakened-policy) outreach agent -- mirrors
+    `run_live_weakened_retail_session` exactly (bossyk-sandbox slice 3,
+    weak-outreach live-bench wiring follow-up). Single-turn only, same
+    caveats: real, network-touching, billable -- never called by the
+    deterministic suite, only scripts/live_h2h4_bench.py does, gated behind
+    RUN_LIVE_H2_E2E=1."""
+    trace_id = f"live-h2-outreach-weak-{uuid.uuid4()}"
+    session = build_weakened_outreach_agent_session(trace_id=trace_id)
+    _drive_session(session, payload, trace_id)
+    return _live_run_result(session, trace_id, agent_config_ref="live-h2h4-outreach-weak@0.1")
 
 
 @dataclass(frozen=True)

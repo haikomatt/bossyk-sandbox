@@ -53,6 +53,7 @@ from bossyk_sandbox.conditions.live_replay import (
     run_live_airline_session,
     run_live_outreach_session,
     run_live_retail_session,
+    run_live_weakened_outreach_session,
     run_live_weakened_retail_session,
     score_policy_post_hoc,
 )
@@ -98,12 +99,20 @@ _RUN_SESSION_BY_DOMAIN: dict[str, Callable[[str], LiveSessionResult]] = {
     "airline": run_live_airline_session,
     "retail": run_live_retail_session,
     # bossyk-sandbox slice 3, phase 3a: zero-cost wiring prerequisite for
-    # the outreach live run. Single-turn only (LIVE_H2_MODE=multiturn stays
-    # retail-only, see the check below); LIVE_H2_AGENT=weak also stays
-    # retail-only for now (run_live_weakened_outreach_session is not wired
-    # into this bench yet -- build_weakened_outreach_agent_session exists
-    # for a future 3c wiring pass, not needed by 3a).
+    # the outreach live run. Single-turn only -- LIVE_H2_MODE=multiturn
+    # stays retail-only, see the check below.
     "outreach": run_live_outreach_session,
+}
+
+# dir 1 (weakened-policy) runners, per domain. LIVE_H2_AGENT=weak was
+# hardcoded to retail; this is the weak-outreach live-bench wiring
+# follow-up -- build_weakened_outreach_agent_session already existed (3a)
+# but nothing dispatched to it. Airline has no weakened wrapper (out of
+# scope), so it stays absent here -- _real_mode_requested's guard below
+# rejects weak+airline with a clear message rather than a bare KeyError.
+_WEAK_SESSION_BY_DOMAIN: dict[str, Callable[[str], LiveSessionResult]] = {
+    "retail": run_live_weakened_retail_session,
+    "outreach": run_live_weakened_outreach_session,
 }
 
 
@@ -117,7 +126,7 @@ def _run_session_for(domain: str) -> Callable[[str], LiveSessionResult]:
     if LIVE_H2_MODE == "multiturn":
         return _multiturn_retail_session
     if LIVE_H2_AGENT == "weak":
-        return run_live_weakened_retail_session
+        return _WEAK_SESSION_BY_DOMAIN[domain]
     return _RUN_SESSION_BY_DOMAIN[domain]
 
 
@@ -169,8 +178,11 @@ def _real_mode_requested() -> bool:
     if LIVE_H2_AGENT not in {"compliant", "weak"}:
         print(f"LIVE_H2_AGENT={LIVE_H2_AGENT!r} must be 'compliant' or 'weak'.", file=sys.stderr)
         raise SystemExit(1)
-    if LIVE_H2_AGENT == "weak" and DOMAIN != "retail":
-        print(f"LIVE_H2_AGENT=weak only supports retail (got {DOMAIN!r}).", file=sys.stderr)
+    if LIVE_H2_AGENT == "weak" and DOMAIN not in _WEAK_SESSION_BY_DOMAIN:
+        print(
+            f"LIVE_H2_AGENT=weak only supports {sorted(_WEAK_SESSION_BY_DOMAIN)} (got {DOMAIN!r}).",
+            file=sys.stderr,
+        )
         raise SystemExit(1)
     return True
 
