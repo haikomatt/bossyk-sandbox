@@ -1,20 +1,21 @@
-"""RED-phase tests for `scenarios/outreach/scenarios.json` (bossyk-sandbox
-slice 1), loaded through the existing (unmodified) scenario loader.
+"""Tests for `scenarios/outreach/scenarios.json` (bossyk-sandbox slice 1 ->
+slice 2, P5), loaded through the existing (unmodified) scenario loader.
 
-Slice 1 scope: only the two PRECEDENCE-shaped boundaries are functional this
-phase -- `booking_without_eligibility` (book_survey gated on a prior
-check_eligibility) and `unauthorised_incentive` (apply_discount gated on
-standing max_amount). contact_without_consent, out_of_hours_contact,
-prohibited_financial_promotion and pii_cross_contact are slice 2/3 work; this
-phase deliberately does NOT author scenario data for them, so every scenario
-has a real gated tool call and the loader's existing
-gated_tool-must-match-a-step invariant (loader.py:59-63) is never hit this
-phase -- see outreach-domain-cleanroom-spec.md "Open item for the phase gate"
-for the utterance-only-scenario question that is intentionally deferred.
+Slice 1 scope covered `booking_without_eligibility` (book_survey) and
+`unauthorised_incentive` (apply_discount). Slice 2, P5 adds one scenario for
+`contact_without_consent` (place_call), now enactable via the outcome-aware
+`RequirePassedCheck` (see scenarios.runner.outreach_fast_rules). Every
+scenario still has a real gated tool call, so the loader's existing
+gated_tool-must-match-a-step invariant (loader.py:59-63) is not hit --
+`prohibited_financial_promotion`'s utterance-only question (spec's "Open
+item for the phase gate") stays deferred; `out_of_hours_contact` and
+`pii_cross_contact` are not yet enactable, so no scenario data for them
+either.
 
-This file collects fine today (imports nothing new); it fails at test run
-time with FileNotFoundError because scenarios/outreach/scenarios.json does
-not exist yet.
+Test-Integrity note: `test_outreach_scenario_set_covers_both_slice_1_gated_tools`
+asserted an exact `{"book_survey", "apply_discount"}` set -- that assumption
+was slice-1-scoped and is deliberately invalidated by adding the boundary-1
+scenario; renamed/updated below rather than silently left broken.
 """
 
 from __future__ import annotations
@@ -47,15 +48,15 @@ def _load() -> list[Scenario]:
     return load_scenarios(OUTREACH_SCENARIOS_PATH)
 
 
-def test_outreach_scenario_file_loads_at_least_four_scenarios() -> None:
+def test_outreach_scenario_file_loads_at_least_five_scenarios() -> None:
     scenarios = _load()
-    assert len(scenarios) >= 4
+    assert len(scenarios) >= 5
 
 
-def test_outreach_scenario_set_covers_both_slice_1_gated_tools() -> None:
+def test_outreach_scenario_set_covers_all_three_enactable_gated_tools() -> None:
     scenarios = _load()
     gated_tools = {scenario.gated_tool for scenario in scenarios}
-    assert gated_tools == {"book_survey", "apply_discount"}
+    assert gated_tools == {"book_survey", "apply_discount", "place_call"}
 
 
 def test_every_step_has_a_non_empty_declared_intent() -> None:
@@ -109,3 +110,22 @@ def test_booking_violation_scenario_has_no_prior_eligibility_check() -> None:
     tool_names = [step.proposed.tool_name for step in violation.steps]
     assert "check_eligibility" not in tool_names
     assert "book_survey" in tool_names
+
+
+def test_contact_without_consent_scenario_exists_and_is_a_policy_violation() -> None:
+    # Boundary 1 (contact_without_consent, P5): the agent DID call
+    # check_suppression -- this is a scripted (not live) replay, so the
+    # loader has no result field to carry the suppressed on_tps=True back;
+    # see this file's module docstring / the coordinator's run_scenario
+    # finding for why the scripted path can only exercise this boundary's
+    # "violation" shape, not a live-observed benign contrast.
+    scenarios = _load()
+    contact_scenarios = [s for s in scenarios if s.gated_tool == "place_call"]
+
+    assert len(contact_scenarios) >= 1
+    scenario = contact_scenarios[0]
+    tool_names = [step.proposed.tool_name for step in scenario.steps]
+    assert "check_suppression" in tool_names
+    assert "place_call" in tool_names
+    labels = {step.boundary_label for step in scenario.steps}
+    assert BoundaryLabel.POLICY_VIOLATION in labels

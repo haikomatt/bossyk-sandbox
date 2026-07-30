@@ -1,29 +1,32 @@
-"""RED-phase tests for slice-2 P5's history-widening compatibility
-requirement (bossyk-sandbox scope-doc D3): existing instruments that only
-read `.tool_name`/`.arguments` off history items must keep behaving
+"""Slice-2 P5's history-widening compatibility requirement (bossyk-sandbox
+scope-doc D3): existing PRECEDENCE-ONLY instruments (`RequireLookupBeforeCancel`)
+that only read `.tool_name`/`.arguments` off history items must keep behaving
 identically when history is `Sequence[ProposedAction | ObservedAction]`
 instead of plain `list[ProposedAction]`, via the same `_action_of` unwrapper
 `RequirePassedCheck` uses (see test_observed_action.py). This is the
-load-bearing compatibility requirement: airline, retail, and outreach's
-existing `RequireLookupBeforeCancel` fast rules must not need to change
-their own logic, only unwrap.
+load-bearing compatibility requirement: airline and retail's fast rules
+(still `RequireLookupBeforeCancel` -- unchanged this slice) must not need to
+change their own logic, only unwrap.
 
-Each assertion here mirrors an existing bare-ProposedAction-history behaviour
-already locked in by tests/unit/test_hardcoded_rule.py -- this file only adds
-the ObservedAction-wrapped-history side of the same cases.
+Each RequireLookupBeforeCancel assertion here mirrors an existing
+bare-ProposedAction-history behaviour already locked in by
+tests/unit/test_hardcoded_rule.py -- this file only adds the
+ObservedAction-wrapped-history side of the same cases.
 
-NOTE for the RED gate: as written today (pre-GREEN), `RequireLookupBeforeCancel
-.score` reads `call.tool_name` / `call.arguments` directly off each history
-item without unwrapping -- so once `ObservedAction` exists (this file's
-ImportError is resolved), these tests are expected to keep failing, now via
-`AttributeError: 'ObservedAction' object has no attribute 'tool_name'`, until
-GREEN adds the `_action_of` unwrap to `RequireLookupBeforeCancel.score` itself.
+Test-Integrity note: outreach's own fast rules are NOT a
+RequireLookupBeforeCancel compat case any more (both are now
+`RequirePassedCheck`, upgraded in this same GREEN pass -- see
+scenarios.runner.outreach_fast_rules and test_outreach_fast_rules.py); its
+"compat" test below was rewritten to reflect that a RequirePassedCheck
+ALLOWs given a passing ObservedAction, rather than testing an unwrap shim it
+no longer needs (RequirePassedCheck was built to consume ObservedAction from
+the start).
 """
 
 from __future__ import annotations
 
 from bossyk_sandbox.instruments.base import ObservedAction, ProposedAction, Verdict
-from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel
+from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel, RequirePassedCheck
 from bossyk_sandbox.scenarios.runner import outreach_fast_rules, retail_fast_rules
 
 
@@ -72,12 +75,13 @@ def test_retail_fast_rule_allows_with_observed_action_history() -> None:
     assert decision.verdict is Verdict.ALLOW
 
 
-def test_outreach_fast_rule_allows_with_observed_action_history() -> None:
+def test_outreach_fast_rule_allows_with_a_passing_observed_action_history() -> None:
+    # Not a compat/unwrap case (RequirePassedCheck is P5-native and always
+    # required ObservedAction) -- kept here to document the contrast with
+    # the RequireLookupBeforeCancel cases above in the same file.
     rules = outreach_fast_rules()
     book_survey_rule = next(
-        r
-        for r in rules
-        if isinstance(r, RequireLookupBeforeCancel) and r.gated_tool == "book_survey"
+        r for r in rules if isinstance(r, RequirePassedCheck) and r.gated_tool == "book_survey"
     )
     lookup = ProposedAction("check_eligibility", {"prospect_id": "P-1"})
     observed_lookup = ObservedAction(action=lookup, result={"eligible": True})

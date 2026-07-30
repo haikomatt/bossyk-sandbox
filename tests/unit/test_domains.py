@@ -6,7 +6,7 @@ import pytest
 
 from bossyk_sandbox.domains import domain_config
 from bossyk_sandbox.env import bossyk_root
-from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel
+from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel, RequirePassedCheck
 
 # The policy YAMLs live in the private bossyk checkout (BOSSYK_ROOT), which
 # exists on dev machines but not in CI — existence checks are gated on the
@@ -105,15 +105,19 @@ def test_outreach_domain_policy_path_exists_on_disk() -> None:
     assert cfg.policy_path.exists()
 
 
-def test_outreach_fast_rules_gate_book_survey_only() -> None:
+def test_outreach_fast_rules_gate_book_survey_and_place_call() -> None:
+    # Test-Integrity note: updated for slice 2, P5 -- both outreach fast
+    # rules are now the outcome-aware RequirePassedCheck, not slice 1's
+    # precedence-only RequireLookupBeforeCancel (see
+    # scenarios.runner.outreach_fast_rules).
     cfg = domain_config("outreach")
 
     rules = cfg.fast_rules_factory()
     for rule in rules:
-        assert isinstance(rule, RequireLookupBeforeCancel)
-    gated = {rule.gated_tool for rule in rules if isinstance(rule, RequireLookupBeforeCancel)}
+        assert isinstance(rule, RequirePassedCheck)
+    gated = {rule.gated_tool for rule in rules if isinstance(rule, RequirePassedCheck)}
 
-    assert gated == {"book_survey"}
+    assert gated == {"book_survey", "place_call"}
 
 
 def test_outreach_domain_policy_path_resolves_under_overridden_bossyk_root(

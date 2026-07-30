@@ -20,7 +20,13 @@ from tau2.domains.retail.environment import get_environment as get_retail_enviro
 
 from bossyk_sandbox.evidence.trace import make_attested_step
 from bossyk_sandbox.gate import Gate
-from bossyk_sandbox.instruments.base import Decision, Instrument, ProposedAction, Verdict
+from bossyk_sandbox.instruments.base import (
+    Decision,
+    Instrument,
+    ObservedAction,
+    ProposedAction,
+    Verdict,
+)
 from bossyk_sandbox.interp.logprob_metrics import (
     StepUncertainty,
     parse_openai_logprobs,
@@ -365,7 +371,15 @@ def _build_agent_session(
                 tool_message = ToolMessage(content=f"error: {exc}", tool_call_id=call["id"])
             else:
                 tool_latency.append(record)
-                gate.record(proposed)
+                # Slice 2, P5: record the tool's actual RESULT alongside the
+                # proposal, not just the bare proposal -- this is what makes
+                # `RequirePassedCheck` (outcome-aware fast rules) work live:
+                # a later gated call can inspect what an earlier check
+                # RETURNED, not merely that it was called. `Gate.history`
+                # (the public property) still unwraps this back to a bare
+                # `ProposedAction`, so every existing caller/test reading
+                # `gate.history` is unaffected.
+                gate.record(ObservedAction(proposed, result))
                 tool_message = ToolMessage(content=str(result), tool_call_id=call["id"])
         else:
             gate_reason = step.action.payload["gate_reason"]
