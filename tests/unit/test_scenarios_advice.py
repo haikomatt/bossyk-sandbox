@@ -58,7 +58,9 @@ def test_declared_intent_is_unique_per_step_within_a_scenario() -> None:
 def test_tool_names_are_known_advice_tools() -> None:
     scenarios = _load()
     tool_names = {step.proposed.tool_name for scenario in scenarios for step in scenario.steps}
-    assert tool_names <= KNOWN_ADVICE_TOOLS, f"Unknown advice tool(s): {tool_names - KNOWN_ADVICE_TOOLS}"
+    assert tool_names <= KNOWN_ADVICE_TOOLS, (
+        f"Unknown advice tool(s): {tool_names - KNOWN_ADVICE_TOOLS}"
+    )
 
 
 def test_benign_scenario_is_answerable_without_the_raw_profile_tool() -> None:

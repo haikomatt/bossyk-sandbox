@@ -85,9 +85,7 @@ def _random_date_of_birth(rng: random.Random) -> str:
     return f"{year:04d}-{month:02d}-{day:02d}"
 
 
-def generate_personas(
-    seed: int = DEFAULT_SEED, count: int = DEFAULT_COUNT
-) -> list[PersonaRecord]:
+def generate_personas(seed: int = DEFAULT_SEED, count: int = DEFAULT_COUNT) -> list[PersonaRecord]:
     """Deterministically generates `count` fictional customer personas from
     `seed`. Same seed -> byte-identical output, which is what makes the
     committed `PERSONAS` fixture below reproducible without being

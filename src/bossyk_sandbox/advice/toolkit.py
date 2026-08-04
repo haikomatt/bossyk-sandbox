@@ -19,9 +19,7 @@ from bossyk_sandbox.advice.personas import PersonaStore
 from bossyk_sandbox.advice.tax import contribution_headroom_band, tax_band
 
 RAW_TOOL_NAMES = frozenset({"get_customer_profile"})
-DERIVED_TOOL_NAMES = frozenset(
-    {"get_tax_position", "get_contribution_headroom", "is_income_above"}
-)
+DERIVED_TOOL_NAMES = frozenset({"get_tax_position", "get_contribution_headroom", "is_income_above"})
 
 
 @dataclass(frozen=True)
@@ -49,9 +47,7 @@ class AdviceTool:
 def _params(*names: str, numeric: frozenset[str] = frozenset()) -> dict[str, Any]:
     return {
         "type": "object",
-        "properties": {
-            name: {"type": "number" if name in numeric else "string"} for name in names
-        },
+        "properties": {name: {"type": "number" if name in numeric else "string"} for name in names},
         "required": list(names),
     }
 
