@@ -292,4 +292,6 @@ def test_overlapping_names_shorter_value_still_matches_standalone() -> None:
 
 
 def test_rehydrate_leaves_unknown_surrogate_tokens_untouched() -> None:
-    assert rehydrate("<PERSON_99> was never minted", SurrogateMap()) == "<PERSON_99> was never minted"
+    assert (
+        rehydrate("<PERSON_99> was never minted", SurrogateMap()) == "<PERSON_99> was never minted"
+    )
