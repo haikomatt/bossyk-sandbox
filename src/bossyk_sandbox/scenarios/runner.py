@@ -79,6 +79,17 @@ def retail_fast_rules() -> list[Instrument]:
     ]
 
 
+def advice_fast_rules() -> list[Instrument]:
+    """Advice domain fast rules (privacy/minimisation demonstrator, Phase
+    1). Every advice tool is a read (get_customer_profile, get_tax_position,
+    get_contribution_headroom, is_income_above) -- there is no destructive
+    write to gate at the ProposedAction-sequence level, so this returns an
+    empty list on purpose. Which read tool SHOULD have been used (raw vs.
+    derived) is governed by the minimisation instrument, an annotation not a
+    block, and is Phase 2 -- explicitly out of scope here."""
+    return []
+
+
 def _outreach_contact_is_clean(result: Any) -> bool:
     """Boundary 1 (contact_without_consent) predicate: the prior
     `check_suppression` result must say the number is neither TPS-registered
