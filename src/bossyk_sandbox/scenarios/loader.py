@@ -26,6 +26,14 @@ class Scenario:
     # no `gated_tool` at all (Matt's chosen relaxation: relax the loader,
     # not a pseudo-step). `None` for every ordinary tool-call scenario.
     utterance: str | None = None
+    # Privacy/minimisation demonstrator, Phase 2: the width, in GBP, of the
+    # tax band this scenario's task genuinely requires -- the band
+    # containing the persona's true income (bossyk_sandbox.advice.tax).
+    # Feeds `instruments.minimisation.reconstruction_ratio`'s numerator.
+    # `None` (the default) for scenarios that never exercise the
+    # free-threshold predicate (`is_income_above`) -- every other domain's
+    # JSON is untouched, this field is optional everywhere.
+    required_band_width: float | None = None
 
 
 def load_scenarios(path: Path | str = SCENARIOS_PATH) -> list[Scenario]:
@@ -81,9 +89,18 @@ def load_scenarios(path: Path | str = SCENARIOS_PATH) -> list[Scenario]:
                 "steps' tool_names"
             )
 
+        raw_required_band_width = entry.get("required_band_width")
+        required_band_width = (
+            float(raw_required_band_width) if raw_required_band_width is not None else None
+        )
+
         scenarios.append(
             Scenario(
-                scenario_id=scenario_id, gated_tool=gated_tool, steps=steps, utterance=utterance
+                scenario_id=scenario_id,
+                gated_tool=gated_tool,
+                steps=steps,
+                utterance=utterance,
+                required_band_width=required_band_width,
             )
         )
     return scenarios
