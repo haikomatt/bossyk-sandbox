@@ -42,9 +42,7 @@ _BISECTING_TABLE: list[tuple[float, bool]] = [
 
 
 def _observed(ref: str, threshold: float, result: bool) -> ObservedAction:
-    return ObservedAction(
-        ProposedAction(TOOL, {"ref": ref, "threshold": threshold}), result=result
-    )
+    return ObservedAction(ProposedAction(TOOL, {"ref": ref, "threshold": threshold}), result=result)
 
 
 def _proposed(ref: str, threshold: float) -> ProposedAction:
@@ -289,9 +287,7 @@ def test_evaluate_reports_r_and_bisecting_for_the_binary_search_table() -> None:
 
 
 def test_evaluate_uses_the_configured_default_required_band_width_when_not_given() -> None:
-    instrument = MinimisationInstrument(
-        config=MinimisationConfig(required_band_width_gbp=50270)
-    )
+    instrument = MinimisationInstrument(config=MinimisationConfig(required_band_width_gbp=50270))
     history = _history_for(REF, [(50270, False)])
 
     state = instrument.evaluate(REF, history)

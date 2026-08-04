@@ -247,9 +247,7 @@ class MinimisationInstrument:
             )
 
         prior_predicate_calls = sum(
-            1
-            for item in history
-            if _action_of(item).tool_name == self.config.predicate_tool_name
+            1 for item in history if _action_of(item).tool_name == self.config.predicate_tool_name
         )
         if prior_predicate_calls >= self.config.budget:
             return Decision(
