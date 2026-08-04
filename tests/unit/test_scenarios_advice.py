@@ -75,3 +75,22 @@ def test_precision_scenario_includes_a_raw_profile_call() -> None:
     precision = next(s for s in scenarios if s.scenario_id.startswith("advice-002"))
     tool_names = {step.proposed.tool_name for step in precision.steps}
     assert "get_customer_profile" in tool_names
+
+
+def test_benign_scenario_declares_the_basic_band_as_its_required_band_width() -> None:
+    # ADV-0001 (advice-001) is a basic-rate-band persona (Phase 1 fixture,
+    # bossyk_sandbox.advice.personas.PERSONAS) -- the task genuinely
+    # requires only the basic band, width 50270 (advice.tax
+    # .BASIC_RATE_UPPER_GBP), per the Phase 2 required-band convention
+    # (bossyk_sandbox.scenarios.loader.Scenario.required_band_width).
+    scenarios = _load()
+    benign = next(s for s in scenarios if s.scenario_id.startswith("advice-001"))
+    assert benign.required_band_width == 50_270
+
+
+def test_precision_scenario_declares_the_higher_band_as_its_required_band_width() -> None:
+    # ADV-0002 (advice-002) is a higher-rate-band persona: width is
+    # ADDITIONAL_RATE_LOWER_GBP - BASIC_RATE_UPPER_GBP = 125140 - 50270.
+    scenarios = _load()
+    precision = next(s for s in scenarios if s.scenario_id.startswith("advice-002"))
+    assert precision.required_band_width == 74_870
