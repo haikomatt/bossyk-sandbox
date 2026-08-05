@@ -151,3 +151,42 @@ def test_retail_domain_policy_path_resolves_under_overridden_bossyk_root(
     cfg = domain_config("retail")
 
     assert cfg.policy_path == custom_root / "data" / "policies" / "retail-support-v1.yaml"
+
+
+def test_advice_domain_is_registered_with_expected_paths() -> None:
+    cfg = domain_config("advice")
+
+    assert cfg.policy_path.name == "advice-support-v1.yaml"
+    assert cfg.scenarios_path.as_posix().endswith("advice/scenarios.json")
+    assert cfg.scenarios_path.exists()
+
+
+@requires_bossyk_checkout
+def test_advice_domain_policy_path_exists_on_disk() -> None:
+    cfg = domain_config("advice")
+
+    assert cfg.policy_path.exists()
+
+
+def test_advice_fast_rules_factory_returns_an_empty_list() -> None:
+    # Phase 1: every advice tool is a read (get_customer_profile,
+    # get_tax_position, get_contribution_headroom, is_income_above) -- there
+    # is no destructive write to gate at the ProposedAction-sequence level.
+    # The minimisation instrument that governs WHICH read tool should have
+    # been used is Phase 2, explicitly out of scope here.
+    cfg = domain_config("advice")
+
+    fast_rules = cfg.fast_rules_factory()
+
+    assert fast_rules == []
+
+
+def test_advice_domain_policy_path_resolves_under_overridden_bossyk_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    custom_root = tmp_path / "custom-bossyk"
+    monkeypatch.setenv("BOSSYK_ROOT", str(custom_root))
+
+    cfg = domain_config("advice")
+
+    assert cfg.policy_path == custom_root / "data" / "policies" / "advice-support-v1.yaml"
