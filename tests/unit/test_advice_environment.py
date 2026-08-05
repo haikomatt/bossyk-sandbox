@@ -5,7 +5,7 @@ import pytest
 from bossyk_sandbox.advice.environment import AdviceEnvironment, get_advice_environment
 from bossyk_sandbox.advice.personas import PersonaRecord, PersonaStore
 from bossyk_sandbox.advice.tax import TaxBand, contribution_headroom_band, tax_band
-from bossyk_sandbox.advice.toolkit import RAW_TOOL_NAMES, AdviceToolkit
+from bossyk_sandbox.advice.toolkit import ELIGIBILITY_TOOL_NAMES, RAW_TOOL_NAMES, AdviceToolkit
 
 _RECORD = PersonaRecord(
     ref="ADV-TEST-1",
@@ -48,12 +48,28 @@ def test_minimisation_off_offers_both_raw_and_derived_tools() -> None:
     assert "is_income_above" in offered
 
 
-def test_minimisation_on_offers_only_derived_tools() -> None:
+def test_minimisation_on_offers_only_derived_tools_plus_the_eligibility_surface() -> None:
+    # Test-integrity note (advice-eligibility domain spec, build order step
+    # 2): this used to assert an exact 3-tool set. That assumption broke
+    # when the eligibility surface (verify_eligibility,
+    # submit_eligibility_decision) was added -- it is orthogonal to the
+    # raw/derived minimisation toggle (a different boundary, structural
+    # mutation-without-lookup) and so is offered under minimisation=True
+    # too. Updated to assert what minimisation actually still governs: the
+    # raw tool stays excluded, the derived tools stay included.
     toolkit = _toolkit(minimisation=True)
 
     offered = set(toolkit.get_tools())
 
-    assert offered == {"get_tax_position", "get_contribution_headroom", "is_income_above"}
+    assert (
+        offered
+        == {
+            "get_tax_position",
+            "get_contribution_headroom",
+            "is_income_above",
+        }
+        | ELIGIBILITY_TOOL_NAMES
+    )
     assert offered.isdisjoint(RAW_TOOL_NAMES)
 
 

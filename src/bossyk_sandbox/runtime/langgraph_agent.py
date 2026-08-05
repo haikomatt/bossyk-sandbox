@@ -18,6 +18,7 @@ from pydantic import SecretStr
 from tau2.domains.airline.environment import get_environment as get_airline_environment
 from tau2.domains.retail.environment import get_environment as get_retail_environment
 
+from bossyk_sandbox.advice.environment import get_advice_environment
 from bossyk_sandbox.evidence.trace import make_attested_step
 from bossyk_sandbox.gate import Gate
 from bossyk_sandbox.instruments.base import (
@@ -36,6 +37,7 @@ from bossyk_sandbox.interp.logprob_metrics import (
 from bossyk_sandbox.interp.prompt_render import render_action, render_prompt
 from bossyk_sandbox.runtime.outreach.environment import get_outreach_environment
 from bossyk_sandbox.scenarios.runner import (
+    advice_eligibility_fast_rules,
     default_fast_rules,
     outreach_fast_rules,
     retail_fast_rules,
@@ -617,6 +619,79 @@ def build_weakened_retail_agent_session(
     a compliance-trained model (violation supply for the interpretability probe)."""
     base_env = environment if environment is not None else get_retail_environment()
     return build_retail_agent_session(
+        trace_id=trace_id,
+        model_name=model_name,
+        api_key=api_key,
+        base_url=base_url,
+        llm=llm,
+        environment=base_env,
+        policy_override=weaken_policy(base_env.policy, strength=strength),
+        capture_logprobs=capture_logprobs,
+        capture_prompts=capture_prompts,
+        temperature=temperature,
+    )
+
+
+def build_advice_eligibility_agent_session(
+    *,
+    trace_id: str = "live-advice-eligibility-session",
+    model_name: str | None = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    llm: Any | None = None,
+    environment: Any | None = None,
+    policy_override: str | None = None,
+    capture_logprobs: bool = False,
+    capture_prompts: bool = False,
+    temperature: float = 0.0,
+) -> AgentSession:
+    """Live LangGraph advice-eligibility agent (detector-training transfer
+    domain -- coding-tasks/bossyk-sandbox/advice-eligibility-domain-spec.md):
+    a first-party (non-tau2) domain, like `build_outreach_agent_session` --
+    bypasses tau2 via `_build_agent_session`'s `environment=` seam, defaulting
+    to `get_advice_environment()` (the reused `AdviceToolkit`, now carrying
+    the eligibility surface too). Fast-path gate wired to
+    `advice_eligibility_fast_rules()`: submit_eligibility_decision gated on a
+    prior verify_eligibility lookup for the same ref -- the same structural
+    mutation-without-lookup rule retail/airline instantiate."""
+    return _build_agent_session(
+        trace_id=trace_id,
+        get_environment_fn=get_advice_environment,
+        fast_rules=advice_eligibility_fast_rules(),
+        model_name=model_name,
+        api_key=api_key,
+        base_url=base_url,
+        llm=llm,
+        environment=environment,
+        policy_override=policy_override,
+        capture_logprobs=capture_logprobs,
+        capture_prompts=capture_prompts,
+        temperature=temperature,
+    )
+
+
+def build_weakened_advice_eligibility_agent_session(
+    *,
+    trace_id: str = "live-advice-eligibility-weak-session",
+    model_name: str | None = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    llm: Any | None = None,
+    environment: Any | None = None,
+    capture_logprobs: bool = False,
+    capture_prompts: bool = False,
+    strength: str = "dir1",
+    temperature: float = 0.0,
+) -> AgentSession:
+    """dir 1 advice-eligibility counterpart of
+    `build_weakened_retail_agent_session`: same tools + gate as
+    `build_advice_eligibility_agent_session`, but its system prompt is
+    `weaken_policy(policy)` so the agent no longer self-enforces
+    verify-before-submit. Used (hermetically, via `scripts/make_decisions.py
+    --domain advice-eligibility`) to produce structural crossings the gate
+    then prevents, giving the produced dataset both classes."""
+    base_env = environment if environment is not None else get_advice_environment()
+    return build_advice_eligibility_agent_session(
         trace_id=trace_id,
         model_name=model_name,
         api_key=api_key,
