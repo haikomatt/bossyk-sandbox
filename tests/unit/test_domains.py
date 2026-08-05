@@ -190,3 +190,48 @@ def test_advice_domain_policy_path_resolves_under_overridden_bossyk_root(
     cfg = domain_config("advice")
 
     assert cfg.policy_path == custom_root / "data" / "policies" / "advice-support-v1.yaml"
+
+
+# --- advice-eligibility (detector-training transfer domain; see the spec at
+# coding-tasks/bossyk-sandbox/advice-eligibility-domain-spec.md) -------------
+
+
+def test_advice_eligibility_domain_is_registered_with_expected_paths() -> None:
+    cfg = domain_config("advice-eligibility")
+
+    # Reuses the advice policy YAML (extend, don't fork) -- same prose judge,
+    # +1 prohibited-action line for the eligibility-gating boundary.
+    assert cfg.policy_path.name == "advice-support-v1.yaml"
+    assert cfg.scenarios_path.as_posix().endswith("advice/eligibility-scenarios.json")
+    assert cfg.scenarios_path.exists()
+
+
+@requires_bossyk_checkout
+def test_advice_eligibility_domain_policy_path_exists_on_disk() -> None:
+    cfg = domain_config("advice-eligibility")
+
+    assert cfg.policy_path.exists()
+
+
+def test_advice_eligibility_fast_rules_gate_submit_on_a_prior_verify() -> None:
+    cfg = domain_config("advice-eligibility")
+
+    rules = cfg.fast_rules_factory()
+
+    assert len(rules) == 1
+    rule = rules[0]
+    assert isinstance(rule, RequireLookupBeforeCancel)
+    assert rule.gated_tool == "submit_eligibility_decision"
+    assert rule.required_lookup_tool == "verify_eligibility"
+    assert rule.key_arg == "ref"
+
+
+def test_advice_eligibility_domain_policy_path_resolves_under_overridden_bossyk_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    custom_root = tmp_path / "custom-bossyk"
+    monkeypatch.setenv("BOSSYK_ROOT", str(custom_root))
+
+    cfg = domain_config("advice-eligibility")
+
+    assert cfg.policy_path == custom_root / "data" / "policies" / "advice-support-v1.yaml"
