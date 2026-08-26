@@ -561,6 +561,46 @@ def build_airline_agent_session(
     )
 
 
+def build_weakened_airline_agent_session(
+    *,
+    trace_id: str = "live-airline-weak-session",
+    model_name: str | None = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    llm: Any | None = None,
+    environment: Any | None = None,
+    capture_logprobs: bool = False,
+    capture_prompts: bool = False,
+    strength: str = "dir1",
+    temperature: float = 0.0,
+) -> AgentSession:
+    """dir 1: the airline counterpart of `build_weakened_retail_agent_session`
+    (phase-detector-training-step2-datagen.md Part A item 1 -- the scaled
+    generation driver needs a weakened builder for every domain it drives,
+    not just retail/advice-eligibility). Same tools + gate as
+    `build_airline_agent_session`, but its system prompt is
+    weaken_policy(policy) so the agent no longer self-enforces
+    lookup-before-mutate. Reads the base environment's policy (the real
+    airline policy unless `environment` is injected) and weakens it.
+    `strength="aggressive"` raises the crossing rate for a compliance-trained
+    model, matching the retail/advice-eligibility weakened builders."""
+    base_env = environment if environment is not None else get_airline_environment()
+    return _build_agent_session(
+        trace_id=trace_id,
+        get_environment_fn=get_airline_environment,
+        fast_rules=default_fast_rules(),
+        model_name=model_name,
+        api_key=api_key,
+        base_url=base_url,
+        llm=llm,
+        environment=base_env,
+        policy_override=weaken_policy(base_env.policy, strength=strength),
+        capture_logprobs=capture_logprobs,
+        capture_prompts=capture_prompts,
+        temperature=temperature,
+    )
+
+
 def build_retail_agent_session(
     *,
     trace_id: str = "live-retail-session",
