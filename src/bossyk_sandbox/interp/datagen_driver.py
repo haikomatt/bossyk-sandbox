@@ -17,7 +17,8 @@ Grouping key: `scenario_id` is always real (`Scenario.scenario_id` from
 `scenarios/loader.py`'s scenario fixtures, which exist for every domain
 already wired via `bossyk_sandbox.domains`), never invented here. `persona_id`
 is populated only when a scenario's gated step's arguments actually carry a
-recognised entity-reference key -- e.g. advice-eligibility's `ref: "ADV-0001"`,
+recognised entity-reference key -- e.g. advice-eligibility's `ref: "ADV-0001"`
+or its levelled-up `close_enrolment` scenarios' `enrolment_id: "ENR-0001"`,
 or retail's `get_user_details`/`modify_user_address` scenarios' `user_id`
 (retail's cancel/return/payment-modify scenarios key by order id instead, so
 they stay `None`; today's airline fixture has no such key on any gated step,
@@ -55,7 +56,7 @@ from bossyk_sandbox.scenarios.loader import Scenario, load_scenarios
 # Entity-reference argument keys recognised on a scenario's gated step, in
 # priority order. NOT a synthesized identity: only used when the scenario
 # fixture's own arguments already carry one (see module docstring).
-_ENTITY_REF_KEYS = ("ref", "customer_id", "user_id", "persona_id")
+_ENTITY_REF_KEYS = ("ref", "customer_id", "user_id", "persona_id", "enrolment_id")
 
 
 @dataclass(frozen=True)

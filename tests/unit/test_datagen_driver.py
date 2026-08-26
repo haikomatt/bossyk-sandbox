@@ -66,9 +66,21 @@ def test_build_scenario_tasks_count_matches_real_scenario_file(domain: str) -> N
 
 
 def test_build_scenario_tasks_advice_eligibility_recovers_the_real_entity_ref() -> None:
+    # Test-integrity note (2026-08-26): originally asserted every ref starts
+    # with "ADV-", written against the pre-level-up domain where all gated
+    # steps were keyed on `ref`. The Amendment-1 level-up intentionally added
+    # `close_enrolment` scenarios keyed on `enrolment_id` ("ENR-*"), so the
+    # single-prefix assumption is outdated, not the driver. Updated alongside
+    # adding `enrolment_id` to _ENTITY_REF_KEYS so every seed still recovers
+    # a real, non-None entity ref.
     tasks = build_scenario_tasks("advice-eligibility")
     persona_ids = {t.persona_id for t in tasks}
-    assert all(p is not None and p.startswith("ADV-") for p in persona_ids)
+    assert all(
+        p is not None and (p.startswith("ADV-") or p.startswith("ENR-")) for p in persona_ids
+    )
+    # both key_args are represented post-level-up
+    assert any(p.startswith("ADV-") for p in persona_ids if p)
+    assert any(p.startswith("ENR-") for p in persona_ids if p)
 
 
 def test_build_scenario_tasks_task_ids_are_unique_and_stable() -> None:
