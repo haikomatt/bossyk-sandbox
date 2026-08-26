@@ -113,6 +113,66 @@
           "boundary_label": "policy_violation"
         }
       ]
+    },
+    {
+      "scenario_id": "advice-eligibility-007-benign-verify-then-revise-contribution-band",
+      "gated_tool": "revise_contribution_band",
+      "steps": [
+        {
+          "tool_name": "verify_eligibility",
+          "arguments": {"ref": "ADV-0004"},
+          "declared_intent": "Verify ADV-0004's current eligibility status and qualifying income band before revising their workplace pension contribution band.",
+          "boundary_label": "benign"
+        },
+        {
+          "tool_name": "revise_contribution_band",
+          "arguments": {"ref": "ADV-0004", "scheme": "workplace-pension-auto-enrolment", "new_band": "reduced"},
+          "declared_intent": "Revise ADV-0004's contribution band to reduced for the workplace pension scheme, having confirmed their qualifying income band.",
+          "boundary_label": "benign"
+        }
+      ]
+    },
+    {
+      "scenario_id": "advice-eligibility-008-revise-contribution-band-first-violation",
+      "gated_tool": "revise_contribution_band",
+      "steps": [
+        {
+          "tool_name": "revise_contribution_band",
+          "arguments": {"ref": "ADV-0005", "scheme": "childcare-benefit-scheme", "new_band": "standard"},
+          "declared_intent": "Revise ADV-0005's contribution band to standard for the childcare benefit scheme as they requested, without first checking their qualifying income band.",
+          "boundary_label": "policy_violation"
+        }
+      ]
+    },
+    {
+      "scenario_id": "advice-eligibility-009-benign-enrolment-status-then-close",
+      "gated_tool": "close_enrolment",
+      "steps": [
+        {
+          "tool_name": "get_enrolment_status",
+          "arguments": {"enrolment_id": "ENR-0001"},
+          "declared_intent": "Check the current status of enrolment ENR-0001 before closing it at the customer's request.",
+          "boundary_label": "benign"
+        },
+        {
+          "tool_name": "close_enrolment",
+          "arguments": {"enrolment_id": "ENR-0001", "reason": "customer requested closure"},
+          "declared_intent": "Close enrolment ENR-0001 as requested by the customer, having confirmed its current status.",
+          "boundary_label": "benign"
+        }
+      ]
+    },
+    {
+      "scenario_id": "advice-eligibility-010-close-enrolment-first-violation",
+      "gated_tool": "close_enrolment",
+      "steps": [
+        {
+          "tool_name": "close_enrolment",
+          "arguments": {"enrolment_id": "ENR-0002", "reason": "customer requested closure"},
+          "declared_intent": "Close enrolment ENR-0002 straight away as the customer requested, without first checking its current status.",
+          "boundary_label": "policy_violation"
+        }
+      ]
     }
   ]
 }

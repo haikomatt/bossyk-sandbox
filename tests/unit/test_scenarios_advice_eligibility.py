@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import bossyk_sandbox
+from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel
 from bossyk_sandbox.instruments.outcome_key import BoundaryLabel
 from bossyk_sandbox.scenarios.loader import Scenario, load_scenarios
 from bossyk_sandbox.scenarios.runner import advice_eligibility_fast_rules, run_scenario
@@ -13,10 +14,15 @@ ELIGIBILITY_SCENARIOS_PATH = (
 
 # The eligibility surface (advice/toolkit.py) plus the existing advice read
 # tools, kept available as compliant filler (spec: "keep the existing read
-# tools as compliant filler").
+# tools as compliant filler"). Levelled up by the spec-parity audit
+# (detector-training-spec-parity-audit.md option (a)) to include the
+# contribution-band-revision and enrolment-closure surfaces.
 KNOWN_ADVICE_ELIGIBILITY_TOOLS = {
     "verify_eligibility",
     "submit_eligibility_decision",
+    "revise_contribution_band",
+    "get_enrolment_status",
+    "close_enrolment",
     "get_customer_profile",
     "get_tax_position",
     "get_contribution_headroom",
@@ -44,6 +50,28 @@ def _load() -> list[Scenario]:
 def test_eligibility_scenario_set_has_at_least_four_scenarios() -> None:
     scenarios = _load()
     assert len(scenarios) >= 4
+
+
+def test_eligibility_scenario_set_is_levelled_up_to_around_ten_scenarios() -> None:
+    """Spec-parity audit (detector-training-spec-parity-audit.md option (a)):
+    the domain was levelled up from 6 to ~10 scenario seeds, mirroring
+    retail's 10, once the second and third gated surfaces existed to author
+    seeds against."""
+    scenarios = _load()
+    assert len(scenarios) >= 10
+
+
+def test_eligibility_scenarios_cover_all_three_gated_tools() -> None:
+    """Structural surface diversity, not just scenario count: every gated
+    tool the domain's fast rules cover must actually appear as a
+    `gated_tool` across the authored scenario set."""
+    scenarios = _load()
+    gated_tools = {scenario.gated_tool for scenario in scenarios}
+    assert gated_tools == {
+        "submit_eligibility_decision",
+        "revise_contribution_band",
+        "close_enrolment",
+    }
 
 
 def test_every_step_has_a_non_empty_declared_intent() -> None:
@@ -100,26 +128,37 @@ def test_vocabulary_is_lexically_distant_from_retail_and_airline() -> None:
         assert word not in text, f"{word!r} found in advice-eligibility scenario text"
 
 
-def test_gate_blocks_submit_first_and_allows_verify_then_submit() -> None:
+def test_gate_blocks_mutate_first_and_allows_verify_then_mutate() -> None:
     """The crossing this whole domain exists to produce, mirroring the
     retail rule tests (test_hardcoded_rule.py) but exercised end-to-end
-    through `run_scenario` against the real authored scenario set: a
-    `submit_eligibility_decision` with no prior `verify_eligibility` for the
-    same `ref` is BLOCKed (policy_violation); verify-then-submit is ALLOWed
-    (benign)."""
+    through `run_scenario` against the real authored scenario set: a gated
+    mutation with no prior required lookup for the same key is BLOCKed
+    (policy_violation); lookup-then-mutate is ALLOWed (benign). Generalised
+    (spec-parity audit, option (a)) to check EVERY gated tool the domain's
+    fast rules cover -- submit_eligibility_decision, revise_contribution_band,
+    close_enrolment -- not just the original single surface, since the
+    scenario set now exercises all three."""
     scenarios = _load()
     fast_rules = advice_eligibility_fast_rules()
+    gated_tool_names = {
+        rule.gated_tool for rule in fast_rules if isinstance(rule, RequireLookupBeforeCancel)
+    }
+    assert gated_tool_names == {
+        "submit_eligibility_decision",
+        "revise_contribution_band",
+        "close_enrolment",
+    }
 
     for scenario in scenarios:
         _trace, scored_steps = run_scenario(scenario, slow_instruments=[], fast_rules=fast_rules)
         for scored, step in zip(scored_steps, scenario.steps, strict=True):
-            if step.proposed.tool_name != "submit_eligibility_decision":
+            if step.proposed.tool_name not in gated_tool_names:
                 continue
             if step.boundary_label is BoundaryLabel.POLICY_VIOLATION:
                 assert scored.decision.verdict.value == "block", (
-                    f"{scenario.scenario_id} expected submit-first to be BLOCKed"
+                    f"{scenario.scenario_id} expected mutate-first to be BLOCKed"
                 )
             elif step.boundary_label is BoundaryLabel.BENIGN:
                 assert scored.decision.verdict.value == "allow", (
-                    f"{scenario.scenario_id} expected verify-then-submit to be ALLOWed"
+                    f"{scenario.scenario_id} expected lookup-then-mutate to be ALLOWed"
                 )
