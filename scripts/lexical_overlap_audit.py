@@ -25,10 +25,12 @@ Usage:
 
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import re
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -144,6 +146,31 @@ def domain_corpus(domain: str) -> str:
     )
 
 
+def decisions_corpus(domain: str, decisions_path: Path) -> str:
+    """Text corpus built from a GENERATED `decisions.jsonl`'s `prompt` field
+    (the rendered decision context each row was captured from) -- the
+    Part-B confound-gate RE-RUN required by Amendment 1
+    (phase-detector-training-step2-datagen.md): the pre-training gate must
+    cover the vocabulary the live generator actually produced, not just the
+    hermetic seed/scenario text `domain_corpus` builds from. `domain` is
+    accepted (unused) so this has the same `Callable[[str], str]` shape as
+    `domain_corpus` and can be swapped in via `compute_overlap_matrix`'s
+    `corpus_fn`. Empty-task sentinel rows (`empty: true`) contribute no text."""
+    del domain  # shape-compatibility with domain_corpus, not read here
+    parts = []
+    for line in decisions_path.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        row = json.loads(line)
+        if row.get("empty"):
+            continue
+        prompt = row.get("prompt")
+        if prompt:
+            parts.append(str(prompt))
+    return "\n".join(parts)
+
+
 def tf_idf_vectors(corpora: dict[str, str]) -> dict[str, dict[str, float]]:
     """Smoothed TF-IDF over the domain-level "documents" in `corpora` (one
     document per domain -- this is a cross-CORPUS overlap audit, not a
@@ -195,9 +222,13 @@ class OverlapMatrix:
     top_k_jaccard: dict[tuple[str, str], float]
 
 
-def compute_overlap_matrix(domains: list[str] | None = None, k: int = 30) -> OverlapMatrix:
+def compute_overlap_matrix(
+    domains: list[str] | None = None,
+    k: int = 30,
+    corpus_fn: Callable[[str], str] = domain_corpus,
+) -> OverlapMatrix:
     resolved_domains = domains if domains is not None else DOMAINS
-    corpora = {domain: domain_corpus(domain) for domain in resolved_domains}
+    corpora = {domain: corpus_fn(domain) for domain in resolved_domains}
     vectors = tf_idf_vectors(corpora)
     top_tokens = {domain: top_k_tokens(corpora[domain], k=k) for domain in resolved_domains}
 
@@ -261,11 +292,48 @@ def _matrix_to_json(matrix: OverlapMatrix, passed: bool, detail: str) -> dict[st
     }
 
 
-def main() -> int:
-    matrix = compute_overlap_matrix()
+def _build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Pre-registered lexical-overlap confound gate. Default (no args): "
+            "hermetic seed/scenario text (advice-eligibility-domain-spec.md step 5). "
+            "Pass --decisions-root for Part B's Amendment-1 RE-RUN over GENERATED "
+            "decision corpora (probes/detector/data/<domain>/decisions.jsonl)."
+        )
+    )
+    parser.add_argument(
+        "--decisions-root",
+        type=Path,
+        default=None,
+        help=(
+            "root dir containing <domain>/decisions.jsonl for each domain; when set, "
+            "the gate runs over the GENERATED decisions' rendered prompt text instead "
+            "of the hermetic seed/scenario corpus"
+        ),
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _build_arg_parser().parse_args(argv)
+
+    if args.decisions_root is not None:
+        root: Path = args.decisions_root
+
+        def corpus_fn(domain: str) -> str:
+            return decisions_corpus(domain, root / domain / "decisions.jsonl")
+
+        source_label = f"GENERATED decisions ({root})"
+        out_name = "lexical_overlap_matrix_generated.json"
+    else:
+        corpus_fn = domain_corpus
+        source_label = "hermetic seed/scenario text"
+        out_name = "lexical_overlap_matrix.json"
+
+    matrix = compute_overlap_matrix(corpus_fn=corpus_fn)
     passed, detail = gate_passes(matrix)
 
-    print("Cross-domain lexical overlap matrix (advice-eligibility-domain-spec.md, step 5):")
+    print(f"Cross-domain lexical overlap matrix (source: {source_label}):")
     print(f"{'pair':<30}{'tfidf_cosine':>14}{'top_k_jaccard':>16}")
     for i, domain_a in enumerate(matrix.domains):
         for domain_b in matrix.domains[i + 1 :]:
@@ -279,7 +347,7 @@ def main() -> int:
     print(f"GATE {'PASSED' if passed else 'FAILED'}")
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = OUTPUT_DIR / "lexical_overlap_matrix.json"
+    out_path = OUTPUT_DIR / out_name
     out_path.write_text(json.dumps(_matrix_to_json(matrix, passed, detail), indent=2))
     print(f"wrote {out_path}")
 

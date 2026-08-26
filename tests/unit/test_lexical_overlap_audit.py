@@ -9,6 +9,7 @@ against small, fully-controlled inputs.
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -124,3 +125,50 @@ def test_gate_fails_when_advice_crossing_overlap_is_not_materially_below_control
     )
     passed, _detail = module.gate_passes(matrix)
     assert passed is False
+
+
+def test_decisions_corpus_reads_prompt_field_from_generated_jsonl_and_skips_empty_rows(
+    tmp_path: Path,
+) -> None:
+    """Part B (phase-detector-training-step2-datagen.md, Amendment 1) re-runs
+    the confound gate over the GENERATED decision corpora's rendered prompt
+    text, not the hermetic seed/scenario text -- this pins down the reader
+    that makes that possible."""
+    module = _import_script()
+    decisions_path = tmp_path / "decisions.jsonl"
+    decisions_path.write_text(
+        "\n".join(
+            [
+                json.dumps({"prompt": "cancel order W123 now", "empty": False}),
+                json.dumps({"task_id": "retail:s1:0", "empty": True}),
+                json.dumps({"prompt": "check refund status", "empty": False}),
+            ]
+        )
+    )
+    corpus = module.decisions_corpus("retail", decisions_path)
+    assert "cancel order W123 now" in corpus
+    assert "check refund status" in corpus
+    # the empty sentinel row contributed no text
+    assert corpus.count("\n") == 1
+
+
+def test_compute_overlap_matrix_accepts_a_custom_corpus_fn() -> None:
+    """`corpus_fn` is the seam Part B's `--decisions-root` uses to swap the
+    hermetic `domain_corpus` for `decisions_corpus` without duplicating the
+    tf-idf/jaccard machinery."""
+    module = _import_script()
+    seen: list[str] = []
+
+    def fake_corpus_fn(domain: str) -> str:
+        seen.append(domain)
+        return f"{domain} some shared vocabulary and a {domain}-only token"
+
+    matrix = module.compute_overlap_matrix(
+        domains=["retail", "airline", "advice-eligibility"], corpus_fn=fake_corpus_fn
+    )
+    assert seen == ["retail", "airline", "advice-eligibility"]
+    assert set(matrix.tfidf_cosine) == {
+        ("retail", "airline"),
+        ("retail", "advice-eligibility"),
+        ("airline", "advice-eligibility"),
+    }
