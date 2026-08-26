@@ -16,7 +16,12 @@ import random
 from dataclasses import dataclass
 from typing import Any
 
-from bossyk_sandbox.interp.corpus_assembly import Record, jaccard_similarity, token_shingles
+from bossyk_sandbox.interp.corpus_assembly import (
+    Record,
+    jaccard_similarity,
+    near_duplicate_comparison_text,
+    token_shingles,
+)
 
 # --- leakage scan ------------------------------------------------------
 
@@ -100,14 +105,20 @@ def cross_domain_near_duplicate_scan(
     ever sees the corpus) -- a real leakage risk if two domains' prompt
     templates turn out too similar despite the lexical-overlap confound gate
     (`scripts/lexical_overlap_audit.py`) having passed at the vocabulary
-    level; this checks actual generated prompt TEXT, a different and
-    complementary signal."""
+    level; this checks actual generated prompt TEXT (via
+    `near_duplicate_comparison_text` -- the shared per-domain system-policy
+    boilerplate is stripped first, same as the within-domain dedupe, so
+    cross-domain comparisons aren't dominated by two DIFFERENT domains'
+    unrelated policy text either), a different and complementary signal."""
     by_domain: dict[str, list[Record]] = {}
     for r in records:
         by_domain.setdefault(str(r["domain"]), []).append(r)
     domains = sorted(by_domain)
 
-    shingle_cache = {id(r): token_shingles(str(r["prompt"]), shingle_size) for r in records}
+    shingle_cache = {
+        id(r): token_shingles(near_duplicate_comparison_text(str(r["prompt"])), shingle_size)
+        for r in records
+    }
 
     pairs: list[CrossDomainPair] = []
     n_checked = 0

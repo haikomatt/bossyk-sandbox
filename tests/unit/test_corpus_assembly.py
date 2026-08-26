@@ -14,6 +14,7 @@ from bossyk_sandbox.interp.corpus_assembly import (
     dedupe_near_duplicates,
     default_group_fields,
     load_decisions_jsonl,
+    near_duplicate_comparison_text,
     stratified_group_split,
 )
 
@@ -115,6 +116,42 @@ def test_dedupe_near_duplicates_buckets_by_domain_and_label_by_default() -> None
         _row("s2", "cancel my pending order right now", is_violation=False),
     ]
     kept, n_dropped = dedupe_near_duplicates(records, threshold=0.5)
+    assert n_dropped == 0
+    assert len(kept) == 2
+
+
+_MULTILINE_SYSTEM_PROMPT = (
+    "system: # Retail agent policy\n\n"
+    "As a retail agent, you can help users:\n\n"
+    "- cancel or modify pending orders\n"
+    "- return or exchange delivered orders\n\n"
+    "You must authenticate the user first.\n"
+    "human: {human}"
+)
+
+
+def test_near_duplicate_comparison_text_strips_a_multiline_system_block() -> None:
+    # render_prompt embeds the system message's OWN newlines verbatim (it
+    # does not escape them), so only the FIRST physical line literally
+    # starts with "system:" -- a naive per-line filter would leave the rest
+    # of a multi-line policy block in place. This is the regression the
+    # Part A stub smoke caught against real rendered retail/airline prompts.
+    prompt = _MULTILINE_SYSTEM_PROMPT.format(human="cancel order W1")
+    tail = near_duplicate_comparison_text(prompt)
+    assert "Retail agent policy" not in tail
+    assert "authenticate the user" not in tail
+    assert tail == "human: cancel order W1"
+
+
+def test_dedupe_near_duplicates_is_not_fooled_by_shared_multiline_boilerplate() -> None:
+    # Two DIFFERENT scenarios sharing the identical multi-line system
+    # preamble (as every decision in one domain does) must NOT collapse into
+    # each other just because of that shared preamble.
+    records = [
+        _row("s1", _MULTILINE_SYSTEM_PROMPT.format(human="cancel order W1 immediately")),
+        _row("s2", _MULTILINE_SYSTEM_PROMPT.format(human="look up my order status please")),
+    ]
+    kept, n_dropped = dedupe_near_duplicates(records, threshold=0.9, shingle_size=3)
     assert n_dropped == 0
     assert len(kept) == 2
 

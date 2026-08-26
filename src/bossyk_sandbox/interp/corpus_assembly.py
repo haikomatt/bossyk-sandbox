@@ -9,16 +9,16 @@ actually carries one, the same persona/entity) never appears in two splits.
 Grouping key is CONFIGURABLE (`group_fields`), defaulting to `("scenario_id",)`
 -- always real, read off every row -- and extended to also include
 `persona_id` only when at least one row in the corpus actually carries a
-non-null one (advice-eligibility today; retail/airline don't, per
-`datagen_driver`'s docstring, so grouping rests on scenario_id alone there).
-Nothing is invented: `default_group_fields` never adds a key the data doesn't
-have.
+non-null one (see `datagen_driver`'s docstring for which domains/scenarios
+that is; where it isn't, grouping rests on scenario_id alone). Nothing is
+invented: `default_group_fields` never adds a key the data doesn't have.
 """
 
 from __future__ import annotations
 
 import json
 import random
+import re
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -83,6 +83,29 @@ def jaccard_similarity(a: set[str], b: set[str]) -> float:
     return len(a & b) / len(union)
 
 
+# `interp.prompt_render.render_prompt` renders one `role: content` block per
+# message (NOT one physical line -- a multi-line policy's embedded newlines
+# stay embedded), starting with `system: <the domain's full policy text>`.
+# The first `human:`/`ai:`/`tool:` line at the START of a physical line marks
+# where the actual conversation begins.
+_CONVERSATION_BOUNDARY_RE = re.compile(r"^(?:human|ai|tool): ", re.MULTILINE)
+
+
+def near_duplicate_comparison_text(prompt: str) -> str:
+    """The part of a rendered decision context that actually distinguishes
+    one decision from another. The leading `system:` block is identical
+    (thousands of characters) across every decision in a domain, so
+    comparing whole prompts drowns the real per-decision content (the human
+    ask + any prior tool calls) in shared boilerplate and makes near-dup
+    thresholds meaningless (empirically: >0.9 Jaccard between almost ANY two
+    same-domain decisions -- confirmed against real rendered retail/airline
+    contexts during Part A's stub smoke). Cutting everything before the
+    first `human:`/`ai:`/`tool:` line fixes that; `dedupe_exact`/checkpoint
+    identity are unaffected since they still compare the raw prompt."""
+    match = _CONVERSATION_BOUNDARY_RE.search(prompt)
+    return prompt[match.start() :] if match else prompt
+
+
 def dedupe_near_duplicates(
     records: list[Record],
     *,
@@ -91,21 +114,24 @@ def dedupe_near_duplicates(
     bucket_fields: tuple[str, ...] = ("domain", "is_violation"),
 ) -> tuple[list[Record], int]:
     """Drops records whose prompt is a near-duplicate (token-shingle Jaccard
-    >= `threshold`) of an already-kept record, keeping the first occurrence
-    of each near-duplicate cluster (greedy, order-preserving). Comparisons
-    are bounded to records sharing the same `bucket_fields` (default: same
-    domain + same label) so this stays roughly O(n) per bucket rather than
-    O(n^2) over the whole corpus. `threshold` and `shingle_size` are both
-    tunable -- the plan doesn't pin a specific number, so the QC report is
-    what makes a chosen threshold auditable (see
-    `corpus_qc.cross_domain_near_duplicate_scan`, the cross-domain counterpart
-    of this same shingle-Jaccard machinery).
+    >= `threshold`, compared on `near_duplicate_comparison_text` -- the
+    boilerplate-free tail, not the raw rendered prompt) of an already-kept
+    record, keeping the first occurrence of each near-duplicate cluster
+    (greedy, order-preserving). Comparisons are bounded to records sharing
+    the same `bucket_fields` (default: same domain + same label) so this
+    stays roughly O(n) per bucket rather than O(n^2) over the whole corpus.
+    `threshold` and `shingle_size` are both tunable -- the plan doesn't pin a
+    specific number, so the QC report is what makes a chosen threshold
+    auditable (see `corpus_qc.cross_domain_near_duplicate_scan`, the
+    cross-domain counterpart of this same shingle-Jaccard machinery).
     Returns (kept, n_dropped)."""
     buckets: dict[tuple[Any, ...], list[int]] = defaultdict(list)
     for i, r in enumerate(records):
         buckets[tuple(r.get(f) for f in bucket_fields)].append(i)
 
-    shingle_sets = [token_shingles(r["prompt"], shingle_size) for r in records]
+    shingle_sets = [
+        token_shingles(near_duplicate_comparison_text(r["prompt"]), shingle_size) for r in records
+    ]
     kept_idx: list[int] = []
     dropped = 0
     for idxs in buckets.values():
