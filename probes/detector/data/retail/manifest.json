@@ -1,0 +1,20 @@
+{
+  "domain": "retail",
+  "generator_model": "accounts/fireworks/models/gpt-oss-20b",
+  "serving_path": "fireworks",
+  "seed": 0,
+  "generated_at": "2026-08-26T23:39:03.335993+00:00",
+  "counts": {
+    "train": 34,
+    "val": 7,
+    "test": 9
+  },
+  "class_balance": {
+    "train": 0.029411764705882353,
+    "val": 0.14285714285714285,
+    "test": 0.0
+  },
+  "cap_hit": "usd",
+  "cap_was_hit": true,
+  "near_dup_rate_within_domain": 0.0
+}

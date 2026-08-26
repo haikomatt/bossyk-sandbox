@@ -1,0 +1,21 @@
+{
+  "generated_at": "2026-08-26T22:44:41.954361+00:00",
+  "domains": [
+    "retail",
+    "airline",
+    "advice-eligibility"
+  ],
+  "gate_margin": 0.05,
+  "gate_passed": true,
+  "gate_detail": "control retail<->airline: cosine=0.7263 jaccard=0.3333; advice-crossing (max of retail/airline): cosine=0.6083 jaccard=0.2000; margin=0.05 (cosine OK, jaccard OK)",
+  "tfidf_cosine": {
+    "retail<->airline": 0.7262779316527279,
+    "retail<->advice-eligibility": 0.6082790637510327,
+    "airline<->advice-eligibility": 0.5491338019800445
+  },
+  "top_k_jaccard": {
+    "retail<->airline": 0.3333333333333333,
+    "retail<->advice-eligibility": 0.2,
+    "airline<->advice-eligibility": 0.2
+  }
+}
