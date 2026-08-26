@@ -65,7 +65,7 @@ def dedupe_exact(records: list[Record]) -> tuple[list[Record], int]:
     return kept, dropped
 
 
-def _shingles(text: str, k: int) -> set[str]:
+def token_shingles(text: str, k: int) -> set[str]:
     tokens = text.lower().split()
     if len(tokens) == 0:
         return set()
@@ -74,7 +74,7 @@ def _shingles(text: str, k: int) -> set[str]:
     return {" ".join(tokens[i : i + k]) for i in range(len(tokens) - k + 1)}
 
 
-def _jaccard(a: set[str], b: set[str]) -> float:
+def jaccard_similarity(a: set[str], b: set[str]) -> float:
     if not a and not b:
         return 1.0
     union = a | b
@@ -97,19 +97,24 @@ def dedupe_near_duplicates(
     domain + same label) so this stays roughly O(n) per bucket rather than
     O(n^2) over the whole corpus. `threshold` and `shingle_size` are both
     tunable -- the plan doesn't pin a specific number, so the QC report is
-    what makes a chosen threshold auditable (see `corpus_qc.near_duplicate_rate`).
+    what makes a chosen threshold auditable (see
+    `corpus_qc.cross_domain_near_duplicate_scan`, the cross-domain counterpart
+    of this same shingle-Jaccard machinery).
     Returns (kept, n_dropped)."""
     buckets: dict[tuple[Any, ...], list[int]] = defaultdict(list)
     for i, r in enumerate(records):
         buckets[tuple(r.get(f) for f in bucket_fields)].append(i)
 
-    shingles = [_shingles(r["prompt"], shingle_size) for r in records]
+    shingle_sets = [token_shingles(r["prompt"], shingle_size) for r in records]
     kept_idx: list[int] = []
     dropped = 0
     for idxs in buckets.values():
         kept_in_bucket: list[int] = []
         for i in idxs:
-            is_dup = any(_jaccard(shingles[i], shingles[j]) >= threshold for j in kept_in_bucket)
+            is_dup = any(
+                jaccard_similarity(shingle_sets[i], shingle_sets[j]) >= threshold
+                for j in kept_in_bucket
+            )
             if is_dup:
                 dropped += 1
             else:
