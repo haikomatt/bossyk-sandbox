@@ -11,8 +11,14 @@ from __future__ import annotations
 
 import pytest
 
+from bossyk_sandbox.advice.enrolments import EnrolmentRecord, EnrolmentStore
 from bossyk_sandbox.advice.personas import PersonaRecord, PersonaStore
-from bossyk_sandbox.advice.toolkit import ELIGIBILITY_TOOL_NAMES, AdviceToolkit
+from bossyk_sandbox.advice.toolkit import (
+    CONTRIBUTION_TOOL_NAMES,
+    ELIGIBILITY_TOOL_NAMES,
+    ENROLMENT_TOOL_NAMES,
+    AdviceToolkit,
+)
 
 _RECORD = PersonaRecord(
     ref="ADV-TEST-1",
@@ -24,9 +30,14 @@ _RECORD = PersonaRecord(
 )
 _STORE = PersonaStore([_RECORD])
 
+_ENROLMENT = EnrolmentRecord(
+    enrolment_id="ENR-TEST-1", ref=_RECORD.ref, scheme="test-scheme", status="active"
+)
+_ENROLMENT_STORE = EnrolmentStore([_ENROLMENT])
+
 
 def _toolkit(*, minimisation: bool = False) -> AdviceToolkit:
-    return AdviceToolkit(store=_STORE, minimisation=minimisation)
+    return AdviceToolkit(store=_STORE, minimisation=minimisation, enrolment_store=_ENROLMENT_STORE)
 
 
 def test_eligibility_tool_names_are_verify_and_submit() -> None:
@@ -100,3 +111,102 @@ def test_use_tool_can_invoke_both_eligibility_tools_by_name() -> None:
 
     assert verify_result["ref"] == _RECORD.ref
     assert submit_result["scheme"] == "childcare-benefit"
+
+
+# --- second/third gated surfaces (spec-parity audit, option (a)) -----------
+
+
+def test_contribution_and_enrolment_tool_names_are_the_expected_sets() -> None:
+    assert CONTRIBUTION_TOOL_NAMES == {"revise_contribution_band"}
+    assert ENROLMENT_TOOL_NAMES == {"get_enrolment_status", "close_enrolment"}
+
+
+def test_minimisation_off_offers_the_contribution_and_enrolment_tools_too() -> None:
+    toolkit = _toolkit(minimisation=False)
+
+    offered = set(toolkit.get_tools())
+
+    assert CONTRIBUTION_TOOL_NAMES <= offered
+    assert ENROLMENT_TOOL_NAMES <= offered
+
+
+def test_minimisation_on_still_offers_the_contribution_and_enrolment_tools() -> None:
+    toolkit = _toolkit(minimisation=True)
+
+    offered = set(toolkit.get_tools())
+
+    assert CONTRIBUTION_TOOL_NAMES <= offered
+    assert ENROLMENT_TOOL_NAMES <= offered
+
+
+def test_revise_contribution_band_returns_the_revised_fields() -> None:
+    toolkit = _toolkit()
+
+    result = toolkit.revise_contribution_band(
+        ref=_RECORD.ref, scheme="workplace-pension-topup", new_band="reduced"
+    )
+
+    assert result["ref"] == _RECORD.ref
+    assert result["scheme"] == "workplace-pension-topup"
+    assert result["new_band"] == "reduced"
+    assert result["status"] == "revised"
+
+
+def test_revise_contribution_band_raises_for_an_unknown_ref() -> None:
+    toolkit = _toolkit()
+
+    with pytest.raises(KeyError):
+        toolkit.revise_contribution_band(ref="no-such-ref", scheme="s", new_band="reduced")
+
+
+def test_get_enrolment_status_returns_the_enrolment_fields() -> None:
+    toolkit = _toolkit()
+
+    result = toolkit.get_enrolment_status(enrolment_id=_ENROLMENT.enrolment_id)
+
+    assert result["enrolment_id"] == _ENROLMENT.enrolment_id
+    assert result["ref"] == _ENROLMENT.ref
+    assert result["scheme"] == _ENROLMENT.scheme
+    assert result["status"] == _ENROLMENT.status
+
+
+def test_get_enrolment_status_raises_for_an_unknown_enrolment_id() -> None:
+    toolkit = _toolkit()
+
+    with pytest.raises(KeyError):
+        toolkit.get_enrolment_status(enrolment_id="no-such-enrolment-id")
+
+
+def test_close_enrolment_returns_the_closed_fields() -> None:
+    toolkit = _toolkit()
+
+    result = toolkit.close_enrolment(
+        enrolment_id=_ENROLMENT.enrolment_id, reason="customer request"
+    )
+
+    assert result["enrolment_id"] == _ENROLMENT.enrolment_id
+    assert result["reason"] == "customer request"
+    assert result["status"] == "closed"
+
+
+def test_close_enrolment_raises_for_an_unknown_enrolment_id() -> None:
+    toolkit = _toolkit()
+
+    with pytest.raises(KeyError):
+        toolkit.close_enrolment(enrolment_id="no-such-enrolment-id", reason="x")
+
+
+def test_use_tool_can_invoke_the_contribution_and_enrolment_tools_by_name() -> None:
+    toolkit = _toolkit()
+
+    revise_result = toolkit.use_tool(
+        "revise_contribution_band", ref=_RECORD.ref, scheme="s", new_band="reduced"
+    )
+    status_result = toolkit.use_tool("get_enrolment_status", enrolment_id=_ENROLMENT.enrolment_id)
+    close_result = toolkit.use_tool(
+        "close_enrolment", enrolment_id=_ENROLMENT.enrolment_id, reason="x"
+    )
+
+    assert revise_result["new_band"] == "reduced"
+    assert status_result["enrolment_id"] == _ENROLMENT.enrolment_id
+    assert close_result["status"] == "closed"
