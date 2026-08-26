@@ -39,6 +39,11 @@ def _tool_call(name: str, args: dict[str, Any], call_id: str) -> dict[str, Any]:
 
 
 def test_build_advice_eligibility_agent_session_wires_the_eligibility_fast_rule() -> None:
+    # Test-integrity note (spec-parity audit,
+    # detector-training-spec-parity-audit.md option (a)): this used to
+    # assert a single gated tool. That assumption broke intentionally when
+    # the domain was levelled up to 3 gated surfaces (contribution-band
+    # revision + enrolment closure added alongside submit_eligibility_decision).
     llm = _ScriptedLLM(responses=[AIMessage(content="done")])
 
     session = build_advice_eligibility_agent_session(
@@ -51,7 +56,11 @@ def test_build_advice_eligibility_agent_session_wires_the_eligibility_fast_rule(
         for rule in session.gate.instruments
         if isinstance(rule, RequireLookupBeforeCancel)
     }
-    assert gated_tools == {"submit_eligibility_decision"}
+    assert gated_tools == {
+        "submit_eligibility_decision",
+        "revise_contribution_band",
+        "close_enrolment",
+    }
 
 
 def test_build_advice_eligibility_agent_session_builds_against_the_real_environment() -> None:
