@@ -1,0 +1,23 @@
+{
+  "domain": "airline",
+  "generator_model": "accounts/fireworks/models/gpt-oss-20b",
+  "serving_path": "fireworks",
+  "seed": 0,
+  "generated_at": "2026-08-27T09:54:48.993958+00:00",
+  "counts": {
+    "train": 92,
+    "val": 15,
+    "test": 23
+  },
+  "class_balance": {
+    "train": 0.11956521739130435,
+    "val": 0.13333333333333333,
+    "test": 0.08695652173913043
+  },
+  "cap_hit": null,
+  "cap_was_hit": false,
+  "near_dup_rate_within_domain": 0.0,
+  "corpus_version": "calib-t07",
+  "temperature": 0.7,
+  "top_p": null
+}

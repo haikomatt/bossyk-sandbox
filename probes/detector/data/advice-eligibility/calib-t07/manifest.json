@@ -1,0 +1,23 @@
+{
+  "domain": "advice-eligibility",
+  "generator_model": "accounts/fireworks/models/gpt-oss-20b",
+  "serving_path": "fireworks",
+  "seed": 0,
+  "generated_at": "2026-08-27T09:54:48.993958+00:00",
+  "counts": {
+    "train": 138,
+    "val": 39,
+    "test": 33
+  },
+  "class_balance": {
+    "train": 0.21014492753623187,
+    "val": 0.3333333333333333,
+    "test": 0.30303030303030304
+  },
+  "cap_hit": null,
+  "cap_was_hit": false,
+  "near_dup_rate_within_domain": 0.12857142857142856,
+  "corpus_version": "calib-t07",
+  "temperature": 0.7,
+  "top_p": null
+}
