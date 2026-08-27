@@ -27,6 +27,62 @@ from typing import Any
 Record = dict[str, Any]
 
 
+# --- corpus versioning (hermetic diversity fix, item 3) --------------------
+#
+# phase-detector-training-step2-datagen.md Issues & Fixes / Part B run 1: the
+# temp-0 + 4-phrasing defect collapsed run-1 to 50/72/121 unique decisions per
+# domain. Its manifests and on-disk files predate any `corpus_version` field
+# entirely and MUST stay untouched at their existing flat paths -- so "v1" is
+# the implicit label for that unversioned layout, never written to disk by
+# anything new, only ever inferred when a record has no `corpus_version` key.
+# A future fixed run gets its own explicit version ("v2", ...) and its own
+# subdirectory, so run-1 and run-2+ can never be silently blended.
+
+DEFAULT_CORPUS_VERSION = "v1"
+
+
+class MixedCorpusVersionError(ValueError):
+    """More than one `corpus_version` was found in a corpus that's about to
+    be assembled or QC'd. Assembly/QC must refuse this outright rather than
+    silently blending e.g. run-1's collapsed temp-0 corpus with a fixed
+    run-2 -- see phase-detector-training-step2-datagen.md Issues & Fixes."""
+
+
+def record_corpus_version(record: Record) -> str:
+    """The corpus_version a record belongs to. A missing/None key reads as
+    `DEFAULT_CORPUS_VERSION` ("v1") -- run-1's already-committed
+    decisions/split files predate this field entirely, so its absence means
+    "the original unversioned run", never an error on its own."""
+    value = record.get("corpus_version")
+    return str(value) if value is not None else DEFAULT_CORPUS_VERSION
+
+
+def assert_single_corpus_version(records: list[Record]) -> str:
+    """Every record in `records` must claim the SAME corpus_version (missing
+    reads as `DEFAULT_CORPUS_VERSION`). Returns that shared version;
+    raises `MixedCorpusVersionError` otherwise. An empty `records` list has
+    nothing to assert and returns `DEFAULT_CORPUS_VERSION`."""
+    versions = {record_corpus_version(r) for r in records}
+    if len(versions) > 1:
+        raise MixedCorpusVersionError(
+            f"corpus contains records from more than one corpus_version: {sorted(versions)}"
+        )
+    return next(iter(versions), DEFAULT_CORPUS_VERSION)
+
+
+def corpus_data_dir(
+    data_root: Path, domain: str, corpus_version: str = DEFAULT_CORPUS_VERSION
+) -> Path:
+    """Versioned on-disk layout for a domain's generated corpus.
+    `DEFAULT_CORPUS_VERSION` ("v1") stays at the flat `<data_root>/<domain>/`
+    path -- run-1's already-committed layout, untouched. Any other version
+    gets its own subdirectory, `<data_root>/<domain>/<version>/`, so a future
+    run-2+ never overwrites or gets silently mixed with run-1's files."""
+    if corpus_version == DEFAULT_CORPUS_VERSION:
+        return data_root / domain
+    return data_root / domain / corpus_version
+
+
 def load_decisions_jsonl(path: Path) -> list[Record]:
     """Load a checkpoint/decisions JSONL file, dropping the `empty=True`
     task-sentinel rows `datagen_driver.append_task_result` writes for a task

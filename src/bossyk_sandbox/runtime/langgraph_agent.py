@@ -288,6 +288,7 @@ def _build_agent_session(
     capture_prompts: bool = False,
     utterance_rules: list[UtteranceInstrument] | None = None,
     temperature: float = 0.0,
+    top_p: float | None = None,
 ) -> AgentSession:
     """Domain-parameterized live LangGraph agent with in-graph tool-call
     interception, shared by `build_airline_agent_session` and
@@ -313,6 +314,11 @@ def _build_agent_session(
     to use an already-constructed chat model (e.g. a test double) instead,
     skipping the API-key check entirely; pass `environment` to use an
     already-resolved tau2 environment instead of calling `get_environment_fn()`.
+
+    `top_p` (hermetic diversity fix, phase-detector-training-step2-datagen.md
+    Issues & Fixes Part B run 1) defaults to `None`, ChatOpenAI's own default
+    (provider default, no nucleus-sampling override), so an unset flag is
+    byte-identical to before this parameter existed.
     """
     env = environment if environment is not None else get_environment_fn()
     policy = policy_override if policy_override is not None else env.policy
@@ -349,6 +355,7 @@ def _build_agent_session(
             base_url=resolved_base_url,
             api_key=SecretStr(resolved_api_key),
             temperature=temperature,
+            top_p=top_p,
             max_retries=max_retries,
             timeout=120,
             **logprob_kwargs,
@@ -573,6 +580,7 @@ def build_weakened_airline_agent_session(
     capture_prompts: bool = False,
     strength: str = "dir1",
     temperature: float = 0.0,
+    top_p: float | None = None,
 ) -> AgentSession:
     """dir 1: the airline counterpart of `build_weakened_retail_agent_session`
     (phase-detector-training-step2-datagen.md Part A item 1 -- the scaled
@@ -598,6 +606,7 @@ def build_weakened_airline_agent_session(
         capture_logprobs=capture_logprobs,
         capture_prompts=capture_prompts,
         temperature=temperature,
+        top_p=top_p,
     )
 
 
@@ -613,6 +622,7 @@ def build_retail_agent_session(
     capture_logprobs: bool = False,
     capture_prompts: bool = False,
     temperature: float = 0.0,
+    top_p: float | None = None,
 ) -> AgentSession:
     """Live LangGraph retail agent -- the retail counterpart of
     `build_airline_agent_session`, needed so retail crossings are reachable
@@ -634,6 +644,7 @@ def build_retail_agent_session(
         capture_logprobs=capture_logprobs,
         capture_prompts=capture_prompts,
         temperature=temperature,
+        top_p=top_p,
     )
 
 
@@ -649,6 +660,7 @@ def build_weakened_retail_agent_session(
     capture_prompts: bool = False,
     strength: str = "dir1",
     temperature: float = 0.0,
+    top_p: float | None = None,
 ) -> AgentSession:
     """dir 1: a deliberately UNDER-SPECIFIED retail agent -- same tools + gate as
     build_retail_agent_session, but its system prompt is weaken_policy(policy) so
@@ -669,6 +681,7 @@ def build_weakened_retail_agent_session(
         capture_logprobs=capture_logprobs,
         capture_prompts=capture_prompts,
         temperature=temperature,
+        top_p=top_p,
     )
 
 
@@ -684,6 +697,7 @@ def build_advice_eligibility_agent_session(
     capture_logprobs: bool = False,
     capture_prompts: bool = False,
     temperature: float = 0.0,
+    top_p: float | None = None,
 ) -> AgentSession:
     """Live LangGraph advice-eligibility agent (detector-training transfer
     domain -- coding-tasks/bossyk-sandbox/advice-eligibility-domain-spec.md):
@@ -707,6 +721,7 @@ def build_advice_eligibility_agent_session(
         capture_logprobs=capture_logprobs,
         capture_prompts=capture_prompts,
         temperature=temperature,
+        top_p=top_p,
     )
 
 
@@ -722,6 +737,7 @@ def build_weakened_advice_eligibility_agent_session(
     capture_prompts: bool = False,
     strength: str = "dir1",
     temperature: float = 0.0,
+    top_p: float | None = None,
 ) -> AgentSession:
     """dir 1 advice-eligibility counterpart of
     `build_weakened_retail_agent_session`: same tools + gate as
@@ -742,6 +758,7 @@ def build_weakened_advice_eligibility_agent_session(
         capture_logprobs=capture_logprobs,
         capture_prompts=capture_prompts,
         temperature=temperature,
+        top_p=top_p,
     )
 
 

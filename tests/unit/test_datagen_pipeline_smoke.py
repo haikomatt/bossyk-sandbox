@@ -43,12 +43,16 @@ MAKE_DECISIONS_SCRIPT_PATH = Path(__file__).parent.parent.parent / "scripts" / "
 
 DOMAINS = ("retail", "airline", "advice-eligibility")
 REAL_WORKER_COUNT = 13  # ~80% of the box's 16 physical cores, per the plan
-# Matches len(datagen_driver._URGENCY_PHRASINGS) exactly: that phrasing pool
-# rotates by variant_index % len(pool), so variants_per_scenario beyond the
-# pool size would repeat a phrasing and (same scenario + same phrasing) become
-# an EXACT text duplicate -- correctly caught by dedupe_exact, but that would
-# make this smoke's "zero drops expected" assertion domain-fixture-dependent
-# instead of a clean proof. Staying at the pool size sidesteps that.
+# Historical note (hermetic diversity fix, phase-detector-training-step2-
+# datagen.md Issues & Fixes / Part B run 1): this used to be pinned to
+# len(datagen_driver._URGENCY_PHRASINGS) (4) exactly, because that pool
+# rotated by variant_index % len(pool) and a repeat past the pool size became
+# an EXACT text duplicate. `_compositional_phrasing` replaced that 4-item
+# rotation with a ~10,000-combination deterministic pool (see
+# datagen_driver.py), so this value is no longer pool-size-bound -- any
+# variants_per_scenario well below ~10,000 still yields zero exact-duplicate
+# phrasings. Left at 4 anyway: enough volume to saturate the worker pool
+# without slowing the smoke down, not because it has to match anything.
 VARIANTS_PER_SCENARIO = 4
 
 

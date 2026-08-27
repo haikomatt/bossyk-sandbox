@@ -631,6 +631,82 @@ def test_resolve_agent_config_raises_without_any_key(monkeypatch: pytest.MonkeyP
         _resolve_agent_config(model_name="m", api_key=None, base_url=None)
 
 
+# --- sampling-param plumbing (hermetic diversity fix, temperature/top_p) ----
+
+
+@dataclass
+class _CapturingChatOpenAI:
+    """Stands in for `langchain_openai.ChatOpenAI` and records the kwargs it
+    was constructed with, so the temperature/top_p plumbing can be asserted
+    WITHOUT a network call or a real API key -- stub-testing the wiring, not
+    the sampling itself, per the hermetic-diversity-fix brief."""
+
+    last_kwargs: dict[str, Any] = field(default_factory=dict)
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.last_kwargs = kwargs
+
+    def bind_tools(self, _schemas: Any) -> _CapturingChatOpenAI:
+        return self
+
+
+def test_build_weakened_retail_agent_session_passes_temperature_and_top_p_to_the_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import bossyk_sandbox.runtime.langgraph_agent as langgraph_agent_module
+
+    captured: dict[str, Any] = {}
+
+    class _Capturing(_CapturingChatOpenAI):
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__(**kwargs)
+            captured.update(kwargs)
+
+    monkeypatch.setattr(langgraph_agent_module, "ChatOpenAI", _Capturing)
+    env = _FakeEnvironment(_CountingToolkit(), policy="be compliant")
+
+    build_weakened_retail_agent_session(
+        trace_id="t-sampling",
+        api_key="test-key",
+        model_name="test-model",
+        environment=env,
+        temperature=0.73,
+        top_p=0.42,
+    )
+
+    assert captured["temperature"] == 0.73
+    assert captured["top_p"] == 0.42
+
+
+def test_build_weakened_retail_agent_session_top_p_defaults_to_none_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Byte-identical prior behaviour when the new flag is unset: `top_p`
+    unset must resolve to the same `None` ChatOpenAI already defaulted to
+    before this plumbing existed."""
+    import bossyk_sandbox.runtime.langgraph_agent as langgraph_agent_module
+
+    captured: dict[str, Any] = {}
+
+    class _Capturing(_CapturingChatOpenAI):
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__(**kwargs)
+            captured.update(kwargs)
+
+    monkeypatch.setattr(langgraph_agent_module, "ChatOpenAI", _Capturing)
+    env = _FakeEnvironment(_CountingToolkit(), policy="be compliant")
+
+    build_weakened_retail_agent_session(
+        trace_id="t-sampling-default",
+        api_key="test-key",
+        model_name="test-model",
+        environment=env,
+    )
+
+    assert captured["top_p"] is None
+    assert captured["temperature"] == 0.0  # existing default, unchanged
+
+
 def test_agent_inference_latency_is_recorded_per_turn() -> None:
     toolkit = _CountingToolkit()
     llm = _ScriptedLLM(

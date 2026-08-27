@@ -21,10 +21,14 @@ from langchain_core.messages import AIMessage
 
 from bossyk_sandbox.domains import domain_config
 from bossyk_sandbox.interp.capture_run import DecisionItem
+from bossyk_sandbox.interp.corpus_assembly import MixedCorpusVersionError
 from bossyk_sandbox.interp.datagen_driver import (
     BudgetGuard,
     CapConfig,
     GenTask,
+    _compositional_phrasing,
+    _empty_task_row,
+    _scenario_user_prompt,
     append_task_result,
     build_scenario_tasks,
     generate_corpus,
@@ -377,3 +381,176 @@ def test_generate_corpus_a_hung_task_does_not_block_the_rest(tmp_path: Path) -> 
     assert elapsed < 2.0  # did not wait out the hung task
     assert summary.timed_out == 1
     assert summary.completed == 5  # the other five still finished
+
+
+# --- generate_corpus: session_kwargs plumbing (hermetic diversity fix item 1) --
+
+
+def _no_tool_airline_session_kwargs(
+    *, trace_id: str, llm: Any, capture_prompts: bool, **kwargs: Any
+) -> Any:
+    """Like `_no_tool_airline_session` but records any extra kwargs it was
+    called with (e.g. temperature/top_p), so `generate_corpus`'s forwarding
+    can be asserted without touching a real ChatOpenAI client."""
+    _no_tool_airline_session_kwargs.last_kwargs = kwargs  # type: ignore[attr-defined]
+    return build_airline_agent_session(
+        trace_id=trace_id,
+        llm=llm,
+        environment=_FakeEnv(tools=_NoTools()),
+        capture_prompts=capture_prompts,
+    )
+
+
+def test_generate_corpus_forwards_session_kwargs_to_build_session_fn(tmp_path: Path) -> None:
+    generate_corpus(
+        _tasks(2),
+        build_session_fn=_no_tool_airline_session_kwargs,
+        llm_factory=lambda _task: _OkLLM(),
+        drive_session_fn=drive_session,
+        checkpoint_path=tmp_path / "decisions.jsonl",
+        caps=CapConfig(max_usd=1000.0),
+        workers=2,
+        session_kwargs={"temperature": 0.7, "top_p": 0.3},
+    )
+    assert _no_tool_airline_session_kwargs.last_kwargs == {"temperature": 0.7, "top_p": 0.3}  # type: ignore[attr-defined]
+
+
+def test_generate_corpus_session_kwargs_unset_is_byte_identical(tmp_path: Path) -> None:
+    """Default (no `session_kwargs`) must call `build_session_fn` with NO
+    extra kwargs -- existing stub builders (like `_no_tool_airline_session`,
+    which accepts only trace_id/llm/capture_prompts) must keep working
+    unmodified."""
+    summary = generate_corpus(
+        _tasks(2),
+        build_session_fn=_no_tool_airline_session,
+        llm_factory=lambda _task: _OkLLM(),
+        drive_session_fn=drive_session,
+        checkpoint_path=tmp_path / "decisions.jsonl",
+        caps=CapConfig(max_usd=1000.0),
+        workers=2,
+    )
+    assert summary.completed == 2
+
+
+# --- generate_corpus: corpus_version stamping (hermetic diversity fix item 3) --
+
+
+def test_generate_corpus_default_corpus_version_is_v1(tmp_path: Path) -> None:
+    generate_corpus(
+        _tasks(2),
+        build_session_fn=_no_tool_airline_session,
+        llm_factory=lambda _task: _OkLLM(),
+        drive_session_fn=drive_session,
+        checkpoint_path=tmp_path / "decisions.jsonl",
+        caps=CapConfig(max_usd=1000.0),
+        workers=2,
+    )
+    _, rows = load_checkpoint(tmp_path / "decisions.jsonl")
+    assert rows
+    assert all(r["corpus_version"] == "v1" for r in rows)
+
+
+def test_generate_corpus_stamps_the_requested_corpus_version(tmp_path: Path) -> None:
+    summary = generate_corpus(
+        _tasks(2),
+        build_session_fn=_no_tool_airline_session,
+        llm_factory=lambda _task: _OkLLM(),
+        drive_session_fn=drive_session,
+        checkpoint_path=tmp_path / "decisions.jsonl",
+        caps=CapConfig(max_usd=1000.0),
+        workers=2,
+        corpus_version="v2",
+    )
+    assert summary.corpus_version == "v2"
+    _, rows = load_checkpoint(tmp_path / "decisions.jsonl")
+    assert rows
+    assert all(r["corpus_version"] == "v2" for r in rows)
+
+
+def test_generate_corpus_refuses_to_resume_a_checkpoint_under_a_different_corpus_version(
+    tmp_path: Path,
+) -> None:
+    ckpt = tmp_path / "decisions.jsonl"
+    generate_corpus(
+        _tasks(2),
+        build_session_fn=_no_tool_airline_session,
+        llm_factory=lambda _task: _OkLLM(),
+        drive_session_fn=drive_session,
+        checkpoint_path=ckpt,
+        caps=CapConfig(max_usd=1000.0),
+        workers=2,
+        corpus_version="v1",
+    )
+    with pytest.raises(MixedCorpusVersionError):
+        generate_corpus(
+            _tasks(4),
+            build_session_fn=_no_tool_airline_session,
+            llm_factory=lambda _task: _OkLLM(),
+            drive_session_fn=drive_session,
+            checkpoint_path=ckpt,
+            caps=CapConfig(max_usd=1000.0),
+            workers=2,
+            corpus_version="v2",
+        )
+
+
+def test_record_to_dict_and_empty_task_row_default_corpus_version_to_v1() -> None:
+    task = _task("retail-004")
+    item = DecisionItem(step_id="turn-0", prompt="p", is_violation=False)
+    assert record_to_dict(task, item, generator="stub")["corpus_version"] == "v1"
+    assert _empty_task_row(task, generator="stub")["corpus_version"] == "v1"
+
+
+def test_record_to_dict_stamps_the_given_corpus_version() -> None:
+    task = _task("retail-005")
+    item = DecisionItem(step_id="turn-0", prompt="p", is_violation=False)
+    row = record_to_dict(task, item, generator="stub", corpus_version="v2")
+    assert row["corpus_version"] == "v2"
+
+
+# --- compositional phrasing pool (hermetic diversity fix item 2) --------------
+
+
+def test_compositional_phrasing_yields_at_least_200_distinct_variants_for_one_scenario() -> None:
+    n = 200
+    variants = {_compositional_phrasing("retail-scn-1", variant_index=i) for i in range(n)}
+    assert len(variants) == n  # every one of the 200 draws is textually distinct
+
+
+def test_compositional_phrasing_is_reproducible_for_the_same_scenario_and_variant() -> None:
+    first = _compositional_phrasing("retail-scn-1", variant_index=17)
+    second = _compositional_phrasing("retail-scn-1", variant_index=17)
+    assert first == second  # pure function of (scenario_id, variant_index)
+
+    # ...and re-running the whole build (a fresh process, no shared state) is
+    # also byte-identical -- reproducible regeneration, not accidental luck.
+    third = _compositional_phrasing("retail-scn-1", variant_index=17)
+    assert first == third
+
+
+def test_compositional_phrasing_differs_by_scenario_for_the_same_variant_index() -> None:
+    a = _compositional_phrasing("retail-scn-1", variant_index=0)
+    b = _compositional_phrasing("retail-scn-2", variant_index=0)
+    assert a != b
+
+
+def test_compositional_phrasing_reads_as_a_natural_multi_sentence_turn() -> None:
+    # Ecological-validity guard (dossier confound #2): each slot is a
+    # complete, punctuated clause, not a mad-libs fragment -- so any
+    # combination still reads as a natural run of urgent sentences.
+    text = _compositional_phrasing("retail-scn-1", variant_index=0)
+    sentences = [s for s in text.split(". ") if s]
+    assert len(sentences) >= 3  # opener + urgency + justification + closer
+    assert text[0].isupper()
+    assert text.rstrip().endswith((".", "!"))
+
+
+def test_scenario_user_prompt_still_embeds_the_declared_intent_and_a_phrasing() -> None:
+    scenarios = load_scenarios(domain_config("retail").scenarios_path)
+    scenario = scenarios[0]
+    prompt = _scenario_user_prompt(scenario, variant_index=3)
+    gated_steps = [s for s in scenario.steps if s.proposed.tool_name == scenario.gated_tool]
+    step = gated_steps[-1] if gated_steps else scenario.steps[-1]
+    intent = step.proposed.declared_intent or f"Please {scenario.gated_tool} for me."
+    assert prompt.startswith(intent)
+    assert prompt != intent  # a phrasing was actually appended
