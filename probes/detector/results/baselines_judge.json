@@ -1,0 +1,82 @@
+{
+  "config": {
+    "model": "accounts/fireworks/models/gpt-oss-20b",
+    "seed": 0,
+    "corpus_version": "v2",
+    "decision_threshold": 0.5,
+    "cost_per_call_usd": 0.002,
+    "max_usd": 6.0,
+    "max_calls": 3000,
+    "judge_prompt_sha256": "2dbe2e823a1a020c1424e0a739b523dabda4fdca11a37ad9b1bd7cd6ad861476"
+  },
+  "domains": {
+    "retail": {
+      "n_items": 672,
+      "n_scored": 672,
+      "n_unjudged": 0,
+      "n_pos": 336,
+      "auroc": 0.7371474631519275,
+      "threshold": 0.5,
+      "fpr": 0.24702380952380953,
+      "fnr": 0.34226190476190477,
+      "tp": 221,
+      "fp": 83,
+      "fn": 115,
+      "tn": 253
+    },
+    "airline": {
+      "n_items": 792,
+      "n_scored": 792,
+      "n_unjudged": 0,
+      "n_pos": 396,
+      "auroc": 0.4638876135088256,
+      "threshold": 0.5,
+      "fpr": 0.4292929292929293,
+      "fnr": 0.5378787878787878,
+      "tp": 183,
+      "fp": 170,
+      "fn": 213,
+      "tn": 226
+    },
+    "advice-eligibility": {
+      "n_items": 710,
+      "n_scored": 710,
+      "n_unjudged": 0,
+      "n_pos": 355,
+      "auroc": 0.9859631025590161,
+      "threshold": 0.5,
+      "fpr": 0.028169014084507043,
+      "fnr": 0.0,
+      "tp": 355,
+      "fp": 10,
+      "fn": 0,
+      "tn": 345
+    }
+  },
+  "run_counts": {
+    "retail": {
+      "n_pending": 0,
+      "n_attempted": 0,
+      "n_judged": 0,
+      "n_unjudged": 0
+    },
+    "airline": {
+      "n_pending": 0,
+      "n_attempted": 0,
+      "n_judged": 0,
+      "n_unjudged": 0
+    },
+    "advice-eligibility": {
+      "n_pending": 266,
+      "n_attempted": 266,
+      "n_judged": 266,
+      "n_unjudged": 0
+    }
+  },
+  "budget": {
+    "calls": 2174,
+    "estimated_usd": 4.348,
+    "cap_reason": null,
+    "note": "Run executed as 3 chunked foreground invocations (10-minute Bash tool limit), each resuming from the per-domain on-disk checkpoint, same convention as docs/phase-detector-run2-results.md. This field is the TRUE cumulative total across all chunks (sum of judged checkpoint rows); a single invocation's own BudgetGuard only sees calls made in that process, so the raw per-chunk stderr summaries undercount the total -- see docs/phase-detector-baselines-frozen.md for the chunk-by-chunk breakdown."
+  }
+}

@@ -1,0 +1,320 @@
+{
+  "config": {
+    "seed": 0,
+    "corpus_version": "v2",
+    "l2_grid": [
+      0.3,
+      1.0,
+      3.0,
+      10.0,
+      30.0
+    ],
+    "power_gate": 150,
+    "fixed_vocab": {
+      "max_features": 4096,
+      "min_df": 2
+    },
+    "hashing": {
+      "n_features": 4096
+    }
+  },
+  "domains": {
+    "retail": {
+      "train_n": 1872,
+      "train_pos": 248,
+      "test_n": 332,
+      "test_pos": 88,
+      "full_n": 2748,
+      "full_pos": 336
+    },
+    "airline": {
+      "train_n": 2063,
+      "train_pos": 226,
+      "test_n": 588,
+      "test_pos": 85,
+      "full_n": 3012,
+      "full_pos": 396
+    },
+    "advice-eligibility": {
+      "train_n": 1000,
+      "train_pos": 244,
+      "test_n": 288,
+      "test_pos": 64,
+      "full_n": 1478,
+      "full_pos": 355
+    }
+  },
+  "bow_fixed_vocab": {
+    "retail": {
+      "chosen_l2": 0.3,
+      "retail": {
+        "auroc": 1.0,
+        "ece": 0.01235822320942214,
+        "n": 332,
+        "n_pos": 88,
+        "underpowered": true,
+        "in_domain": true,
+        "eval_set": "test_split"
+      },
+      "airline": {
+        "auroc": 0.5,
+        "ece": 0.1314741035855638,
+        "n": 3012,
+        "n_pos": 396,
+        "underpowered": false,
+        "in_domain": false,
+        "eval_set": "full_unique_corpus"
+      },
+      "advice-eligibility": {
+        "auroc": 0.4986642920747996,
+        "ece": 0.24018944519611737,
+        "n": 1478,
+        "n_pos": 355,
+        "underpowered": false,
+        "in_domain": false,
+        "eval_set": "full_unique_corpus"
+      }
+    },
+    "airline": {
+      "chosen_l2": 3.0,
+      "retail": {
+        "auroc": 0.9831090085287847,
+        "ece": 0.12227064301886112,
+        "n": 2748,
+        "n_pos": 336,
+        "underpowered": false,
+        "in_domain": false,
+        "eval_set": "full_unique_corpus"
+      },
+      "airline": {
+        "auroc": 0.9998128873815928,
+        "ece": 0.06992721859126103,
+        "n": 588,
+        "n_pos": 85,
+        "underpowered": true,
+        "in_domain": true,
+        "eval_set": "test_split"
+      },
+      "advice-eligibility": {
+        "auroc": 0.7045263567155381,
+        "ece": 0.2397361722854846,
+        "n": 1478,
+        "n_pos": 355,
+        "underpowered": false,
+        "in_domain": false,
+        "eval_set": "full_unique_corpus"
+      }
+    },
+    "advice-eligibility": {
+      "chosen_l2": 0.3,
+      "retail": {
+        "auroc": 0.5,
+        "ece": 0.877729257641828,
+        "n": 2748,
+        "n_pos": 336,
+        "underpowered": false,
+        "in_domain": false,
+        "eval_set": "full_unique_corpus"
+      },
+      "airline": {
+        "auroc": 0.7227304582522472,
+        "ece": 0.8684437098393867,
+        "n": 3012,
+        "n_pos": 396,
+        "underpowered": false,
+        "in_domain": false,
+        "eval_set": "full_unique_corpus"
+      },
+      "advice-eligibility": {
+        "auroc": 1.0,
+        "ece": 0.05763062319683909,
+        "n": 288,
+        "n_pos": 64,
+        "underpowered": true,
+        "in_domain": true,
+        "eval_set": "test_split"
+      }
+    }
+  },
+  "bow_hashing": {
+    "retail": {
+      "chosen_l2": 0.3,
+      "retail": {
+        "auroc": 1.0,
+        "ece": 0.014121332008660177,
+        "n": 332,
+        "n_pos": 88,
+        "underpowered": true,
+        "in_domain": true,
+        "eval_set": "test_split"
+      },
+      "airline": {
+        "auroc": 0.5,
+        "ece": 0.1314741035855638,
+        "n": 3012,
+        "n_pos": 396,
+        "underpowered": false,
+        "in_domain": false,
+        "eval_set": "full_unique_corpus"
+      },
+      "advice-eligibility": {
+        "auroc": 0.5,
+        "ece": 0.24018944519611754,
+        "n": 1478,
+        "n_pos": 355,
+        "underpowered": false,
+        "in_domain": false,
+        "eval_set": "full_unique_corpus"
+      }
+    },
+    "airline": {
+      "chosen_l2": 3.0,
+      "retail": {
+        "auroc": 0.9830756929637526,
+        "ece": 0.12227070475700592,
+        "n": 2748,
+        "n_pos": 336,
+        "underpowered": false,
+        "in_domain": false,
+        "eval_set": "full_unique_corpus"
+      },
+      "airline": {
+        "auroc": 0.99766109226991,
+        "ece": 0.05899140867346657,
+        "n": 588,
+        "n_pos": 85,
+        "underpowered": true,
+        "in_domain": true,
+        "eval_set": "test_split"
+      },
+      "advice-eligibility": {
+        "auroc": 0.6617285189319353,
+        "ece": 0.24017190498675178,
+        "n": 1478,
+        "n_pos": 355,
+        "underpowered": false,
+        "in_domain": false,
+        "eval_set": "full_unique_corpus"
+      }
+    },
+    "advice-eligibility": {
+      "chosen_l2": 0.3,
+      "retail": {
+        "auroc": 0.5,
+        "ece": 0.877729257641828,
+        "n": 2748,
+        "n_pos": 336,
+        "underpowered": false,
+        "in_domain": false,
+        "eval_set": "full_unique_corpus"
+      },
+      "airline": {
+        "auroc": 0.5,
+        "ece": 0.868525896414249,
+        "n": 3012,
+        "n_pos": 396,
+        "underpowered": false,
+        "in_domain": false,
+        "eval_set": "full_unique_corpus"
+      },
+      "advice-eligibility": {
+        "auroc": 1.0,
+        "ece": 0.04440397426541247,
+        "n": 288,
+        "n_pos": 64,
+        "underpowered": true,
+        "in_domain": true,
+        "eval_set": "test_split"
+      }
+    }
+  },
+  "majority_class": {
+    "retail": {
+      "retail": {
+        "majority_label": false,
+        "auroc": NaN,
+        "accuracy": 0.7349397590361446,
+        "n": 332,
+        "n_pos": 88,
+        "in_domain": true,
+        "eval_set": "test_split"
+      },
+      "airline": {
+        "majority_label": false,
+        "auroc": NaN,
+        "accuracy": 0.8685258964143426,
+        "n": 3012,
+        "n_pos": 396,
+        "in_domain": false,
+        "eval_set": "full_unique_corpus"
+      },
+      "advice-eligibility": {
+        "majority_label": false,
+        "auroc": NaN,
+        "accuracy": 0.7598105548037889,
+        "n": 1478,
+        "n_pos": 355,
+        "in_domain": false,
+        "eval_set": "full_unique_corpus"
+      }
+    },
+    "airline": {
+      "retail": {
+        "majority_label": false,
+        "auroc": NaN,
+        "accuracy": 0.8777292576419214,
+        "n": 2748,
+        "n_pos": 336,
+        "in_domain": false,
+        "eval_set": "full_unique_corpus"
+      },
+      "airline": {
+        "majority_label": false,
+        "auroc": NaN,
+        "accuracy": 0.8554421768707483,
+        "n": 588,
+        "n_pos": 85,
+        "in_domain": true,
+        "eval_set": "test_split"
+      },
+      "advice-eligibility": {
+        "majority_label": false,
+        "auroc": NaN,
+        "accuracy": 0.7598105548037889,
+        "n": 1478,
+        "n_pos": 355,
+        "in_domain": false,
+        "eval_set": "full_unique_corpus"
+      }
+    },
+    "advice-eligibility": {
+      "retail": {
+        "majority_label": false,
+        "auroc": NaN,
+        "accuracy": 0.8777292576419214,
+        "n": 2748,
+        "n_pos": 336,
+        "in_domain": false,
+        "eval_set": "full_unique_corpus"
+      },
+      "airline": {
+        "majority_label": false,
+        "auroc": NaN,
+        "accuracy": 0.8685258964143426,
+        "n": 3012,
+        "n_pos": 396,
+        "in_domain": false,
+        "eval_set": "full_unique_corpus"
+      },
+      "advice-eligibility": {
+        "majority_label": false,
+        "auroc": NaN,
+        "accuracy": 0.7777777777777778,
+        "n": 288,
+        "n_pos": 64,
+        "in_domain": true,
+        "eval_set": "test_split"
+      }
+    }
+  }
+}
