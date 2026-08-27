@@ -42,6 +42,11 @@ from typing import Any
 from langchain_core.messages import AIMessage
 
 from bossyk_sandbox.domains import domain_config
+from bossyk_sandbox.interp.corpus_assembly import (
+    DEFAULT_CORPUS_VERSION,
+    MixedCorpusVersionError,
+    corpus_data_dir,
+)
 from bossyk_sandbox.interp.datagen_driver import (
     CapConfig,
     GenerationSummary,
@@ -156,14 +161,56 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "--checkpoint",
         type=Path,
         default=None,
-        help="defaults to probes/detector/data/<domain>/decisions.jsonl",
+        help=(
+            "defaults to probes/detector/data/<domain>/decisions.jsonl for "
+            "--corpus-version v1, or probes/detector/data/<domain>/<version>/"
+            "decisions.jsonl for any other --corpus-version"
+        ),
     )
     parser.add_argument(
         "--stub",
         action="store_true",
         help="zero-cost: replay each scenario's own authored tool-call script, not a live agent",
     )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=0.0,
+        help=(
+            "sampling temperature for the real weakened-agent LLM (hermetic diversity "
+            "fix). Default 0.0 is run-1's actual value -- byte-identical when unset."
+        ),
+    )
+    parser.add_argument(
+        "--top-p",
+        type=float,
+        default=None,
+        help="nucleus sampling top_p for the real weakened-agent LLM. Unset by default.",
+    )
+    parser.add_argument(
+        "--corpus-version",
+        default=DEFAULT_CORPUS_VERSION,
+        help=(
+            "corpus version stamped on every generated row and the default checkpoint's "
+            f"subdirectory ({DEFAULT_CORPUS_VERSION!r} is run-1's implicit, flat-path layout)"
+        ),
+    )
     return parser
+
+
+def _session_kwargs_from_args(args: argparse.Namespace) -> dict[str, Any]:
+    """The sampling-param kwargs forwarded to `build_session_fn` (hermetic
+    diversity fix, item 1). `top_p` is omitted entirely when unset -- not
+    passed as an explicit `None` -- so a builder that doesn't (yet) accept a
+    `top_p` kwarg at all still works with only `--temperature` in play."""
+    kwargs: dict[str, Any] = {"temperature": args.temperature}
+    if args.top_p is not None:
+        kwargs["top_p"] = args.top_p
+    return kwargs
+
+
+def _default_checkpoint_path(domain: str, corpus_version: str) -> Path:
+    return corpus_data_dir(DATA_ROOT, domain, corpus_version) / "decisions.jsonl"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -178,7 +225,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    checkpoint_path = args.checkpoint or (DATA_ROOT / args.domain / "decisions.jsonl")
+    checkpoint_path = args.checkpoint or _default_checkpoint_path(args.domain, args.corpus_version)
     tasks = build_scenario_tasks(args.domain, variants_per_scenario=args.variants_per_scenario)
     make_decisions = _load_make_decisions()  # drive_session is reused either way
 
@@ -192,29 +239,36 @@ def main(argv: list[str] | None = None) -> int:
 
         generator_label = "live"
 
-    summary: GenerationSummary = generate_corpus(
-        tasks,
-        build_session_fn=_BUILDERS[args.domain],
-        llm_factory=llm_factory,
-        drive_session_fn=make_decisions.drive_session,
-        checkpoint_path=checkpoint_path,
-        caps=CapConfig(
-            max_usd=args.max_usd,
-            max_calls=args.max_calls,
-            max_wall_min=args.max_wall_min,
-            cost_per_call_usd=args.cost_per_call_usd,
-        ),
-        workers=args.workers,
-        task_timeout_sec=args.task_timeout_sec,
-        generator_label=generator_label,
-    )
+    try:
+        summary: GenerationSummary = generate_corpus(
+            tasks,
+            build_session_fn=_BUILDERS[args.domain],
+            llm_factory=llm_factory,
+            drive_session_fn=make_decisions.drive_session,
+            checkpoint_path=checkpoint_path,
+            caps=CapConfig(
+                max_usd=args.max_usd,
+                max_calls=args.max_calls,
+                max_wall_min=args.max_wall_min,
+                cost_per_call_usd=args.cost_per_call_usd,
+            ),
+            workers=args.workers,
+            task_timeout_sec=args.task_timeout_sec,
+            generator_label=generator_label,
+            session_kwargs=_session_kwargs_from_args(args),
+            corpus_version=args.corpus_version,
+        )
+    except MixedCorpusVersionError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
 
     print(
         f"domain={summary.domain} total={summary.total_tasks} already_done={summary.already_done} "
         f"completed={summary.completed} failed={summary.failed} timed_out={summary.timed_out} "
         f"calls={summary.calls_made} est_usd={summary.estimated_usd:.4f} "
         f"elapsed_min={summary.elapsed_min:.2f} cap_hit={summary.cap_hit} "
-        f"decisions={summary.decisions_written} violations={summary.violations_written}"
+        f"decisions={summary.decisions_written} violations={summary.violations_written} "
+        f"corpus_version={summary.corpus_version}"
     )
     print(f"wrote {checkpoint_path}")
     return 0
