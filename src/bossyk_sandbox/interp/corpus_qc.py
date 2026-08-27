@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from bossyk_sandbox.interp.corpus_assembly import (
+    DEFAULT_CORPUS_VERSION,
     Record,
     jaccard_similarity,
     near_duplicate_comparison_text,
@@ -195,12 +196,20 @@ def build_manifest(
     cap_hit: str | None,
     near_dup_rate_within_domain: float,
     generated_at: str,
+    corpus_version: str = DEFAULT_CORPUS_VERSION,
+    temperature: float = 0.0,
+    top_p: float | None = None,
 ) -> dict[str, Any]:
     """The per-corpus provenance/honesty record (bossyk convention): every
     number a downstream reader needs to judge whether this corpus is fit for
     training, in one place. `cap_was_hit` is a derived, unambiguous bool
     alongside the raw `cap_hit` reason string, so a reader doesn't have to
-    remember that `None` means "no cap hit"."""
+    remember that `None` means "no cap hit".
+
+    `corpus_version`/`temperature`/`top_p` (hermetic diversity fix,
+    phase-detector-training-step2-datagen.md Issues & Fixes) default to
+    run-1's actual values -- `DEFAULT_CORPUS_VERSION` ("v1") and temperature
+    0.0/top_p unset -- so an existing call site is byte-identical."""
     return {
         "domain": domain,
         "generator_model": generator_model,
@@ -212,4 +221,7 @@ def build_manifest(
         "cap_hit": cap_hit,
         "cap_was_hit": cap_hit is not None,
         "near_dup_rate_within_domain": near_dup_rate_within_domain,
+        "corpus_version": corpus_version,
+        "temperature": temperature,
+        "top_p": top_p,
     }

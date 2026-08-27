@@ -181,3 +181,43 @@ def test_build_manifest_reports_cap_hit_honestly() -> None:
     )
     assert manifest["cap_hit"] == "usd"
     assert manifest["cap_was_hit"] is True
+
+
+def test_build_manifest_corpus_version_and_sampling_params_default_to_v1_and_temp_0() -> None:
+    # Byte-identical prior behaviour when the new hermetic-diversity-fix
+    # fields aren't passed: corpus_version reads as "v1" (run-1's implicit
+    # unversioned label), temperature reads as 0.0 (run-1's actual value).
+    manifest = build_manifest(
+        domain="retail",
+        generator_model="stub-test",
+        serving_path="stub",
+        seed=0,
+        counts={"train": 8, "val": 1, "test": 1},
+        class_balance={"train": 0.25, "val": 0.0, "test": 1.0},
+        cap_hit=None,
+        near_dup_rate_within_domain=0.0,
+        generated_at="2026-08-26T00:00:00+00:00",
+    )
+    assert manifest["corpus_version"] == "v1"
+    assert manifest["temperature"] == 0.0
+    assert manifest["top_p"] is None
+
+
+def test_build_manifest_records_the_given_corpus_version_and_sampling_params() -> None:
+    manifest = build_manifest(
+        domain="retail",
+        generator_model="gpt-oss-20b",
+        serving_path="fireworks",
+        seed=0,
+        counts={"train": 8, "val": 1, "test": 1},
+        class_balance={"train": 0.25, "val": 0.0, "test": 1.0},
+        cap_hit=None,
+        near_dup_rate_within_domain=0.0,
+        generated_at="2026-08-26T00:00:00+00:00",
+        corpus_version="v2",
+        temperature=0.9,
+        top_p=0.95,
+    )
+    assert manifest["corpus_version"] == "v2"
+    assert manifest["temperature"] == 0.9
+    assert manifest["top_p"] == 0.95
