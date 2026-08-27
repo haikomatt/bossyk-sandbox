@@ -8,13 +8,20 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from bossyk_sandbox.interp.corpus_assembly import (
+    DEFAULT_CORPUS_VERSION,
+    MixedCorpusVersionError,
+    assert_single_corpus_version,
+    corpus_data_dir,
     dedupe,
     dedupe_exact,
     dedupe_near_duplicates,
     default_group_fields,
     load_decisions_jsonl,
     near_duplicate_comparison_text,
+    record_corpus_version,
     stratified_group_split,
 )
 
@@ -269,3 +276,56 @@ def test_stratified_group_split_empty_input() -> None:
     splits, report = stratified_group_split([])
     assert splits == {"train": [], "val": [], "test": []}
     assert report.n_groups == 0
+
+
+# --- corpus versioning (hermetic diversity fix, item 3) ---------------------
+
+
+def test_record_corpus_version_missing_key_reads_as_default() -> None:
+    # run-1's already-committed rows predate the field entirely.
+    assert record_corpus_version({"prompt": "x"}) == DEFAULT_CORPUS_VERSION == "v1"
+
+
+def test_record_corpus_version_reads_the_explicit_value() -> None:
+    assert record_corpus_version({"corpus_version": "v2"}) == "v2"
+
+
+def test_assert_single_corpus_version_empty_records_returns_default() -> None:
+    assert assert_single_corpus_version([]) == DEFAULT_CORPUS_VERSION
+
+
+def test_assert_single_corpus_version_all_agree() -> None:
+    records = [_row("s1", "a"), _row("s2", "b")]  # neither carries corpus_version
+    assert assert_single_corpus_version(records) == DEFAULT_CORPUS_VERSION
+
+    versioned = [
+        {**_row("s1", "a"), "corpus_version": "v2"},
+        {**_row("s2", "b"), "corpus_version": "v2"},
+    ]
+    assert assert_single_corpus_version(versioned) == "v2"
+
+
+def test_assert_single_corpus_version_raises_when_mixed() -> None:
+    records = [
+        {**_row("s1", "a"), "corpus_version": "v1"},
+        {**_row("s2", "b"), "corpus_version": "v2"},
+    ]
+    with pytest.raises(MixedCorpusVersionError):
+        assert_single_corpus_version(records)
+
+
+def test_assert_single_corpus_version_missing_key_counts_as_v1_for_mixing() -> None:
+    # A row with NO corpus_version key mixed with an explicit "v2" row is
+    # still a mix (implicit v1 vs explicit v2), not silently accepted.
+    records = [_row("s1", "a"), {**_row("s2", "b"), "corpus_version": "v2"}]
+    with pytest.raises(MixedCorpusVersionError):
+        assert_single_corpus_version(records)
+
+
+def test_corpus_data_dir_v1_is_the_flat_legacy_path(tmp_path: Path) -> None:
+    assert corpus_data_dir(tmp_path, "retail") == tmp_path / "retail"
+    assert corpus_data_dir(tmp_path, "retail", "v1") == tmp_path / "retail"
+
+
+def test_corpus_data_dir_other_versions_get_their_own_subdirectory(tmp_path: Path) -> None:
+    assert corpus_data_dir(tmp_path, "retail", "v2") == tmp_path / "retail" / "v2"
