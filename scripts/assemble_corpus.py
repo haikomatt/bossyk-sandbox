@@ -12,9 +12,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from bossyk_sandbox.interp.corpus_assembly import (
+    DEFAULT_CORPUS_VERSION,
+    MixedCorpusVersionError,
+    assert_single_corpus_version,
+    corpus_data_dir,
     dedupe,
     load_decisions_jsonl,
     stratified_group_split,
@@ -33,15 +38,46 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--near-dup-threshold", type=float, default=0.9)
     parser.add_argument("--shingle-size", type=int, default=5)
+    parser.add_argument(
+        "--corpus-version",
+        default=DEFAULT_CORPUS_VERSION,
+        help=(
+            "corpus version this run is assembling (hermetic diversity fix, item 3). "
+            "Also picks the default decisions-path/out-dir subdirectory; "
+            f"{DEFAULT_CORPUS_VERSION!r} is run-1's implicit, flat-path layout"
+        ),
+    )
     return parser
+
+
+def _default_paths(data_root: Path, domain: str, corpus_version: str) -> tuple[Path, Path]:
+    domain_dir = corpus_data_dir(data_root, domain, corpus_version)
+    return domain_dir / "decisions.jsonl", domain_dir
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_arg_parser().parse_args(argv)
-    decisions_path = args.decisions_path or (DATA_ROOT / args.domain / "decisions.jsonl")
-    out_dir = args.out_dir or (DATA_ROOT / args.domain)
+    default_decisions_path, default_out_dir = _default_paths(
+        DATA_ROOT, args.domain, args.corpus_version
+    )
+    decisions_path = args.decisions_path or default_decisions_path
+    out_dir = args.out_dir or default_out_dir
 
     records = load_decisions_jsonl(decisions_path)
+    try:
+        detected_version = assert_single_corpus_version(records)
+    except MixedCorpusVersionError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if records and detected_version != args.corpus_version:
+        print(
+            f"error: {decisions_path} is corpus_version={detected_version!r} but "
+            f"--corpus-version={args.corpus_version!r} was requested; refusing to "
+            "silently mix corpus versions",
+            file=sys.stderr,
+        )
+        return 1
+
     deduped, dedupe_report = dedupe(
         records, near_dup_threshold=args.near_dup_threshold, shingle_size=args.shingle_size
     )

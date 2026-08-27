@@ -17,11 +17,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
 from bossyk_sandbox.interp.corpus_assembly import (
+    DEFAULT_CORPUS_VERSION,
+    MixedCorpusVersionError,
     Record,
+    assert_single_corpus_version,
+    corpus_data_dir,
     dedupe_near_duplicates,
     default_group_fields,
     load_decisions_jsonl,
@@ -54,20 +59,59 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--cap-hit", default=None, help="propagate the generation run's cap_hit, if any"
     )
+    parser.add_argument(
+        "--corpus-version",
+        default=DEFAULT_CORPUS_VERSION,
+        help=(
+            "corpus version this run is QC'ing (hermetic diversity fix, item 3). "
+            "Also picks each domain's data subdirectory; "
+            f"{DEFAULT_CORPUS_VERSION!r} is run-1's implicit, flat-path layout"
+        ),
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=0.0,
+        help="the generation run's sampling temperature, recorded in the manifest",
+    )
+    parser.add_argument(
+        "--top-p",
+        type=float,
+        default=None,
+        help="the generation run's top_p (if any), recorded in the manifest",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_arg_parser().parse_args(argv)
 
+    domain_dirs = {
+        domain: corpus_data_dir(args.data_root, domain, args.corpus_version)
+        for domain in args.domains
+    }
+
     splits_by_domain: dict[str, dict[str, list[Record]]] = {}
     all_records: list[Record] = []
     for domain in args.domains:
-        domain_dir = args.data_root / domain
+        domain_dir = domain_dirs[domain]
         splits = {name: load_decisions_jsonl(domain_dir / f"{name}.jsonl") for name in SPLIT_NAMES}
         splits_by_domain[domain] = splits
-        for rows in splits.values():
-            all_records.extend(rows)
+        domain_records = [row for rows in splits.values() for row in rows]
+        try:
+            detected_version = assert_single_corpus_version(domain_records)
+        except MixedCorpusVersionError as exc:
+            print(f"error: domain {domain!r}: {exc}", file=sys.stderr)
+            return 1
+        if domain_records and detected_version != args.corpus_version:
+            print(
+                f"error: domain {domain!r} at {domain_dir} is corpus_version="
+                f"{detected_version!r} but --corpus-version={args.corpus_version!r} was "
+                "requested; refusing to silently mix corpus versions",
+                file=sys.stderr,
+            )
+            return 1
+        all_records.extend(domain_records)
 
     combined_splits: dict[str, list[Record]] = {name: [] for name in SPLIT_NAMES}
     for splits in splits_by_domain.values():
@@ -97,7 +141,15 @@ def main(argv: list[str] | None = None) -> int:
         audit_sample = export_hand_audit_sample(
             domain_records, n=args.audit_n, seed=args.audit_seed
         )
-        audit_dir = args.data_root / "audit"
+        # "audit" is a pseudo-domain (not a real per-domain data directory),
+        # so it isn't routed through `corpus_data_dir` -- but it gets the
+        # same v1-flat / versioned-subdirectory treatment for the same
+        # reason: a run-2 audit sample must never silently overwrite run-1's.
+        audit_dir = (
+            args.data_root / "audit"
+            if args.corpus_version == DEFAULT_CORPUS_VERSION
+            else args.data_root / "audit" / args.corpus_version
+        )
         audit_dir.mkdir(parents=True, exist_ok=True)
         audit_path = audit_dir / f"{domain}_sample50.jsonl"
         audit_path.write_text(
@@ -125,8 +177,11 @@ def main(argv: list[str] | None = None) -> int:
             cap_hit=args.cap_hit,
             near_dup_rate_within_domain=near_dup_rate,
             generated_at=generated_at,
+            corpus_version=args.corpus_version,
+            temperature=args.temperature,
+            top_p=args.top_p,
         )
-        manifest_path = args.data_root / domain / "manifest.json"
+        manifest_path = domain_dirs[domain] / "manifest.json"
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         manifest_path.write_text(json.dumps(manifest, indent=2))
 
