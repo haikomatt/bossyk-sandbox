@@ -48,6 +48,28 @@ def decision_text(row: Record) -> str:
     return f"{row['prompt']}\n\nACTION:\n{row['action']}"
 
 
+def encode_keeping_tail(tokenizer: Any, texts: list[str], *, max_length: int, **kwargs: Any) -> Any:
+    """Tokenize `texts` via `tokenizer(...)`, forcing LEFT truncation first
+    (Amendment 4's fix, `a-fine-tuned-violation-detector-transfers-cross-
+    domain.md`). Root cause: `HFTrainBackend` tokenized at max_length=512
+    with RIGHT truncation (HF's default), but retail/airline decision texts
+    run ~1,700-2,000 tokens with ALL label-bearing content (the user
+    request + the action taken) at the TAIL -- the models never saw the
+    label's signal and 12/18 checkpoints learned near-constant scores
+    (verified against the invalid run, commits 243967e/4e4fa5b).
+    advice-eligibility texts (~200-300 words) fit within max_length either
+    way, so this is a no-op for that domain by construction (Amendment 4c).
+
+    `truncation_side` is a tokenizer ATTRIBUTE, not a `__call__` kwarg, so
+    it has to be set on the tokenizer object itself before every truncating
+    encode call -- this function is the single choke point every call site
+    (train/val/score) routes through, so the fix cannot be forgotten at one
+    of them. No other change to the tokenization protocol: same
+    `max_length`, same `truncation=True`, only the side flips."""
+    tokenizer.truncation_side = "left"
+    return tokenizer(texts, truncation=True, max_length=max_length, **kwargs)
+
+
 def class_weights(y: list[bool]) -> dict[bool, float]:
     """Inverse-frequency class weights for imbalance handling (brief: "Class
     imbalance via class weighting (do not resample the data)"). The
@@ -376,11 +398,11 @@ class HFTrainBackend:
 
         train_texts = [decision_text(r) for r in train_rows]
         train_labels = [int(bool(r["is_violation"])) for r in train_rows]
-        train_enc = tokenizer(
+        train_enc = encode_keeping_tail(
+            tokenizer,
             train_texts,
-            truncation=True,
-            padding=True,
             max_length=self.max_length,
+            padding=True,
             return_tensors="pt",
         )
         train_ds = _Dataset(train_enc, train_labels)
@@ -389,11 +411,11 @@ class HFTrainBackend:
         if val_rows:
             val_texts = [decision_text(r) for r in val_rows]
             val_labels = [int(bool(r["is_violation"])) for r in val_rows]
-            val_enc = tokenizer(
+            val_enc = encode_keeping_tail(
+                tokenizer,
                 val_texts,
-                truncation=True,
-                padding=True,
                 max_length=self.max_length,
+                padding=True,
                 return_tensors="pt",
             )
             eval_ds = _Dataset(val_enc, val_labels)
@@ -499,11 +521,11 @@ class HFTrainBackend:
         with torch.no_grad():
             for i in range(0, len(texts), self.eval_batch_size):
                 batch = texts[i : i + self.eval_batch_size]
-                enc = tokenizer(
+                enc = encode_keeping_tail(
+                    tokenizer,
                     batch,
-                    truncation=True,
-                    padding=True,
                     max_length=self.max_length,
+                    padding=True,
                     return_tensors="pt",
                 ).to(device)
                 out = model(**enc)

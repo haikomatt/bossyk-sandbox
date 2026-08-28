@@ -13,6 +13,7 @@ from bossyk_sandbox.detector.train_backend import (
     TrainConfig,
     class_weights,
     decision_text,
+    encode_keeping_tail,
     run_training_cell,
 )
 
@@ -175,3 +176,67 @@ def test_stub_backend_score_separates_violation_from_compliant() -> None:
     viol_scores = [s for s, r in zip(scores, rows, strict=True) if r["is_violation"]]
     compliant_scores = [s for s, r in zip(scores, rows, strict=True) if not r["is_violation"]]
     assert min(viol_scores) > max(compliant_scores)
+
+
+# --- Amendment 4: LEFT-truncation fix ---------------------------------
+#
+# Root cause (see vault dossier
+# a-fine-tuned-violation-detector-transfers-cross-domain.md, Amendment 4):
+# HFTrainBackend tokenized at max_length=512 with RIGHT truncation (HF's
+# default), but retail/airline decision texts run ~1,700-2,000 tokens with
+# ALL label-bearing content (the user request + the action taken) at the
+# TAIL -- so the models never saw the label's signal and 12/18 checkpoints
+# learned near-constant scores. `encode_keeping_tail` is the single choke
+# point HFTrainBackend routes every truncating encode call through
+# (train/val/score) to force `truncation_side="left"` instead.
+#
+# `_FakeTokenizer` is a whitespace-level stand-in for a real HF
+# `PreTrainedTokenizerBase`, just enough to exercise the one thing under
+# test -- `truncation_side` semantics -- without needing torch/transformers
+# installed (this module's hermetic-test convention, matching
+# `StubTrainBackend` for the rest of the pipeline).
+class _FakeTokenizer:
+    truncation_side = "right"  # HF's real default -- what the pre-fix code left implicit
+
+    def __call__(self, texts: list[str], *, truncation: bool, max_length: int, **_: Any) -> Any:
+        out = []
+        for t in texts:
+            toks = t.split()
+            if truncation and len(toks) > max_length:
+                toks = toks[-max_length:] if self.truncation_side == "left" else toks[:max_length]
+            out.append(toks)
+        return {"input_ids": out}
+
+
+def _overlength_text_with_distinctive_tail(max_length: int) -> str:
+    body = " ".join(f"filler{i}" for i in range(max_length + 200))
+    return f"{body} DISTINCTIVE_TAIL_MARKER"
+
+
+def test_encode_keeping_tail_forces_truncation_side_left() -> None:
+    tok = _FakeTokenizer()
+    assert tok.truncation_side == "right"
+    encode_keeping_tail(tok, ["a b c"], max_length=10)
+    assert tok.truncation_side == "left"
+
+
+def test_encode_keeping_tail_retains_distinctive_tail_tokens_over_length() -> None:
+    tok = _FakeTokenizer()
+    text = _overlength_text_with_distinctive_tail(512)
+    out = encode_keeping_tail(tok, [text], max_length=512)
+    ids = out["input_ids"][0]
+    assert len(ids) == 512
+    assert "DISTINCTIVE_TAIL_MARKER" in ids
+
+
+def test_right_truncation_would_have_dropped_the_tail_marker() -> None:
+    # Documents the bug being fixed: RIGHT truncation (the pre-fix
+    # behaviour / HF default) on the same over-length input drops the
+    # label-bearing tail entirely -- this is the failure mode Amendment 4
+    # diagnosed in the invalid run.
+    tok = _FakeTokenizer()
+    text = _overlength_text_with_distinctive_tail(512)
+    out = tok([text], truncation=True, max_length=512)
+    ids = out["input_ids"][0]
+    assert len(ids) == 512
+    assert "DISTINCTIVE_TAIL_MARKER" not in ids
