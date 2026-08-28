@@ -1,0 +1,1206 @@
+{
+  "generated_at": "2026-08-28T11:22:48.499625+00:00",
+  "corpus_version": "v2",
+  "bootstrap": {
+    "n_resamples": 10000,
+    "seed": 20260828,
+    "hierarchy": "scenario (with replacement, within domain) -> decision (with replacement, within scenario)",
+    "decision_bearing": "hierarchical"
+  },
+  "bow_regen_check": {
+    "passed": true,
+    "n_cells_checked": 18,
+    "n_mismatches": 0,
+    "tolerance": 1e-09
+  },
+  "base_rates": {
+    "retail": {
+      "full_unique_corpus": {
+        "n": 2748,
+        "n_pos": 336,
+        "rate": 0.1222707423580786,
+        "ci_lower_95": 0.1105467821726212,
+        "ci_upper_95": 0.13504929192327783,
+        "gate_pass_ge_150_pos": true
+      },
+      "test_split": {
+        "n": 332,
+        "n_pos": 88,
+        "rate": 0.26506024096385544,
+        "ci_lower_95": 0.22046708993794595,
+        "ci_upper_95": 0.3150280197254252,
+        "gate_pass_ge_150_pos": false
+      }
+    },
+    "airline": {
+      "full_unique_corpus": {
+        "n": 3012,
+        "n_pos": 396,
+        "rate": 0.13147410358565736,
+        "ci_lower_95": 0.11987416244795845,
+        "ci_upper_95": 0.1440128719626294,
+        "gate_pass_ge_150_pos": true
+      },
+      "test_split": {
+        "n": 588,
+        "n_pos": 85,
+        "rate": 0.1445578231292517,
+        "ci_lower_95": 0.11844013236272691,
+        "ci_upper_95": 0.1752896431198683,
+        "gate_pass_ge_150_pos": false
+      }
+    },
+    "advice-eligibility": {
+      "full_unique_corpus": {
+        "n": 1478,
+        "n_pos": 355,
+        "rate": 0.2401894451962111,
+        "ci_lower_95": 0.21910166053295302,
+        "ci_upper_95": 0.2626242721378715,
+        "gate_pass_ge_150_pos": true
+      },
+      "test_split": {
+        "n": 288,
+        "n_pos": 64,
+        "rate": 0.2222222222222222,
+        "ci_lower_95": 0.17804107313674508,
+        "ci_upper_95": 0.27371605332998084,
+        "gate_pass_ge_150_pos": false
+      }
+    }
+  },
+  "base_rate_gate_pass_overall": true,
+  "families": {
+    "deberta": {
+      "matrix": {
+        "retail": {
+          "retail": {
+            "in_domain": true,
+            "eval_set": "test_split",
+            "n": 332,
+            "n_pos": 88,
+            "underpowered": true,
+            "detector": {
+              "per_seed_auroc": {
+                "0": 0.48593517138599107,
+                "1": 0.48593517138599107,
+                "2": 0.5140648286140089
+              },
+              "mean_auroc": 0.4953117237953304,
+              "per_seed_ece_raw_pre_temperature": {
+                "0": 0.18207011643797794,
+                "1": 0.16893046230758563,
+                "2": 0.19084038229410988
+              },
+              "mean_ece_raw_pre_temperature": 0.18061365367989116,
+              "per_seed_ece_calibrated_post_temperature": {
+                "0": 0.2509000461335627,
+                "1": 0.17597532834326332,
+                "2": 0.236731928279635
+              },
+              "mean_ece_calibrated_post_temperature": 0.22120243425215366
+            },
+            "bow_fixed_vocab": {
+              "auroc": 1.0,
+              "ece": 0.01235822320942214
+            },
+            "bow_hashing": {
+              "auroc": 1.0,
+              "ece": 0.014121332008660177
+            },
+            "point_gap_vs_bow_fixed": -0.5046882762046696,
+            "point_gap_vs_bow_hashing": -0.5046882762046696
+          },
+          "airline": {
+            "in_domain": false,
+            "eval_set": "full_unique_corpus",
+            "n": 3012,
+            "n_pos": 396,
+            "underpowered": false,
+            "detector": {
+              "per_seed_auroc": {
+                "0": 0.49923547400611623,
+                "1": 0.49923547400611623,
+                "2": 0.5007645259938838
+              },
+              "mean_auroc": 0.4997451580020387,
+              "per_seed_ece_raw_pre_temperature": {
+                "0": 0.3182776981167429,
+                "1": 0.30286066921862237,
+                "2": 0.3238490304218202
+              },
+              "mean_ece_raw_pre_temperature": 0.3149957992523951,
+              "per_seed_ece_calibrated_post_temperature": {
+                "0": 0.114030898718598,
+                "1": 0.04138927970290876,
+                "2": 0.1043991044383964
+              },
+              "mean_ece_calibrated_post_temperature": 0.08660642761996773
+            },
+            "bow_fixed_vocab": {
+              "auroc": 0.5,
+              "ece": 0.1314741035855638
+            },
+            "bow_hashing": {
+              "auroc": 0.5,
+              "ece": 0.1314741035855638
+            },
+            "point_gap_vs_bow_fixed": -0.0002548419979612748,
+            "point_gap_vs_bow_hashing": -0.0002548419979612748
+          },
+          "advice-eligibility": {
+            "in_domain": false,
+            "eval_set": "full_unique_corpus",
+            "n": 1478,
+            "n_pos": 355,
+            "underpowered": false,
+            "detector": {
+              "per_seed_auroc": {
+                "0": 0.6440444985137898,
+                "1": 0.5526958724743832,
+                "2": 0.28437033599638795
+              },
+              "mean_auroc": 0.4937035689948536,
+              "per_seed_ece_raw_pre_temperature": {
+                "0": 0.21017270591740023,
+                "1": 0.19512920621019808,
+                "2": 0.2112928610159609
+              },
+              "mean_ece_raw_pre_temperature": 0.2055315910478531,
+              "per_seed_ece_calibrated_post_temperature": {
+                "0": 0.2218767166351244,
+                "1": 0.14718951398390473,
+                "2": 0.22014480399727515
+              },
+              "mean_ece_calibrated_post_temperature": 0.19640367820543472
+            },
+            "bow_fixed_vocab": {
+              "auroc": 0.4986642920747996,
+              "ece": 0.24018944519611737
+            },
+            "bow_hashing": {
+              "auroc": 0.5,
+              "ece": 0.24018944519611754
+            },
+            "point_gap_vs_bow_fixed": -0.0049607230799459945,
+            "point_gap_vs_bow_hashing": -0.0062964310051463745
+          }
+        },
+        "airline": {
+          "retail": {
+            "in_domain": false,
+            "eval_set": "full_unique_corpus",
+            "n": 2748,
+            "n_pos": 336,
+            "underpowered": false,
+            "detector": {
+              "per_seed_auroc": {
+                "0": 0.492241175076996,
+                "1": 0.492241175076996,
+                "2": 0.492241175076996
+              },
+              "mean_auroc": 0.492241175076996,
+              "per_seed_ece_raw_pre_temperature": {
+                "0": 0.36685448649051156,
+                "1": 0.36948207127110705,
+                "2": 0.3704762797640901
+              },
+              "mean_ece_raw_pre_temperature": 0.36893761250856955,
+              "per_seed_ece_calibrated_post_temperature": {
+                "0": 0.17306042002023592,
+                "1": 0.21858917431514657,
+                "2": 0.23667259403068908
+              },
+              "mean_ece_calibrated_post_temperature": 0.2094407294553572
+            },
+            "bow_fixed_vocab": {
+              "auroc": 0.9831090085287847,
+              "ece": 0.12227064301886112
+            },
+            "bow_hashing": {
+              "auroc": 0.9830756929637526,
+              "ece": 0.12227070475700592
+            },
+            "point_gap_vs_bow_fixed": -0.4908678334517887,
+            "point_gap_vs_bow_hashing": -0.49083451788675664
+          },
+          "airline": {
+            "in_domain": true,
+            "eval_set": "test_split",
+            "n": 588,
+            "n_pos": 85,
+            "underpowered": true,
+            "detector": {
+              "per_seed_auroc": {
+                "0": 0.48807157057654077,
+                "1": 0.5119284294234593,
+                "2": 0.48807157057654077
+              },
+              "mean_auroc": 0.4960238568588469,
+              "per_seed_ece_raw_pre_temperature": {
+                "0": 0.34768721598890834,
+                "1": 0.348103345543808,
+                "2": 0.3494173368861761
+              },
+              "mean_ece_raw_pre_temperature": 0.34840263280629746,
+              "per_seed_ece_calibrated_post_temperature": {
+                "0": 0.20520123448252875,
+                "1": 0.2128071874680566,
+                "2": 0.23728349883832972
+              },
+              "mean_ece_calibrated_post_temperature": 0.21843064026297168
+            },
+            "bow_fixed_vocab": {
+              "auroc": 0.9998128873815928,
+              "ece": 0.06992721859126103
+            },
+            "bow_hashing": {
+              "auroc": 0.99766109226991,
+              "ece": 0.05899140867346657
+            },
+            "point_gap_vs_bow_fixed": -0.5037890305227459,
+            "point_gap_vs_bow_hashing": -0.501637235411063
+          },
+          "advice-eligibility": {
+            "in_domain": false,
+            "eval_set": "full_unique_corpus",
+            "n": 1478,
+            "n_pos": 355,
+            "underpowered": false,
+            "detector": {
+              "per_seed_auroc": {
+                "0": 0.2937604254198387,
+                "1": 0.271438425745927,
+                "2": 0.7654246046179123
+              },
+              "mean_auroc": 0.4435411519278927,
+              "per_seed_ece_raw_pre_temperature": {
+                "0": 0.2451495895919651,
+                "1": 0.24743852954369527,
+                "2": 0.2551709250673735
+              },
+              "mean_ece_raw_pre_temperature": 0.2492530147343446,
+              "per_seed_ece_calibrated_post_temperature": {
+                "0": 0.003696513509363536,
+                "1": 0.03126054262127573,
+                "2": 0.16814596952184374
+              },
+              "mean_ece_calibrated_post_temperature": 0.06770100855082767
+            },
+            "bow_fixed_vocab": {
+              "auroc": 0.7045263567155381,
+              "ece": 0.2397361722854846
+            },
+            "bow_hashing": {
+              "auroc": 0.6617285189319353,
+              "ece": 0.24017190498675178
+            },
+            "point_gap_vs_bow_fixed": -0.2609852047876454,
+            "point_gap_vs_bow_hashing": -0.21818736700404262
+          }
+        },
+        "advice-eligibility": {
+          "retail": {
+            "in_domain": false,
+            "eval_set": "full_unique_corpus",
+            "n": 2748,
+            "n_pos": 336,
+            "underpowered": false,
+            "detector": {
+              "per_seed_auroc": {
+                "0": 0.5077588249230041,
+                "1": 0.5077588249230041,
+                "2": 0.492241175076996
+              },
+              "mean_auroc": 0.5025862749743347,
+              "per_seed_ece_raw_pre_temperature": {
+                "0": 0.578418724536067,
+                "1": 0.12151724088661753,
+                "2": 0.12142117624708341
+              },
+              "mean_ece_raw_pre_temperature": 0.2737857138899226,
+              "per_seed_ece_calibrated_post_temperature": {
+                "0": 0.5612819169479555,
+                "1": 0.12151724088661753,
+                "2": 0.12227074235720288
+              },
+              "mean_ece_calibrated_post_temperature": 0.2683566333972586
+            },
+            "bow_fixed_vocab": {
+              "auroc": 0.5,
+              "ece": 0.877729257641828
+            },
+            "bow_hashing": {
+              "auroc": 0.5,
+              "ece": 0.877729257641828
+            },
+            "point_gap_vs_bow_fixed": 0.0025862749743347235,
+            "point_gap_vs_bow_hashing": 0.0025862749743347235
+          },
+          "airline": {
+            "in_domain": false,
+            "eval_set": "full_unique_corpus",
+            "n": 3012,
+            "n_pos": 396,
+            "underpowered": false,
+            "detector": {
+              "per_seed_auroc": {
+                "0": 0.5007645259938838,
+                "1": 0.49923547400611623,
+                "2": 0.5007645259938838
+              },
+              "mean_auroc": 0.5002548419979612,
+              "per_seed_ece_raw_pre_temperature": {
+                "0": 0.5697417813839577,
+                "1": 0.13024455834199855,
+                "2": 0.13053495462547568
+              },
+              "mean_ece_raw_pre_temperature": 0.2768404314504773,
+              "per_seed_ece_calibrated_post_temperature": {
+                "0": 0.552570200034533,
+                "1": 0.13024455834199855,
+                "2": 0.13147410358435874
+              },
+              "mean_ece_calibrated_post_temperature": 0.27142962065363013
+            },
+            "bow_fixed_vocab": {
+              "auroc": 0.7227304582522472,
+              "ece": 0.8684437098393867
+            },
+            "bow_hashing": {
+              "auroc": 0.5,
+              "ece": 0.868525896414249
+            },
+            "point_gap_vs_bow_fixed": -0.22247561625428602,
+            "point_gap_vs_bow_hashing": 0.0002548419979612193
+          },
+          "advice-eligibility": {
+            "in_domain": true,
+            "eval_set": "test_split",
+            "n": 288,
+            "n_pos": 64,
+            "underpowered": true,
+            "detector": {
+              "per_seed_auroc": {
+                "0": 1.0,
+                "1": 1.0,
+                "2": 1.0
+              },
+              "mean_auroc": 1.0,
+              "per_seed_ece_raw_pre_temperature": {
+                "0": 0.04386644565054347,
+                "1": 0.00024671765519438185,
+                "2": 0.00037205971898706693
+              },
+              "mean_ece_raw_pre_temperature": 0.014828407674908305,
+              "per_seed_ece_calibrated_post_temperature": {
+                "0": 0.0568355520776054,
+                "1": 0.00024671765519438185,
+                "2": 4.583732388865535e-14
+              },
+              "mean_ece_calibrated_post_temperature": 0.019027423244281874
+            },
+            "bow_fixed_vocab": {
+              "auroc": 1.0,
+              "ece": 0.05763062319683909
+            },
+            "bow_hashing": {
+              "auroc": 1.0,
+              "ece": 0.04440397426541247
+            },
+            "point_gap_vs_bow_fixed": 0.0,
+            "point_gap_vs_bow_hashing": 0.0
+          }
+        }
+      },
+      "gaps": {
+        "retail->advice": {
+          "point_gap": -0.0049607230799459945,
+          "hierarchical": {
+            "lower_95": -0.0403727913880385,
+            "upper_95": 0.029044528516205176,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.006272948892470744,
+            "n_undefined_replicates": 0
+          },
+          "flat": {
+            "lower_95": -0.016138065334030224,
+            "upper_95": 0.006291685193542311,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.004922337197662337,
+            "n_undefined_replicates": 0
+          }
+        },
+        "airline->advice": {
+          "point_gap": -0.2609852047876454,
+          "hierarchical": {
+            "lower_95": -0.3817077200640499,
+            "upper_95": -0.12808341827164416,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.2560068414750642,
+            "n_undefined_replicates": 0
+          },
+          "flat": {
+            "lower_95": -0.2894432245985526,
+            "upper_95": -0.23179726348073176,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.2609014869374733,
+            "n_undefined_replicates": 0
+          }
+        },
+        "advice->retail": {
+          "point_gap": 0.0025862749743347235,
+          "hierarchical": {
+            "lower_95": 0.0,
+            "upper_95": 0.011766129365509283,
+            "ci_excludes_zero": false,
+            "replicate_mean": 0.0026373748410127257,
+            "n_undefined_replicates": 15
+          },
+          "flat": {
+            "lower_95": 2.6962238191718987e-05,
+            "upper_95": 0.00552044213147862,
+            "ci_excludes_zero": true,
+            "replicate_mean": 0.002578440625519642,
+            "n_undefined_replicates": 0
+          }
+        },
+        "advice->airline": {
+          "point_gap": -0.22247561625428602,
+          "hierarchical": {
+            "lower_95": -0.36848903161381935,
+            "upper_95": -0.05976204895750582,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.23403162096984223,
+            "n_undefined_replicates": 0
+          },
+          "flat": {
+            "lower_95": -0.2408592741998294,
+            "upper_95": -0.2037454884005281,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.22250286151585869,
+            "n_undefined_replicates": 0
+          }
+        },
+        "retail->airline": {
+          "point_gap": -0.0002548419979612748,
+          "hierarchical": {
+            "lower_95": -0.0009490495960698647,
+            "upper_95": 0.0,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.0002579051618518835,
+            "n_undefined_replicates": 0
+          },
+          "flat": {
+            "lower_95": -0.0005130178273695107,
+            "upper_95": -6.31074088097705e-05,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.00025359020779799543,
+            "n_undefined_replicates": 0
+          }
+        },
+        "airline->retail": {
+          "point_gap": -0.4908678334517887,
+          "hierarchical": {
+            "lower_95": -0.5244729493436009,
+            "upper_95": -0.44193503897026637,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.4894370022329709,
+            "n_undefined_replicates": 15
+          },
+          "flat": {
+            "lower_95": -0.5017732758252362,
+            "upper_95": -0.48054134052002384,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.49084920912961044,
+            "n_undefined_replicates": 0
+          }
+        },
+        "mean_advice_crossing_4cell": {
+          "point_gap": -0.12145881728688568,
+          "hierarchical": {
+            "lower_95": -0.1755657584872513,
+            "upper_95": -0.0671780586697119,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.12340938457700192,
+            "n_undefined_replicates": 15
+          },
+          "flat": {
+            "lower_95": -0.13082092840351167,
+            "upper_95": -0.11209496892899486,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.12143706125636868,
+            "n_undefined_replicates": 0
+          }
+        },
+        "into_advice": {
+          "point_gap": -0.1329729639337957,
+          "hierarchical": {
+            "lower_95": -0.20736755769583776,
+            "upper_95": -0.05590579355641618,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.13113989518376745,
+            "n_undefined_replicates": 0
+          },
+          "flat": {
+            "lower_95": -0.14908007632958653,
+            "upper_95": -0.11640978182626073,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.13291191206756783,
+            "n_undefined_replicates": 0
+          }
+        },
+        "out_of_advice": {
+          "point_gap": -0.10994467063997565,
+          "hierarchical": {
+            "lower_95": -0.18320630423466683,
+            "upper_95": -0.02859329079353579,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.11567425094134784,
+            "n_undefined_replicates": 15
+          },
+          "flat": {
+            "lower_95": -0.11923675876402917,
+            "upper_95": -0.10050523827032715,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.10996221044516952,
+            "n_undefined_replicates": 0
+          }
+        },
+        "saturation_control_mean": {
+          "point_gap": -0.24556133772487498,
+          "hierarchical": {
+            "lower_95": -0.26235546009166644,
+            "upper_95": -0.22105205751993662,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.2448475081395481,
+            "n_undefined_replicates": 15
+          },
+          "flat": {
+            "lower_95": -0.25102648965697133,
+            "upper_95": -0.2403912746464843,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.2455513996687042,
+            "n_undefined_replicates": 0
+          }
+        }
+      },
+      "ece": {
+        "per_cell": {
+          "retail->advice": {
+            "detector_ece_pre_temperature": 0.2055315910478531,
+            "detector_ece_post_temperature": 0.19640367820543472,
+            "bow_fixed_vocab_ece": 0.24018944519611737,
+            "bow_hashing_ece": 0.24018944519611754
+          },
+          "airline->advice": {
+            "detector_ece_pre_temperature": 0.2492530147343446,
+            "detector_ece_post_temperature": 0.06770100855082767,
+            "bow_fixed_vocab_ece": 0.2397361722854846,
+            "bow_hashing_ece": 0.24017190498675178
+          },
+          "advice->retail": {
+            "detector_ece_pre_temperature": 0.2737857138899226,
+            "detector_ece_post_temperature": 0.2683566333972586,
+            "bow_fixed_vocab_ece": 0.877729257641828,
+            "bow_hashing_ece": 0.877729257641828
+          },
+          "advice->airline": {
+            "detector_ece_pre_temperature": 0.2768404314504773,
+            "detector_ece_post_temperature": 0.27142962065363013,
+            "bow_fixed_vocab_ece": 0.8684437098393867,
+            "bow_hashing_ece": 0.868525896414249
+          }
+        },
+        "mean4_detector_pre_temperature": 0.2513526877806494,
+        "mean4_detector_post_temperature": 0.20097273520178782,
+        "mean4_bow_fixed_vocab": 0.5565246462407041,
+        "mean4_bow_hashing": 0.5566541260597366
+      },
+      "evidence": {
+        "point_gap_mean4": -0.12145881728688568,
+        "hier_ci_mean4_lower": -0.1755657584872513,
+        "hier_ci_into_advice_lower": -0.20736755769583776,
+        "hier_ci_out_of_advice_lower": -0.18320630423466683,
+        "ece_detector_mean4_post_temperature": 0.20097273520178782,
+        "ece_bow_fixed_mean4": 0.5565246462407041
+      },
+      "conditions": {
+        "gap_point_ge_0_05": false,
+        "hier_ci_mean4_gt_0": false,
+        "hier_ci_into_advice_gt_0": false,
+        "hier_ci_out_of_advice_gt_0": false,
+        "auroc_gap_condition": false,
+        "ece_condition": true,
+        "base_rate_gate_pass": true,
+        "family_supported": false
+      }
+    },
+    "qwen_lora": {
+      "matrix": {
+        "retail": {
+          "retail": {
+            "in_domain": true,
+            "eval_set": "test_split",
+            "n": 332,
+            "n_pos": 88,
+            "underpowered": true,
+            "detector": {
+              "per_seed_auroc": {
+                "0": 0.48593517138599107,
+                "1": 0.5140648286140089,
+                "2": 0.48593517138599107
+              },
+              "mean_auroc": 0.4953117237953304,
+              "per_seed_ece_raw_pre_temperature": {
+                "0": 0.1425585100885201,
+                "1": 0.0734892824317443,
+                "2": 0.11839535747084895
+              },
+              "mean_ece_raw_pre_temperature": 0.11148104999703778,
+              "per_seed_ece_calibrated_post_temperature": {
+                "0": 0.26449186969742267,
+                "1": 0.17599066527494026,
+                "2": 0.26498485396371557
+              },
+              "mean_ece_calibrated_post_temperature": 0.23515579631202618
+            },
+            "bow_fixed_vocab": {
+              "auroc": 1.0,
+              "ece": 0.01235822320942214
+            },
+            "bow_hashing": {
+              "auroc": 1.0,
+              "ece": 0.014121332008660177
+            },
+            "point_gap_vs_bow_fixed": -0.5046882762046696,
+            "point_gap_vs_bow_hashing": -0.5046882762046696
+          },
+          "airline": {
+            "in_domain": false,
+            "eval_set": "full_unique_corpus",
+            "n": 3012,
+            "n_pos": 396,
+            "underpowered": false,
+            "detector": {
+              "per_seed_auroc": {
+                "0": 0.5007645259938838,
+                "1": 0.5007645259938838,
+                "2": 0.49923547400611623
+              },
+              "mean_auroc": 0.5002548419979612,
+              "per_seed_ece_raw_pre_temperature": {
+                "0": 0.06573870431737304,
+                "1": 0.5781024120818833,
+                "2": 0.8684672340939137
+              },
+              "mean_ece_raw_pre_temperature": 0.5041027834977233,
+              "per_seed_ece_calibrated_post_temperature": {
+                "0": 0.13147410358565736,
+                "1": 0.825465477666369,
+                "2": 0.8685258964143426
+              },
+              "mean_ece_calibrated_post_temperature": 0.6084884925554563
+            },
+            "bow_fixed_vocab": {
+              "auroc": 0.5,
+              "ece": 0.1314741035855638
+            },
+            "bow_hashing": {
+              "auroc": 0.5,
+              "ece": 0.1314741035855638
+            },
+            "point_gap_vs_bow_fixed": 0.0002548419979612193,
+            "point_gap_vs_bow_hashing": 0.0002548419979612193
+          },
+          "advice-eligibility": {
+            "in_domain": false,
+            "eval_set": "full_unique_corpus",
+            "n": 1478,
+            "n_pos": 355,
+            "underpowered": false,
+            "detector": {
+              "per_seed_auroc": {
+                "0": 0.7060012792695621,
+                "1": 0.14842787804296842,
+                "2": 0.24928699534697052
+              },
+              "mean_auroc": 0.36790538421983365,
+              "per_seed_ece_raw_pre_temperature": {
+                "0": 0.34323512425271835,
+                "1": 0.5959023360785876,
+                "2": 0.7516558577835261
+              },
+              "mean_ece_raw_pre_temperature": 0.563597772704944,
+              "per_seed_ece_calibrated_post_temperature": {
+                "0": 0.33117364880517025,
+                "1": 0.7030750319477548,
+                "2": 0.7523412344840065
+              },
+              "mean_ece_calibrated_post_temperature": 0.5955299717456438
+            },
+            "bow_fixed_vocab": {
+              "auroc": 0.4986642920747996,
+              "ece": 0.24018944519611737
+            },
+            "bow_hashing": {
+              "auroc": 0.5,
+              "ece": 0.24018944519611754
+            },
+            "point_gap_vs_bow_fixed": -0.13075890785496597,
+            "point_gap_vs_bow_hashing": -0.13209461578016635
+          }
+        },
+        "airline": {
+          "retail": {
+            "in_domain": false,
+            "eval_set": "full_unique_corpus",
+            "n": 2748,
+            "n_pos": 336,
+            "underpowered": false,
+            "detector": {
+              "per_seed_auroc": {
+                "0": 0.5077588249230041,
+                "1": 0.5077588249230041,
+                "2": 0.492241175076996
+              },
+              "mean_auroc": 0.5025862749743347,
+              "per_seed_ece_raw_pre_temperature": {
+                "0": 0.32839396183585645,
+                "1": 0.10759106703846429,
+                "2": 0.11305762591661708
+              },
+              "mean_ece_raw_pre_temperature": 0.18301421826364594,
+              "per_seed_ece_calibrated_post_temperature": {
+                "0": 0.3752544571164684,
+                "1": 0.32534088000694955,
+                "2": 0.31952090668191224
+              },
+              "mean_ece_calibrated_post_temperature": 0.3400387479351101
+            },
+            "bow_fixed_vocab": {
+              "auroc": 0.9831090085287847,
+              "ece": 0.12227064301886112
+            },
+            "bow_hashing": {
+              "auroc": 0.9830756929637526,
+              "ece": 0.12227070475700592
+            },
+            "point_gap_vs_bow_fixed": -0.48052273355444997,
+            "point_gap_vs_bow_hashing": -0.4804894179894179
+          },
+          "airline": {
+            "in_domain": true,
+            "eval_set": "test_split",
+            "n": 588,
+            "n_pos": 85,
+            "underpowered": true,
+            "detector": {
+              "per_seed_auroc": {
+                "0": 0.48807157057654077,
+                "1": 0.48807157057654077,
+                "2": 0.48807157057654077
+              },
+              "mean_auroc": 0.48807157057654077,
+              "per_seed_ece_raw_pre_temperature": {
+                "0": 0.5202497314855471,
+                "1": 0.5011277354592838,
+                "2": 0.43475623554650045
+              },
+              "mean_ece_raw_pre_temperature": 0.4853779008304438,
+              "per_seed_ece_calibrated_post_temperature": {
+                "0": 0.36400126241705055,
+                "1": 0.36294322286930303,
+                "2": 0.35944157435530677
+              },
+              "mean_ece_calibrated_post_temperature": 0.36212868654722014
+            },
+            "bow_fixed_vocab": {
+              "auroc": 0.9998128873815928,
+              "ece": 0.06992721859126103
+            },
+            "bow_hashing": {
+              "auroc": 0.99766109226991,
+              "ece": 0.05899140867346657
+            },
+            "point_gap_vs_bow_fixed": -0.511741316805052,
+            "point_gap_vs_bow_hashing": -0.5095895216933692
+          },
+          "advice-eligibility": {
+            "in_domain": false,
+            "eval_set": "full_unique_corpus",
+            "n": 1478,
+            "n_pos": 355,
+            "underpowered": false,
+            "detector": {
+              "per_seed_auroc": {
+                "0": 0.6995271719363375,
+                "1": 0.1483526268922529,
+                "2": 0.1952980572661257
+              },
+              "mean_auroc": 0.347725952031572,
+              "per_seed_ece_raw_pre_temperature": {
+                "0": 0.35139735491402524,
+                "1": 0.6150304352430274,
+                "2": 0.7504907307143135
+              },
+              "mean_ece_raw_pre_temperature": 0.5723061736237888,
+              "per_seed_ece_calibrated_post_temperature": {
+                "0": 0.28622240651266573,
+                "1": 0.3294028763688099,
+                "2": 0.40644184395577637
+              },
+              "mean_ece_calibrated_post_temperature": 0.34068904227908403
+            },
+            "bow_fixed_vocab": {
+              "auroc": 0.7045263567155381,
+              "ece": 0.2397361722854846
+            },
+            "bow_hashing": {
+              "auroc": 0.6617285189319353,
+              "ece": 0.24017190498675178
+            },
+            "point_gap_vs_bow_fixed": -0.35680040468396607,
+            "point_gap_vs_bow_hashing": -0.31400256690036327
+          }
+        },
+        "advice-eligibility": {
+          "retail": {
+            "in_domain": false,
+            "eval_set": "full_unique_corpus",
+            "n": 2748,
+            "n_pos": 336,
+            "underpowered": false,
+            "detector": {
+              "per_seed_auroc": {
+                "0": 0.5077588249230041,
+                "1": 0.5,
+                "2": 0.492241175076996
+              },
+              "mean_auroc": 0.5,
+              "per_seed_ece_raw_pre_temperature": {
+                "0": 0.10328856249286696,
+                "1": 0.12136387510729273,
+                "2": 0.12165330207685446
+              },
+              "mean_ece_raw_pre_temperature": 0.11543524655900472,
+              "per_seed_ece_calibrated_post_temperature": {
+                "0": 0.12227074235807488,
+                "1": 0.12136387510729273,
+                "2": 0.1222707423580786
+              },
+              "mean_ece_calibrated_post_temperature": 0.12196845327448207
+            },
+            "bow_fixed_vocab": {
+              "auroc": 0.5,
+              "ece": 0.877729257641828
+            },
+            "bow_hashing": {
+              "auroc": 0.5,
+              "ece": 0.877729257641828
+            },
+            "point_gap_vs_bow_fixed": 0.0,
+            "point_gap_vs_bow_hashing": 0.0
+          },
+          "airline": {
+            "in_domain": false,
+            "eval_set": "full_unique_corpus",
+            "n": 3012,
+            "n_pos": 396,
+            "underpowered": false,
+            "detector": {
+              "per_seed_auroc": {
+                "0": 0.5007645259938838,
+                "1": 0.49923547400611623,
+                "2": 0.5007645259938838
+              },
+              "mean_auroc": 0.5002548419979612,
+              "per_seed_ece_raw_pre_temperature": {
+                "0": 0.13022765323805968,
+                "1": 0.11657328427890777,
+                "2": 0.7544513184072471
+              },
+              "mean_ece_raw_pre_temperature": 0.3337507519747382,
+              "per_seed_ece_calibrated_post_temperature": {
+                "0": 0.13147410358565736,
+                "1": 0.11657328427890777,
+                "2": 0.8685258792910001
+              },
+              "mean_ece_calibrated_post_temperature": 0.3721910890518551
+            },
+            "bow_fixed_vocab": {
+              "auroc": 0.7227304582522472,
+              "ece": 0.8684437098393867
+            },
+            "bow_hashing": {
+              "auroc": 0.5,
+              "ece": 0.868525896414249
+            },
+            "point_gap_vs_bow_fixed": -0.22247561625428602,
+            "point_gap_vs_bow_hashing": 0.0002548419979612193
+          },
+          "advice-eligibility": {
+            "in_domain": true,
+            "eval_set": "test_split",
+            "n": 288,
+            "n_pos": 64,
+            "underpowered": true,
+            "detector": {
+              "per_seed_auroc": {
+                "0": 1.0,
+                "1": 1.0,
+                "2": 1.0
+              },
+              "mean_auroc": 1.0,
+              "per_seed_ece_raw_pre_temperature": {
+                "0": 1.731024410175934e-05,
+                "1": 0.0030843345176671155,
+                "2": 0.013308292661607657
+              },
+              "mean_ece_raw_pre_temperature": 0.00546997914112551,
+              "per_seed_ece_calibrated_post_temperature": {
+                "0": 2.356848630737349e-26,
+                "1": 0.0030843345176671155,
+                "2": 0.013888240793541081
+              },
+              "mean_ece_calibrated_post_temperature": 0.005657525103736066
+            },
+            "bow_fixed_vocab": {
+              "auroc": 1.0,
+              "ece": 0.05763062319683909
+            },
+            "bow_hashing": {
+              "auroc": 1.0,
+              "ece": 0.04440397426541247
+            },
+            "point_gap_vs_bow_fixed": 0.0,
+            "point_gap_vs_bow_hashing": 0.0
+          }
+        }
+      },
+      "gaps": {
+        "retail->advice": {
+          "point_gap": -0.13075890785496597,
+          "hierarchical": {
+            "lower_95": -0.20043067855404534,
+            "upper_95": -0.05355114965365415,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.13428392431411348,
+            "n_undefined_replicates": 0
+          },
+          "flat": {
+            "lower_95": -0.14299911123207262,
+            "upper_95": -0.11826452487452015,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.13079539797676287,
+            "n_undefined_replicates": 0
+          }
+        },
+        "airline->advice": {
+          "point_gap": -0.35680040468396607,
+          "hierarchical": {
+            "lower_95": -0.45278188884919374,
+            "upper_95": -0.26486034203003733,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.36193200104417383,
+            "n_undefined_replicates": 0
+          },
+          "flat": {
+            "lower_95": -0.38438108267078985,
+            "upper_95": -0.3285394342025449,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.3568463006477583,
+            "n_undefined_replicates": 0
+          }
+        },
+        "advice->retail": {
+          "point_gap": 0.0,
+          "hierarchical": {
+            "lower_95": -5.551115123125783e-17,
+            "upper_95": 1.1102230246251565e-16,
+            "ci_excludes_zero": false,
+            "replicate_mean": 2.168187178787236e-18,
+            "n_undefined_replicates": 15
+          },
+          "flat": {
+            "lower_95": -5.551115123125783e-17,
+            "upper_95": 1.1102230246251565e-16,
+            "ci_excludes_zero": false,
+            "replicate_mean": 3.574918139293004e-18,
+            "n_undefined_replicates": 0
+          }
+        },
+        "advice->airline": {
+          "point_gap": -0.22247561625428602,
+          "hierarchical": {
+            "lower_95": -0.36848903161381935,
+            "upper_95": -0.05976204895750582,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.23403162096984223,
+            "n_undefined_replicates": 0
+          },
+          "flat": {
+            "lower_95": -0.2408592741998294,
+            "upper_95": -0.2037454884005281,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.22250286151585869,
+            "n_undefined_replicates": 0
+          }
+        },
+        "retail->airline": {
+          "point_gap": 0.0002548419979612193,
+          "hierarchical": {
+            "lower_95": 0.0,
+            "upper_95": 0.0009490495960699174,
+            "ci_excludes_zero": false,
+            "replicate_mean": 0.0002579051618518833,
+            "n_undefined_replicates": 0
+          },
+          "flat": {
+            "lower_95": 6.310740880988153e-05,
+            "upper_95": 0.0005130178273694552,
+            "ci_excludes_zero": true,
+            "replicate_mean": 0.0002535902077980001,
+            "n_undefined_replicates": 0
+          }
+        },
+        "airline->retail": {
+          "point_gap": -0.48052273355444997,
+          "hierarchical": {
+            "lower_95": -0.4995210474710393,
+            "upper_95": -0.4324120311157288,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.47888750286892,
+            "n_undefined_replicates": 15
+          },
+          "flat": {
+            "lower_95": -0.487274951414459,
+            "upper_95": -0.4731180327117369,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.48053544662753184,
+            "n_undefined_replicates": 0
+          }
+        },
+        "mean_advice_crossing_4cell": {
+          "point_gap": -0.17750873219830451,
+          "hierarchical": {
+            "lower_95": -0.23220509846161733,
+            "upper_95": -0.12540630383617102,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.1825402026396618,
+            "n_undefined_replicates": 15
+          },
+          "flat": {
+            "lower_95": -0.1875035764930399,
+            "upper_95": -0.1676141711199362,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.17753614003509496,
+            "n_undefined_replicates": 0
+          }
+        },
+        "into_advice": {
+          "point_gap": -0.24377965626946602,
+          "hierarchical": {
+            "lower_95": -0.3139511006670206,
+            "upper_95": -0.1718323234880927,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.24810796267914365,
+            "n_undefined_replicates": 0
+          },
+          "flat": {
+            "lower_95": -0.2614315757370545,
+            "upper_95": -0.2260519356398588,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.24382084931226058,
+            "n_undefined_replicates": 0
+          }
+        },
+        "out_of_advice": {
+          "point_gap": -0.11123780812714301,
+          "hierarchical": {
+            "lower_95": -0.18424582893288216,
+            "upper_95": -0.029870989989621587,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.11699293836185422,
+            "n_undefined_replicates": 15
+          },
+          "flat": {
+            "lower_95": -0.12042963709991472,
+            "upper_95": -0.10187274420026406,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.11125143075792934,
+            "n_undefined_replicates": 0
+          }
+        },
+        "saturation_control_mean": {
+          "point_gap": -0.24013394577824437,
+          "hierarchical": {
+            "lower_95": -0.24965086878129214,
+            "upper_95": -0.21606680759122873,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.23931474441139736,
+            "n_undefined_replicates": 15
+          },
+          "flat": {
+            "lower_95": -0.24352883637709907,
+            "upper_95": -0.23644141690057563,
+            "ci_excludes_zero": false,
+            "replicate_mean": -0.24014092820986688,
+            "n_undefined_replicates": 0
+          }
+        }
+      },
+      "ece": {
+        "per_cell": {
+          "retail->advice": {
+            "detector_ece_pre_temperature": 0.563597772704944,
+            "detector_ece_post_temperature": 0.5955299717456438,
+            "bow_fixed_vocab_ece": 0.24018944519611737,
+            "bow_hashing_ece": 0.24018944519611754
+          },
+          "airline->advice": {
+            "detector_ece_pre_temperature": 0.5723061736237888,
+            "detector_ece_post_temperature": 0.34068904227908403,
+            "bow_fixed_vocab_ece": 0.2397361722854846,
+            "bow_hashing_ece": 0.24017190498675178
+          },
+          "advice->retail": {
+            "detector_ece_pre_temperature": 0.11543524655900472,
+            "detector_ece_post_temperature": 0.12196845327448207,
+            "bow_fixed_vocab_ece": 0.877729257641828,
+            "bow_hashing_ece": 0.877729257641828
+          },
+          "advice->airline": {
+            "detector_ece_pre_temperature": 0.3337507519747382,
+            "detector_ece_post_temperature": 0.3721910890518551,
+            "bow_fixed_vocab_ece": 0.8684437098393867,
+            "bow_hashing_ece": 0.868525896414249
+          }
+        },
+        "mean4_detector_pre_temperature": 0.39627248621561895,
+        "mean4_detector_post_temperature": 0.3575946390877663,
+        "mean4_bow_fixed_vocab": 0.5565246462407041,
+        "mean4_bow_hashing": 0.5566541260597366
+      },
+      "evidence": {
+        "point_gap_mean4": -0.17750873219830451,
+        "hier_ci_mean4_lower": -0.23220509846161733,
+        "hier_ci_into_advice_lower": -0.3139511006670206,
+        "hier_ci_out_of_advice_lower": -0.18424582893288216,
+        "ece_detector_mean4_post_temperature": 0.3575946390877663,
+        "ece_bow_fixed_mean4": 0.5565246462407041
+      },
+      "conditions": {
+        "gap_point_ge_0_05": false,
+        "hier_ci_mean4_gt_0": false,
+        "hier_ci_into_advice_gt_0": false,
+        "hier_ci_out_of_advice_gt_0": false,
+        "auroc_gap_condition": false,
+        "ece_condition": true,
+        "base_rate_gate_pass": true,
+        "family_supported": false
+      }
+    }
+  },
+  "overall_verdict": "REFUTED"
+}

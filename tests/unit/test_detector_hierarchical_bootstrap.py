@@ -138,6 +138,43 @@ def test_hierarchical_ci_wider_than_flat_when_scores_cluster_by_scenario() -> No
     assert hier_width > flat_width
 
 
+def test_bootstrap_excludes_undefined_replicates_from_ci_not_nan_propagate() -> None:
+    """A domain with a zero-positive scenario can, by chance, produce a
+    single-class hierarchical resample -- AUROC (and so the gap) is
+    undefined for that replicate. The CI must exclude those replicates
+    (`np.nanpercentile`), not silently become an all-nan CI via
+    `np.percentile`'s default NaN propagation (the real-data bug this test
+    reproduces: 5 of retail's 10 v2 scenarios have zero violations)."""
+    rng = np.random.default_rng(9)
+    # 4 scenarios of 10 items each; scenario "s3" has ZERO positives, so a
+    # resample landing entirely on non-"s3"-with-zero-positive draws for the
+    # positive class can produce a single-class subset with real frequency.
+    n = 40
+    y = np.zeros(n, dtype=bool)
+    y[0:10] = True  # s0 all positive
+    scenario_indices = {
+        "s0": list(range(0, 10)),
+        "s1": list(range(10, 20)),
+        "s2": list(range(20, 30)),
+        "s3": list(range(30, 40)),  # zero positives
+    }
+    detector = rng.normal(0, 1, n)
+    bow = rng.normal(0, 1, n)
+    cell = CellArrays(
+        train_domain="a",
+        eval_domain="g",
+        seed_scores={0: detector, 1: detector, 2: detector},
+        bow_scores=bow,
+        labels=y,
+    )
+    groups = {"g": DomainGroups(domain="g", n=n, scenario_indices=scenario_indices)}
+    result = bootstrap_composite_gap([cell], groups, n_resamples=2000, seed=3, hierarchical=True)
+    assert result.n_undefined_replicates > 0  # the real edge case actually triggers
+    assert not np.isnan(result.lower)
+    assert not np.isnan(result.upper)
+    assert not np.isnan(result.replicate_mean)
+
+
 def test_domain_groups_rejects_mismatched_index_count() -> None:
     try:
         DomainGroups(domain="x", n=10, scenario_indices={"s0": [0, 1, 2]})

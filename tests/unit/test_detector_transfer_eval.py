@@ -15,6 +15,7 @@ from bossyk_sandbox.detector.hierarchical_bootstrap import bootstrap_composite_g
 from bossyk_sandbox.detector.transfer_eval import (
     assemble_eval_domain,
     build_cell_arrays,
+    detector_point_stats,
     load_detector_scores,
     regenerate_bow_scores,
     verify_bow_regen_against_frozen,
@@ -233,6 +234,39 @@ def test_assemble_and_build_cell_arrays_end_to_end_with_bootstrap(tmp_path: Path
     )
     assert result.point_gap > 0.3
     assert result.ci_excludes_zero is True
+
+
+def test_detector_point_stats_mean_and_per_seed_agree(tmp_path: Path) -> None:
+    data_root = tmp_path / "data"
+    _write_domain(data_root, "alpha", n_train=20, n_val=5, n_test=20, n_scenarios=4)
+    domains = load_all_domains(("alpha",), data_root=data_root, corpus_version="v2")
+    scores_root = tmp_path / "scores"
+    for seed in (0, 1, 2):
+        _write_detector_scores(
+            scores_root,
+            family="deberta",
+            train_domain="alpha",
+            seed=seed,
+            eval_domain="alpha",
+            rows=domains["alpha"].test,
+            perfect=True,
+        )
+    loaded = load_detector_scores(
+        scores_root,
+        families=("deberta",),
+        train_domains=("alpha",),
+        seeds=(0, 1, 2),
+        eval_domains=("alpha",),
+    )
+    detector_by_seed = {s: loaded["deberta"]["alpha"][s]["alpha"] for s in (0, 1, 2)}
+    stats = detector_point_stats(domains["alpha"].test, detector_by_seed)
+    assert stats.n == len(domains["alpha"].test)
+    assert set(stats.per_seed_auroc) == {0, 1, 2}
+    # Perfect scores (0.9 for violation, 0.1 for compliant) -> AUROC == 1.0 every seed.
+    assert all(v == 1.0 for v in stats.per_seed_auroc.values())
+    assert stats.mean_auroc == 1.0
+    assert 0.0 <= stats.mean_ece_raw <= 1.0
+    assert 0.0 <= stats.mean_ece_calibrated <= 1.0
 
 
 def test_build_cell_arrays_raises_on_label_mismatch(tmp_path: Path) -> None:

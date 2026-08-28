@@ -293,3 +293,61 @@ def load_domains(
     domains: tuple[str, ...], *, data_root: Path, corpus_version: str = "v2"
 ) -> dict[str, DomainSplits]:
     return load_all_domains(domains, data_root=data_root, corpus_version=corpus_version)
+
+
+@dataclass(frozen=True)
+class DetectorCellStats:
+    """Point statistics for one (family, train_domain, eval_domain) cell,
+    per seed and meaned over seeds. AUROC uses the RAW (T=1) score --
+    temperature scaling is a monotonic transform of the logit, so AUROC is
+    provably invariant to it; ECE is reported both pre- (raw) and
+    post-temperature (calibrated), since ECE is exactly what temperature
+    scaling is meant to change (build-order step 5, brief item 5)."""
+
+    n: int
+    n_pos: int
+    per_seed_auroc: dict[int, float]
+    mean_auroc: float
+    per_seed_ece_raw: dict[int, float]
+    mean_ece_raw: float
+    per_seed_ece_calibrated: dict[int, float]
+    mean_ece_calibrated: float
+
+
+def detector_point_stats(
+    rows: list[dict[str, Any]], detector_by_seed: dict[int, dict[str, DetectorItem]]
+) -> DetectorCellStats:
+    """Per-seed + mean AUROC/ECE for one cell, from the committed detector
+    score files, cross-checked against `rows`' own `is_violation` labels
+    (the corpus, not the score file, is the label source of truth)."""
+    row_ids = [str(r["row_id"]) for r in rows]
+    y = np.array([bool(r["is_violation"]) for r in rows], dtype=bool)
+
+    per_seed_auroc: dict[int, float] = {}
+    per_seed_ece_raw: dict[int, float] = {}
+    per_seed_ece_calibrated: dict[int, float] = {}
+    for seed, items in sorted(detector_by_seed.items()):
+        raw = np.empty(len(row_ids), dtype=np.float64)
+        calibrated = np.empty(len(row_ids), dtype=np.float64)
+        for i, row_id in enumerate(row_ids):
+            item = items[row_id]
+            if item.label != bool(y[i]):
+                raise ValueError(
+                    f"label mismatch for {row_id} seed{seed}: score={item.label} corpus={y[i]}"
+                )
+            raw[i] = item.raw_score
+            calibrated[i] = item.calibrated_score
+        per_seed_auroc[seed] = auroc(raw.tolist(), y.tolist())
+        per_seed_ece_raw[seed] = expected_calibration_error(raw, y)
+        per_seed_ece_calibrated[seed] = expected_calibration_error(calibrated, y)
+
+    return DetectorCellStats(
+        n=len(row_ids),
+        n_pos=int(y.sum()),
+        per_seed_auroc=per_seed_auroc,
+        mean_auroc=float(np.mean(list(per_seed_auroc.values()))),
+        per_seed_ece_raw=per_seed_ece_raw,
+        mean_ece_raw=float(np.mean(list(per_seed_ece_raw.values()))),
+        per_seed_ece_calibrated=per_seed_ece_calibrated,
+        mean_ece_calibrated=float(np.mean(list(per_seed_ece_calibrated.values()))),
+    )

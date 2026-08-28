@@ -94,6 +94,7 @@ class BootstrapResult:
     hierarchical: bool
     ci_excludes_zero: bool
     replicate_mean: float
+    n_undefined_replicates: int
 
 
 def hierarchical_resample_indices(
@@ -153,7 +154,17 @@ def bootstrap_composite_gap(
 ) -> BootstrapResult:
     """95% percentile bootstrap CI on the composite paired gap over `cells`.
     One resample per UNIQUE eval domain among `cells` per replicate, shared
-    by every cell scoring that domain within that replicate."""
+    by every cell scoring that domain within that replicate.
+
+    A resample can be UNDEFINED: if a domain's item pool has any scenario
+    with zero positives (real here -- 5 of retail's 10 v2 scenarios have
+    zero violations across their full corpus), a hierarchical or flat draw
+    can by chance land on a single-class subset, for which AUROC (and so
+    the paired gap) is undefined (`nan`, `fast_auroc`'s convention). Those
+    replicates are EXCLUDED from the percentile CI (`np.nanpercentile`) and
+    counted in `n_undefined_replicates` -- silently including them would
+    turn `np.percentile` into an all-`nan` CI (numpy's default NaN
+    propagation), which is not "no evidence", it is a reporting bug."""
     if not cells:
         raise ValueError("cells must be non-empty")
     unique_domains = sorted({c.eval_domain for c in cells})
@@ -176,7 +187,8 @@ def bootstrap_composite_gap(
                 idx_by_domain[d] = flat_resample_indices(g.n, rng)
         replicate_values[b] = composite_gap(cells, idx_by_domain)
 
-    lower, upper = (float(v) for v in np.percentile(replicate_values, [2.5, 97.5]))
+    n_undefined = int(np.isnan(replicate_values).sum())
+    lower, upper = (float(v) for v in np.nanpercentile(replicate_values, [2.5, 97.5]))
     return BootstrapResult(
         point_gap=point,
         lower=lower,
@@ -185,5 +197,6 @@ def bootstrap_composite_gap(
         seed=seed,
         hierarchical=hierarchical,
         ci_excludes_zero=lower > 0.0,
-        replicate_mean=float(np.mean(replicate_values)),
+        replicate_mean=float(np.nanmean(replicate_values)),
+        n_undefined_replicates=n_undefined,
     )
