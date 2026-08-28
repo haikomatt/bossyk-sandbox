@@ -337,7 +337,15 @@ class HFTrainBackend:
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
 
-        model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2)
+        # Force fp32: some HF checkpoints now load in their stored dtype
+        # (bf16/fp16) by default rather than fp32 unless told otherwise,
+        # which both breaks the class-weighted CrossEntropyLoss dtype match
+        # above (`.to(dtype=logits.dtype)` papers over the mismatch but
+        # fp16 full fine-tuning of DeBERTa-v3/Qwen2.5 heads is numerically
+        # unstable -- NaN grad_norm from step 1, verified against a real
+        # pod run) and destabilises training. These models are small enough
+        # that fp32 on an A40 has ample headroom.
+        model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2).float()
         if getattr(model.config, "pad_token_id", None) is None:
             model.config.pad_token_id = tokenizer.pad_token_id
 
@@ -429,7 +437,9 @@ class HFTrainBackend:
                 labels = inputs.pop("labels")
                 outputs = model(**inputs)
                 logits = outputs.logits
-                loss_fct = torch.nn.CrossEntropyLoss(weight=weight_tensor.to(logits.device))
+                loss_fct = torch.nn.CrossEntropyLoss(
+                    weight=weight_tensor.to(device=logits.device, dtype=logits.dtype)
+                )
                 loss = loss_fct(logits.view(-1, 2), labels.view(-1))
                 return (loss, outputs) if return_outputs else loss
 
@@ -479,7 +489,7 @@ class HFTrainBackend:
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
         tokenizer = AutoTokenizer.from_pretrained(str(checkpoint_dir))
-        model = AutoModelForSequenceClassification.from_pretrained(str(checkpoint_dir))
+        model = AutoModelForSequenceClassification.from_pretrained(str(checkpoint_dir)).float()
         model.eval()
         device = "cuda" if torch.cuda.is_available() else "cpu"
         model.to(device)

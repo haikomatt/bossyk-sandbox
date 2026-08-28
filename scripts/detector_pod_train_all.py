@@ -27,6 +27,15 @@ Safety rails carried IN THIS SCRIPT (brief step 3):
 - This script does NOT terminate the pod itself -- see
   `scripts/detector_pod_runner.py` for the `finally`/trap pod-lifecycle
   teardown; this script only decides when to STOP STARTING NEW WORK.
+- **Disk cleanup after each cell** (added 2026-08-28, post-incident): a real
+  pod run filled the 50GB container disk after 17/18 cells -- HF `Trainer`'s
+  `save_total_limit=2` only bounds intermediate `checkpoint-*` step dirs, not
+  the final saved/merged model, and full-precision DeBERTa/Qwen checkpoints
+  across 18 cells exceed a 50GB disk. Since the brief only wants scores +
+  manifests downloaded (never weights), each cell's checkpoint directory is
+  now deleted immediately after its scores are written and its manifest row
+  is appended -- `--keep-checkpoints` opts back into the old (space-hungry)
+  behaviour for local debugging.
 """
 
 from __future__ import annotations
@@ -34,6 +43,7 @@ from __future__ import annotations
 import argparse
 import itertools
 import json
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -83,6 +93,7 @@ def run_all(
     max_wall_seconds: int = MAX_WALL_SECONDS,
     first_cell_estimate_seconds: float = DEFAULT_FIRST_CELL_ESTIMATE_SECONDS,
     score_domains: tuple[str, ...] | None = None,
+    keep_checkpoints: bool = False,
 ) -> dict[str, Any]:
     """Train + score every (family, domain, seed) cell not already in
     `manifest_out`, stopping early (never mid-cell) if the budget wouldn't
@@ -165,6 +176,15 @@ def run_all(
             file=sys.stderr,
         )
 
+        if not keep_checkpoints:
+            # Scores + manifest row are safely on disk -- the checkpoint's
+            # job is done. Deleting it now (rather than at the very end) is
+            # what actually prevents the disk-exhaustion failure this
+            # script hit in the wild: a crash on cell N no longer strands
+            # cells 1..N-1's checkpoints still occupying space.
+            cell_dir = checkpoint_root / family / train_domain / f"seed{seed}"
+            shutil.rmtree(cell_dir, ignore_errors=True)
+
     total_elapsed = time.monotonic() - run_start
     return {
         "requested_cells": len(all_cells),
@@ -204,6 +224,11 @@ def main(argv: list[str] | None = None) -> int:
         "--first-cell-estimate-seconds", type=float, default=DEFAULT_FIRST_CELL_ESTIMATE_SECONDS
     )
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--keep-checkpoints",
+        action="store_true",
+        help="do not delete each cell's checkpoint after scoring (space-hungry; debugging only)",
+    )
     args = parser.parse_args(argv)
 
     summary = run_all(
@@ -225,6 +250,7 @@ def main(argv: list[str] | None = None) -> int:
         hard_cap_usd=args.hard_cap_usd,
         max_wall_seconds=args.max_wall_seconds,
         first_cell_estimate_seconds=args.first_cell_estimate_seconds,
+        keep_checkpoints=args.keep_checkpoints,
     )
 
     if args.summary_out:

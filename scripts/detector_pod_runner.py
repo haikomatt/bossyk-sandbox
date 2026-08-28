@@ -59,6 +59,12 @@ TRAINING_TEMPLATE_ID = "runpod-torch-v280"  # torch 2.8, matches the house runbo
 POLL_INTERVAL_SECONDS = 30
 REMOTE_WORKDIR = "/workspace/bossyk-sandbox-partb"
 DONE_MARKER = "DETECTOR_TRAIN_ALL_DONE"
+# `runpodctl create pod --cost` is a hard price CEILING at creation time --
+# an independent real-world safety net alongside `pod_budget`'s own
+# wall-clock arithmetic (which assumes $0.44/hr): even if actual A40 pricing
+# runs above that assumption, the pod is never created above this rate.
+# $1.50/hr x the 6h floor-generous wall cap = $9, still under the $15 cap.
+HOURLY_COST_CEILING_USD = 1.50
 
 
 class PodClient(Protocol):
@@ -136,11 +142,14 @@ class FakePodClient:
 
 
 class RunpodCTLClient:
-    """Real `PodClient`: `runpodctl` for pod lifecycle, plain `ssh`/`scp` for
-    command execution and file transfer (connection info from
-    `runpodctl ssh info <pod-id>`). Assumes `RUNPOD_API_KEY` is already in
-    the environment (see module docstring) -- never reads or writes any
-    `.env` file itself."""
+    """Real `PodClient`: `runpodctl pod ...` (the modern, non-deprecated
+    subcommand form -- `runpodctl create pod` is deprecated and takes a
+    different, incompatible flag set) for pod lifecycle, plain `ssh`/`scp`
+    for command execution and file transfer (connection info + identity
+    file from `runpodctl ssh info <pod-id>`: fields verified live against a
+    real pod as `ip`/`port`/`ssh_key.path`, NOT `host`). Assumes
+    `RUNPOD_API_KEY` is already in the environment (see module docstring) --
+    never reads or writes any `.env` file itself."""
 
     def _runpodctl(self, *args: str) -> dict[str, Any]:
         proc = subprocess.run(
@@ -151,21 +160,33 @@ class RunpodCTLClient:
         return json.loads(proc.stdout) if proc.stdout.strip() else {}
 
     def create_pod(self, *, name: str, gpu_type: str) -> str:
+        # `--terminate-after` is a real-infra backstop layered ON TOP of
+        # this process's own `pod_budget`/`finally` teardown -- if the local
+        # supervisor itself dies (crash, host reboot), RunPod force-kills
+        # the pod anyway. Set generously beyond MAX_WALL_SECONDS so the
+        # in-script backstop is always the one that fires in the normal case.
+        terminate_after = time.strftime(
+            "%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + MAX_WALL_SECONDS + 3600)
+        )
         result = self._runpodctl(
-            "create",
             "pod",
+            "create",
             "--name",
             name,
-            "--gpuType",
+            "--gpu-id",
             gpu_type,
-            "--templateId",
+            "--template-id",
             TRAINING_TEMPLATE_ID,
-            "--containerDiskSize",
+            "--cloud-type",
+            "SECURE",
+            "--container-disk-in-gb",
             "50",
             "--ports",
             "22/tcp",
-            "--secureCloud",
-            "--startSSH",
+            "--cost",
+            str(HOURLY_COST_CEILING_USD),
+            "--terminate-after",
+            terminate_after,
         )
         pod_id = result.get("id") or result.get("podId")
         if not pod_id:
@@ -187,8 +208,10 @@ class RunpodCTLClient:
             ["runpodctl", "pod", "delete", pod_id], capture_output=True, text=True, timeout=60
         )
 
-    def _ssh_target(self, pod_id: str) -> tuple[str, str]:
-        """Returns `(host, port)` parsed from `runpodctl ssh info <pod_id>`."""
+    def _ssh_target(self, pod_id: str) -> tuple[str, str, str]:
+        """Returns `(ip, port, identity_file)` parsed from
+        `runpodctl ssh info <pod_id>`. Raises if SSH isn't up yet -- the
+        caller is expected to have already waited for readiness."""
         proc = subprocess.run(
             ["runpodctl", "ssh", "info", pod_id, "-o", "json"],
             capture_output=True,
@@ -198,14 +221,26 @@ class RunpodCTLClient:
         if proc.returncode != 0:
             raise RuntimeError(f"runpodctl ssh info {pod_id} failed: {proc.stderr.strip()}")
         info = json.loads(proc.stdout)
-        return str(info["host"]), str(info.get("port", 22))
+        if info.get("error"):
+            raise RuntimeError(f"pod {pod_id} SSH not ready: {info['error']}")
+        return str(info["ip"]), str(info.get("port", 22)), str(info["ssh_key"]["path"])
 
     def ssh_run(
         self, pod_id: str, command: str, *, timeout: float | None = None
     ) -> tuple[int, str, str]:
-        host, port = self._ssh_target(pod_id)
+        ip, port, identity = self._ssh_target(pod_id)
         proc = subprocess.run(
-            ["ssh", "-p", port, "-o", "StrictHostKeyChecking=accept-new", f"root@{host}", command],
+            [
+                "ssh",
+                "-i",
+                identity,
+                "-p",
+                port,
+                "-o",
+                "StrictHostKeyChecking=accept-new",
+                f"root@{ip}",
+                command,
+            ],
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -213,18 +248,42 @@ class RunpodCTLClient:
         return proc.returncode, proc.stdout, proc.stderr
 
     def send_path(self, pod_id: str, local_path: Path, remote_path: str) -> None:
-        host, port = self._ssh_target(pod_id)
+        ip, port, identity = self._ssh_target(pod_id)
         subprocess.run(
-            ["scp", "-P", port, "-r", str(local_path), f"root@{host}:{remote_path}"],
+            [
+                "ssh",
+                "-i",
+                identity,
+                "-p",
+                port,
+                "-o",
+                "StrictHostKeyChecking=accept-new",
+                f"root@{ip}",
+                f"mkdir -p {remote_path}",
+            ],
+            check=True,
+            timeout=60,
+        )
+        subprocess.run(
+            [
+                "scp",
+                "-i",
+                identity,
+                "-P",
+                port,
+                "-r",
+                f"{local_path}/.",
+                f"root@{ip}:{remote_path}/",
+            ],
             check=True,
             timeout=1800,
         )
 
     def receive_path(self, pod_id: str, remote_path: str, local_path: Path) -> None:
-        host, port = self._ssh_target(pod_id)
+        ip, port, identity = self._ssh_target(pod_id)
         local_path.mkdir(parents=True, exist_ok=True)
         subprocess.run(
-            ["scp", "-P", port, "-r", f"root@{host}:{remote_path}", str(local_path)],
+            ["scp", "-i", identity, "-P", port, "-r", f"root@{ip}:{remote_path}", str(local_path)],
             check=True,
             timeout=1800,
         )
@@ -255,13 +314,20 @@ class LifecycleLog:
 
 
 def _remote_train_command(*, hard_cap_usd: float, max_wall_seconds: int) -> str:
-    """The command run on the pod (inside tmux): sync the `detector-train`
-    extra, run the all-cells orchestrator with the SAME budget numbers as
-    this local supervisor, then drop `DONE_MARKER`."""
+    """The command run on the pod (inside tmux): install the
+    `detector-train` deps directly via pip (NOT `uv sync` -- the base
+    project's REQUIRED deps include `auditk`/`tau2` as editable path deps
+    on sibling checkouts that `bossyk_sandbox.detector.*` never actually
+    imports; the `runpod-torch-v280` template already ships torch 2.8+cu128,
+    so only `transformers`/`peft`/`accelerate` are missing -- see this run's
+    lifecycle-log decision note), run the all-cells orchestrator with the
+    SAME budget numbers as this local supervisor via `PYTHONPATH=src`, then
+    drop `DONE_MARKER`."""
     train_cmd = (
         f"cd {REMOTE_WORKDIR} && "
-        "uv sync --extra detector-train && "
-        "uv run python scripts/detector_pod_train_all.py "
+        "pip install -q --break-system-packages "
+        "transformers peft accelerate sentencepiece protobuf && "
+        f"PYTHONPATH={REMOTE_WORKDIR}/src python3 scripts/detector_pod_train_all.py "
         "--checkpoint-root /workspace/checkpoints "
         f"--manifest-out {REMOTE_WORKDIR}/probes/detector/results/training_manifest.jsonl "
         f"--scores-root {REMOTE_WORKDIR}/probes/detector/results/scores "

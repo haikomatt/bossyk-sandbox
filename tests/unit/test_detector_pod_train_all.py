@@ -102,6 +102,41 @@ def test_run_all_dry_run_completes_all_cells_with_generous_budget(tmp_path: Path
             ).exists()
 
 
+def test_run_all_deletes_checkpoints_after_scoring_by_default(tmp_path: Path) -> None:
+    # Regression test for the real disk-exhaustion incident (2026-08-28
+    # pod run): a 50GB container disk filled after 17/18 cells because
+    # checkpoints were never cleaned up between cells. Scores + manifest
+    # are what get downloaded -- checkpoints must not accumulate.
+    m = _import()
+    data_root = tmp_path / "data"
+    _write_domain(data_root, "alpha")
+
+    summary = m.run_all(**_run_kwargs(tmp_path, data_root, domains=("alpha",)))
+
+    assert summary["all_cells_complete"] is True
+    for family, domain, seed in summary["ran_this_invocation"]:
+        cell_dir = tmp_path / "ckpt" / family / domain / f"seed{seed}"
+        assert not cell_dir.exists()
+    # scores survive the cleanup
+    for family, domain, seed in summary["ran_this_invocation"]:
+        assert (tmp_path / "scores" / family / domain / f"seed{seed}" / "alpha.jsonl").exists()
+
+
+def test_run_all_keep_checkpoints_flag_preserves_them(tmp_path: Path) -> None:
+    m = _import()
+    data_root = tmp_path / "data"
+    _write_domain(data_root, "alpha")
+
+    kwargs = _run_kwargs(tmp_path, data_root, domains=("alpha",))
+    kwargs["keep_checkpoints"] = True
+    summary = m.run_all(**kwargs)
+
+    assert summary["all_cells_complete"] is True
+    for family, domain, seed in summary["ran_this_invocation"]:
+        cell_dir = tmp_path / "ckpt" / family / domain / f"seed{seed}"
+        assert cell_dir.exists()
+
+
 def test_run_all_resumes_and_skips_already_manifested_cells(tmp_path: Path) -> None:
     m = _import()
     data_root = tmp_path / "data"

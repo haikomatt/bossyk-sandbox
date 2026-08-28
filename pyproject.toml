@@ -29,7 +29,14 @@ bench = ["auditk[nli]"]
 # on the RunPod pod via `uv sync --extra detector-train`, never locally --
 # mirrors the `bench` extra's convention (see `HFTrainBackend`'s lazy imports
 # in `bossyk_sandbox.detector.train_backend`).
-detector-train = ["torch>=2.5", "transformers>=4.46", "peft>=0.13", "accelerate>=1.0"]
+detector-train = [
+    "torch>=2.5",
+    "transformers>=4.46",
+    "peft>=0.13",
+    "accelerate>=1.0",
+    "sentencepiece>=0.2",
+    "protobuf>=4",
+]
 
 [tool.uv.sources]
 auditk = { path = "../auditk", editable = true }
