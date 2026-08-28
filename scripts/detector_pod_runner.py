@@ -110,6 +110,7 @@ class FakePodClient:
     sent: list[tuple[str, Path, str]] = field(default_factory=list)
     received: list[tuple[str, str, Path]] = field(default_factory=list)
     terminated: list[str] = field(default_factory=list)
+    commands: list[str] = field(default_factory=list)  # every ssh_run command, in order
 
     def create_pod(self, *, name: str, gpu_type: str) -> str:
         self._next_id += 1
@@ -130,6 +131,7 @@ class FakePodClient:
     def ssh_run(
         self, pod_id: str, command: str, *, timeout: float | None = None
     ) -> tuple[int, str, str]:
+        self.commands.append(command)
         if self.ssh_script:
             return self.ssh_script.pop(0)
         return (0, "", "")
@@ -313,7 +315,14 @@ class LifecycleLog:
         }
 
 
-def _remote_train_command(*, hard_cap_usd: float, max_wall_seconds: int) -> str:
+def _remote_train_command(
+    *,
+    hard_cap_usd: float,
+    max_wall_seconds: int,
+    families: str | None = None,
+    domains: str | None = None,
+    seeds: str | None = None,
+) -> str:
     """The command run on the pod (inside tmux): install the
     `detector-train` deps directly via pip (NOT `uv sync` -- the base
     project's REQUIRED deps include `auditk`/`tau2` as editable path deps
@@ -322,7 +331,23 @@ def _remote_train_command(*, hard_cap_usd: float, max_wall_seconds: int) -> str:
     so only `transformers`/`peft`/`accelerate` are missing -- see this run's
     lifecycle-log decision note), run the all-cells orchestrator with the
     SAME budget numbers as this local supervisor via `PYTHONPATH=src`, then
-    drop `DONE_MARKER`."""
+    drop `DONE_MARKER`.
+
+    `families`/`domains`/`seeds` are optional pass-throughs to
+    `detector_pod_train_all.py`'s own (comma-separated) cell-selection
+    flags -- used for top-up runs that must re-train only specific cells
+    (e.g. ones that died mid-sweep). Omitted by default, which reproduces
+    the original full-sweep command unchanged: cell selection is opt-in,
+    layered on top of (not a replacement for) the orchestrator's own
+    manifest-resume skip logic, so a top-up run can never drift into
+    training cells outside the caller's explicit selection."""
+    cell_selection = ""
+    if families is not None:
+        cell_selection += f" --families {families}"
+    if domains is not None:
+        cell_selection += f" --domains {domains}"
+    if seeds is not None:
+        cell_selection += f" --seeds {seeds}"
     train_cmd = (
         f"cd {REMOTE_WORKDIR} && "
         "pip install -q --break-system-packages "
@@ -331,7 +356,8 @@ def _remote_train_command(*, hard_cap_usd: float, max_wall_seconds: int) -> str:
         "--checkpoint-root /workspace/checkpoints "
         f"--manifest-out {REMOTE_WORKDIR}/probes/detector/results/training_manifest.jsonl "
         f"--scores-root {REMOTE_WORKDIR}/probes/detector/results/scores "
-        f"--hard-cap-usd {hard_cap_usd} --max-wall-seconds {max_wall_seconds} "
+        f"--hard-cap-usd {hard_cap_usd} --max-wall-seconds {max_wall_seconds}"
+        f"{cell_selection} "
         f"; echo $? > {REMOTE_WORKDIR}/{DONE_MARKER}"
     )
     session = "detector-train"
@@ -353,6 +379,9 @@ def run_lifecycle(
     dry_run_remote: bool = False,
     sleep_fn: Any = time.sleep,
     now_fn: Any = time.monotonic,
+    families: str | None = None,
+    domains: str | None = None,
+    seeds: str | None = None,
 ) -> LifecycleLog:
     """The full supervised lifecycle: provision, upload, launch, poll until
     the remote job signals `DONE_MARKER` or the budget runs out, download
@@ -387,7 +416,11 @@ def run_lifecycle(
         log.poll_log.append(f"uploaded {local_dir} -> {REMOTE_WORKDIR}")
 
         remote_cmd = _remote_train_command(
-            hard_cap_usd=hard_cap_usd, max_wall_seconds=max_wall_seconds
+            hard_cap_usd=hard_cap_usd,
+            max_wall_seconds=max_wall_seconds,
+            families=families,
+            domains=domains,
+            seeds=seeds,
         )
         rc, out, err = client.ssh_run(pod_id, remote_cmd, timeout=120)
         log.poll_log.append(f"launched training session rc={rc}")
@@ -447,6 +480,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-wall-seconds", type=int, default=MAX_WALL_SECONDS)
     parser.add_argument("--local-dir", type=Path, default=REPO_ROOT)
     parser.add_argument("--summary-out", type=Path, default=None)
+    parser.add_argument(
+        "--families",
+        default=None,
+        help="Comma-separated pass-through to detector_pod_train_all.py's "
+        "--families (top-up runs only; omit for a full sweep).",
+    )
+    parser.add_argument(
+        "--domains",
+        default=None,
+        help="Comma-separated pass-through to detector_pod_train_all.py's "
+        "--domains (top-up runs only; omit for a full sweep).",
+    )
+    parser.add_argument(
+        "--seeds",
+        default=None,
+        help="Comma-separated pass-through to detector_pod_train_all.py's "
+        "--seeds (top-up runs only; omit for a full sweep).",
+    )
     args = parser.parse_args(argv)
 
     client: PodClient = RunpodCTLClient()
@@ -464,6 +515,9 @@ def main(argv: list[str] | None = None) -> int:
         hard_cap_usd=args.hard_cap_usd,
         max_wall_seconds=args.max_wall_seconds,
         local_dir=args.local_dir,
+        families=args.families,
+        domains=args.domains,
+        seeds=args.seeds,
     )
 
     if args.summary_out:

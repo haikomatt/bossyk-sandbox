@@ -152,3 +152,61 @@ def test_remote_train_command_embeds_the_same_budget_numbers() -> None:
     assert "--hard-cap-usd 12.5" in cmd
     assert "--max-wall-seconds 1800" in cmd
     assert "detector_pod_train_all.py" in cmd
+
+
+def test_remote_train_command_omits_cell_selection_flags_by_default() -> None:
+    """Default (no families/domains/seeds passed) must reproduce the
+    original full-sweep command byte-for-byte -- top-up/cell-selection runs
+    are opt-in, never accidentally narrower than a full run."""
+    m = _import()
+    cmd = m._remote_train_command(hard_cap_usd=12.5, max_wall_seconds=1800)
+    assert "--families" not in cmd
+    assert "--domains" not in cmd
+    assert "--seeds" not in cmd
+
+
+def test_remote_train_command_forwards_cell_selection_flags_when_given() -> None:
+    """A top-up run (e.g. re-running only the two cells that died to the
+    disk-full bug) must be able to restrict the on-pod orchestrator to
+    exactly those cells, independent of manifest-resume behaviour -- so the
+    pod can never drift into training cells outside the authorized set."""
+    m = _import()
+    cmd = m._remote_train_command(
+        hard_cap_usd=2.0,
+        max_wall_seconds=1800,
+        families="qwen_lora",
+        domains="advice-eligibility",
+        seeds="1,2",
+    )
+    assert "--families qwen_lora" in cmd
+    assert "--domains advice-eligibility" in cmd
+    assert "--seeds 1,2" in cmd
+    # must appear before the exit-code capture, i.e. actually part of the
+    # detector_pod_train_all.py invocation, not tacked on after it
+    assert cmd.index("--seeds 1,2") < cmd.index("echo $?")
+
+
+def test_run_lifecycle_threads_cell_selection_into_the_remote_command(tmp_path: Path) -> None:
+    """End-to-end: passing families/domains/seeds into run_lifecycle must
+    reach the actual ssh_run command sent to the pod client (FakePodClient
+    records every command it's asked to run in `.commands`)."""
+    m = _import()
+    client = m.FakePodClient()
+    client.ssh_script = [
+        (0, "", ""),  # launch
+        (0, "DETECTOR_TRAIN_ALL_DONE\n0\n", ""),  # done marker check
+    ]
+    m.run_lifecycle(
+        client,
+        pod_name="test-pod",
+        local_dir=tmp_path,
+        sleep_fn=_noop_sleep,
+        families="qwen_lora",
+        domains="advice-eligibility",
+        seeds="1,2",
+    )
+    launch_commands = [cmd for cmd in client.commands if "detector_pod_train_all.py" in cmd]
+    assert len(launch_commands) == 1
+    assert "--families qwen_lora" in launch_commands[0]
+    assert "--domains advice-eligibility" in launch_commands[0]
+    assert "--seeds 1,2" in launch_commands[0]
