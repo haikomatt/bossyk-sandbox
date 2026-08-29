@@ -59,12 +59,24 @@ TRAINING_TEMPLATE_ID = "runpod-torch-v280"  # torch 2.8, matches the house runbo
 POLL_INTERVAL_SECONDS = 30
 REMOTE_WORKDIR = "/workspace/bossyk-sandbox-partb"
 DONE_MARKER = "DETECTOR_TRAIN_ALL_DONE"
-# `runpodctl create pod --cost` is a hard price CEILING at creation time --
-# an independent real-world safety net alongside `pod_budget`'s own
-# wall-clock arithmetic (which assumes $0.44/hr): even if actual A40 pricing
-# runs above that assumption, the pod is never created above this rate.
-# $1.50/hr x the 6h floor-generous wall cap = $9, still under the $15 cap.
-HOURLY_COST_CEILING_USD = 1.50
+# Live-checked against `runpodctl pod create --help` on 2026-08-29
+# (runpodctl 2.12.0-51ca7f0): NEITHER `--cost` NOR `--terminate-after` exists
+# as a flag. The prior real attempt's script carried both anyway (dead
+# flags -- `runpodctl` errors on unknown flags, so any invocation with them
+# would fail outright before ever reaching the API); do not resurface them.
+# Real-infra backstops against a runaway pod are, in order: the in-script
+# `pod_budget` wall/dollar caps (checked every poll, see `should_terminate`),
+# the supervisor's `finally`-block terminate + verified-empty-`pod list`
+# check, and operator foreground supervision for the run's whole lifetime.
+#
+# The lost CA-MTL-1 pod (2026-08-28/29 attempt) motivates preferring a
+# different secure-cloud region when `runpodctl gpu list` exposes the
+# choice: for A40/secure-cloud on 2026-08-29, CA-MTL-1 showed "Low" stock
+# (the region that vanished), EU-SE-1 showed "Medium", US-MO-1 showed
+# "none". EU-SE-1 is used as the preferred `--data-center-ids` value; if a
+# future check shows it unavailable, omit the flag and let RunPod's own
+# placement choose (never silently fall back to CA-MTL-1 by name).
+PREFERRED_DATA_CENTER_ID = "EU-SE-1"
 
 
 class PodClient(Protocol):
@@ -143,6 +155,35 @@ class FakePodClient:
         self.received.append((pod_id, remote_path, local_path))
 
 
+def _create_pod_args(*, name: str, gpu_type: str, data_center_ids: str | None = None) -> list[str]:
+    """Pure argument-list builder for `runpodctl pod create` -- unit-testable
+    without a subprocess, same pattern as `_remote_train_command`. Deliberately
+    does NOT include `--cost` or `--terminate-after` (see the module-level
+    comment by `PREFERRED_DATA_CENTER_ID`: neither flag exists in the
+    installed runpodctl). `data_center_ids` is optional so a caller can omit
+    region pinning entirely (falls back to RunPod's own placement) rather
+    than hardcode a region that later stops being offered."""
+    args = [
+        "pod",
+        "create",
+        "--name",
+        name,
+        "--gpu-id",
+        gpu_type,
+        "--template-id",
+        TRAINING_TEMPLATE_ID,
+        "--cloud-type",
+        "SECURE",
+        "--container-disk-in-gb",
+        "50",
+        "--ports",
+        "22/tcp",
+    ]
+    if data_center_ids:
+        args += ["--data-center-ids", data_center_ids]
+    return args
+
+
 class RunpodCTLClient:
     """Real `PodClient`: `runpodctl pod ...` (the modern, non-deprecated
     subcommand form -- `runpodctl create pod` is deprecated and takes a
@@ -162,33 +203,10 @@ class RunpodCTLClient:
         return json.loads(proc.stdout) if proc.stdout.strip() else {}
 
     def create_pod(self, *, name: str, gpu_type: str) -> str:
-        # `--terminate-after` is a real-infra backstop layered ON TOP of
-        # this process's own `pod_budget`/`finally` teardown -- if the local
-        # supervisor itself dies (crash, host reboot), RunPod force-kills
-        # the pod anyway. Set generously beyond MAX_WALL_SECONDS so the
-        # in-script backstop is always the one that fires in the normal case.
-        terminate_after = time.strftime(
-            "%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + MAX_WALL_SECONDS + 3600)
-        )
         result = self._runpodctl(
-            "pod",
-            "create",
-            "--name",
-            name,
-            "--gpu-id",
-            gpu_type,
-            "--template-id",
-            TRAINING_TEMPLATE_ID,
-            "--cloud-type",
-            "SECURE",
-            "--container-disk-in-gb",
-            "50",
-            "--ports",
-            "22/tcp",
-            "--cost",
-            str(HOURLY_COST_CEILING_USD),
-            "--terminate-after",
-            terminate_after,
+            *_create_pod_args(
+                name=name, gpu_type=gpu_type, data_center_ids=PREFERRED_DATA_CENTER_ID
+            )
         )
         pod_id = result.get("id") or result.get("podId")
         if not pod_id:
@@ -367,6 +385,37 @@ def _remote_train_command(
     )
 
 
+def _local_results_dir(local_dir: Path) -> Path:
+    return local_dir / "probes" / "detector" / "results_from_pod"
+
+
+def _sync_incremental(client: PodClient, pod_id: str, local_dir: Path, log: LifecycleLog) -> None:
+    """Best-effort incremental download of the pod's results dir (manifest +
+    per-cell score files) into a local staging dir. Called on every poll
+    iteration the job is still running (plus once more right before any
+    terminate) so a pod that vanishes mid-run costs at most the one
+    in-flight cell -- the lesson from the prior attempt, which only
+    downloaded once at the very end and lost 13 already-completed cells
+    with the pod. Failures (e.g. a transient scp hiccup, or the pod already
+    gone) are swallowed and logged, never fatal -- the next successful sync
+    catches up, and if the pod really is gone, the last successful sync is
+    what's left to recover."""
+    try:
+        client.receive_path(
+            pod_id,
+            f"{REMOTE_WORKDIR}/probes/detector/results",
+            _local_results_dir(local_dir),
+        )
+    except Exception as exc:  # noqa: BLE001 -- best-effort; must never crash the poll loop
+        log.poll_log.append(f"incremental sync failed (will retry next poll): {exc}")
+        return
+    manifest = _local_results_dir(local_dir) / "results" / "training_manifest.jsonl"
+    n_cells = 0
+    if manifest.exists():
+        n_cells = sum(1 for line in manifest.read_text().splitlines() if line.strip())
+    log.poll_log.append(f"incremental sync: {n_cells} cell(s) captured so far")
+
+
 def run_lifecycle(
     client: PodClient,
     *,
@@ -435,6 +484,9 @@ def run_lifecycle(
             )
             if decision.terminate:
                 log.poll_log.append(f"budget backstop fired: {decision.reason}")
+                # one last best-effort pull -- catches anything landed since
+                # the previous poll, before the pod goes away for good.
+                _sync_incremental(client, pod_id, local_dir, log)
                 _terminate_and_verify(decision.reason)
                 return log
 
@@ -443,15 +495,12 @@ def run_lifecycle(
             )
             if check_out.strip():
                 log.poll_log.append(f"remote job signalled done: exit={check_out.strip()}")
-                client.receive_path(
-                    pod_id,
-                    f"{REMOTE_WORKDIR}/probes/detector/results",
-                    local_dir / "probes" / "detector" / "results_from_pod",
-                )
+                _sync_incremental(client, pod_id, local_dir, log)
                 _terminate_and_verify("remote job completed")
                 return log
 
             log.poll_log.append(f"poll at {elapsed:.0f}s: not done yet")
+            _sync_incremental(client, pod_id, local_dir, log)
             if dry_run_remote:
                 # test/dry-run mode: don't actually sleep in a loop forever
                 _terminate_and_verify("dry_run_remote poll-once")

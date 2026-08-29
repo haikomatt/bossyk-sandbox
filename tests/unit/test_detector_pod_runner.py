@@ -186,6 +186,130 @@ def test_remote_train_command_forwards_cell_selection_flags_when_given() -> None
     assert cmd.index("--seeds 1,2") < cmd.index("echo $?")
 
 
+def test_create_pod_args_omit_unsupported_cost_and_terminate_after_flags() -> None:
+    """runpodctl 2.12.0's `pod create --help` (checked live 2026-08-29) has
+    neither `--cost` nor `--terminate-after` -- the prior attempt's script
+    carried both as dead flags, which would make the real command fail
+    outright with an unknown-flag error before ever reaching the API."""
+    m = _import()
+    args = m._create_pod_args(name="detector-training", gpu_type=m.A40_GPU_TYPE)
+    assert "--cost" not in args
+    assert "--terminate-after" not in args
+
+
+def test_create_pod_args_prefer_a_non_ca_mtl_1_region_when_given() -> None:
+    """The lost pod was CA-MTL-1 (Low stock); EU-SE-1 (Medium stock) is the
+    preferred alternative -- dodging a possibly-flaky host fleet per the
+    brief, when runpodctl exposes the choice via --data-center-ids."""
+    m = _import()
+    args = m._create_pod_args(
+        name="detector-training", gpu_type=m.A40_GPU_TYPE, data_center_ids="EU-SE-1"
+    )
+    assert "--data-center-ids" in args
+    assert "EU-SE-1" in args
+    assert "CA-MTL-1" not in args
+
+
+def test_create_pod_args_omit_region_flag_when_none_given() -> None:
+    """Region pinning is optional -- omitting it falls back to RunPod's own
+    placement rather than hardcoding a region that might stop being
+    offered."""
+    m = _import()
+    args = m._create_pod_args(name="detector-training", gpu_type=m.A40_GPU_TYPE)
+    assert "--data-center-ids" not in args
+
+
+def test_create_pod_args_carry_the_core_provisioning_flags() -> None:
+    m = _import()
+    args = m._create_pod_args(name="detector-training", gpu_type=m.A40_GPU_TYPE)
+    assert "--name" in args and "detector-training" in args
+    assert "--gpu-id" in args and m.A40_GPU_TYPE in args
+    assert "--template-id" in args and m.TRAINING_TEMPLATE_ID in args
+    assert "--cloud-type" in args and "SECURE" in args
+    assert "--container-disk-in-gb" in args and "50" in args
+
+
+def test_lifecycle_syncs_incrementally_on_every_poll_not_just_at_completion(
+    tmp_path: Path,
+) -> None:
+    """The prior real attempt (2026-08-29 Amendment-4 retrain) downloaded
+    results only once, at the very end -- when the pod vanished mid-run it
+    lost 13 already-completed cells with it. The poll loop must pull the
+    pod's results dir (manifest + score files) down on every iteration that
+    shows the job still running, not just once after DONE_MARKER, so a pod
+    loss costs at most the one in-flight cell."""
+    m = _import()
+    client = m.FakePodClient()
+    client.ssh_script = [
+        (0, "", ""),  # launch
+        (0, "", ""),  # poll 1: not done yet
+        (0, "", ""),  # poll 2: not done yet
+        (0, "", ""),  # poll 3: not done yet
+        (0, "0\n", ""),  # poll 4: done
+    ]
+    log = m.run_lifecycle(client, pod_name="test-pod", local_dir=tmp_path, sleep_fn=_noop_sleep)
+
+    assert log.error is None
+    # one receive_path per not-done poll (3) plus the final completion sync (1)
+    assert len(client.received) >= 4
+    # every incremental sync pulls the SAME remote results dir into the SAME
+    # local staging dir, so a later sync can only add to what an earlier one
+    # already captured (no per-poll drift in the target path).
+    remote_paths = {r[1] for r in client.received}
+    local_paths = {r[2] for r in client.received}
+    assert remote_paths == {f"{m.REMOTE_WORKDIR}/probes/detector/results"}
+    assert local_paths == {tmp_path / "probes" / "detector" / "results_from_pod"}
+    assert any("incremental sync" in line for line in log.poll_log)
+
+
+def test_lifecycle_attempts_incremental_sync_before_terminating_on_budget_breach(
+    tmp_path: Path,
+) -> None:
+    """A budget-exhaustion termination is also a "pod about to go away"
+    moment from the results' point of view -- one last best-effort sync
+    should be attempted before terminate, to catch anything landed since the
+    previous poll."""
+    m = _import()
+    client = m.FakePodClient()
+    client.ssh_script = [(0, "", "")]  # launch ok; budget fires before any done-check
+
+    log = m.run_lifecycle(
+        client,
+        pod_name="test-pod",
+        local_dir=tmp_path,
+        hard_cap_usd=0.0001,
+        max_wall_seconds=10**9,
+        sleep_fn=_noop_sleep,
+        now_fn=lambda: 3600.0,
+    )
+
+    assert log.verified_zero_pods is True
+    assert len(client.received) >= 1
+
+
+def test_lifecycle_incremental_sync_failure_is_swallowed_not_fatal(tmp_path: Path) -> None:
+    """A transient scp hiccup mid-poll must not kill the whole supervisor --
+    the next successful poll's sync catches up. Only a hard failure in the
+    actual training-status check (ssh_run) should end the loop."""
+    m = _import()
+
+    class FlakySyncClient(m.FakePodClient):  # type: ignore[name-defined,misc]
+        def receive_path(self, pod_id: str, remote_path: str, local_path: Path) -> None:
+            raise RuntimeError("scp: connection reset by peer")
+
+    client = FlakySyncClient()
+    client.ssh_script = [
+        (0, "", ""),  # launch
+        (0, "", ""),  # poll 1: not done
+        (0, "0\n", ""),  # poll 2: done
+    ]
+    log = m.run_lifecycle(client, pod_name="test-pod", local_dir=tmp_path, sleep_fn=_noop_sleep)
+
+    assert log.error is None
+    assert log.verified_zero_pods is True
+    assert any("incremental sync failed" in line for line in log.poll_log)
+
+
 def test_run_lifecycle_threads_cell_selection_into_the_remote_command(tmp_path: Path) -> None:
     """End-to-end: passing families/domains/seeds into run_lifecycle must
     reach the actual ssh_run command sent to the pod client (FakePodClient
