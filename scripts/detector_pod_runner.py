@@ -230,25 +230,71 @@ class RunpodCTLClient:
             raise RuntimeError(f"could not find pod id in create response: {result!r}")
         return str(pod_id)
 
+    # --- ACCOUNT-KEY REST reads (2026-08-30, post audit-log post-mortem) ---
+    #
+    # runpodctl v2.12 mints a POD-SCOPED api key on every `pod create` (audit
+    # log: rpa_* with permissions {"podId": ...}). Queries made through a
+    # scoped credential can return "pod not found" for a pod that is ALIVE
+    # AND BILLING, and an empty `pod list` that verifies nothing -- exactly
+    # how attempts 4/5's pods "vanished" while metered billing shows each
+    # ran ~2.5h after we declared it gone. Every read that matters for money
+    # therefore goes to the public REST API with the ACCOUNT key from the
+    # environment, never through whatever credential runpodctl has stored.
+    _REST_BASE = "https://rest.runpod.io/v1"
+
+    def _rest(self, method: str, path: str) -> tuple[int, str]:
+        import os
+        import urllib.error
+        import urllib.request
+
+        req = urllib.request.Request(
+            f"{self._REST_BASE}{path}",
+            method=method,
+            headers={"Authorization": f"Bearer {os.environ['RUNPOD_API_KEY']}"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return resp.status, resp.read().decode()
+        except urllib.error.HTTPError as e:
+            return e.code, e.read().decode()
+
     def get_status(self, pod_id: str) -> str:
-        result = self._runpodctl("pod", "get", pod_id)
-        status = result.get("desiredStatus") or result.get("status") or "UNKNOWN"
-        return str(status)
+        code, body = self._rest("GET", f"/pods/{pod_id}")
+        if code == 404:
+            return "NOT_FOUND"
+        if code != 200:
+            raise RuntimeError(f"REST get pod {pod_id} -> HTTP {code}: {body[:200]}")
+        result = json.loads(body)
+        return str(result.get("desiredStatus") or result.get("status") or "UNKNOWN")
 
     def list_pod_ids(self) -> list[str]:
-        result = self._runpodctl("pod", "list", "--all")
+        code, body = self._rest("GET", "/pods")
+        if code != 200:
+            raise RuntimeError(f"REST list pods -> HTTP {code}: {body[:200]}")
+        result = json.loads(body)
         pods = result if isinstance(result, list) else result.get("pods", [])
         return [str(p["id"]) for p in pods if p.get("desiredStatus", p.get("status")) != "EXITED"]
 
     def terminate_pod(self, pod_id: str) -> None:
+        # runpodctl first (it may hold the pod-scoped key), then the REST
+        # DELETE with the account key as the authoritative backstop; a 404
+        # from REST means already gone, which is the desired end state.
         subprocess.run(
             ["runpodctl", "pod", "delete", pod_id], capture_output=True, text=True, timeout=60
         )
+        code, body = self._rest("DELETE", f"/pods/{pod_id}")
+        if code not in (200, 204, 404):
+            raise RuntimeError(f"REST delete pod {pod_id} -> HTTP {code}: {body[:200]}")
 
     def _ssh_target(self, pod_id: str) -> tuple[str, str, str]:
         """Returns `(ip, port, identity_file)` parsed from
         `runpodctl ssh info <pod_id>`. Raises if SSH isn't up yet -- the
-        caller is expected to have already waited for readiness."""
+        caller is expected to have already waited for readiness.
+
+        "pod not found" here is NOT trusted as pod death (scoped-key
+        blindness, see _rest note): callers that would previously crash on
+        it should consult `get_status` (account key) before concluding
+        anything."""
         proc = subprocess.run(
             ["runpodctl", "ssh", "info", pod_id, "-o", "json"],
             capture_output=True,
@@ -516,6 +562,7 @@ def run_lifecycle(
             log.error = f"failed to launch remote training session: {err.strip()}"
             return log
 
+        ssh_fail_streak = 0
         while True:
             elapsed = now_fn() - start
             decision: TerminationDecision = should_terminate(
@@ -529,9 +576,33 @@ def run_lifecycle(
                 _terminate_and_verify(decision.reason)
                 return log
 
-            check_rc, check_out, _ = client.ssh_run(
-                pod_id, f"cat {REMOTE_WORKDIR}/{DONE_MARKER} 2>/dev/null || true", timeout=30
-            )
+            try:
+                check_rc, check_out, _ = client.ssh_run(
+                    pod_id, f"cat {REMOTE_WORKDIR}/{DONE_MARKER} 2>/dev/null || true", timeout=30
+                )
+                ssh_fail_streak = 0
+            except RuntimeError as ssh_exc:
+                # Post-mortem lesson (2026-08-30): "pod not found" from the
+                # CLI is NOT death -- attempts 4/5's pods billed ~2.5h after
+                # that error. Consult the ACCOUNT-key REST status: truly gone
+                # -> graceful pod-lost exit (synced results preserved,
+                # manifest-resume continues on the next pod); still running
+                # -> visibility blip, retry (bounded).
+                status = client.get_status(pod_id)
+                if status in ("NOT_FOUND", "EXITED", "TERMINATED"):
+                    log.poll_log.append(f"pod lost (REST status={status}): {ssh_exc}")
+                    _terminate_and_verify(f"pod lost mid-run (REST status={status})")
+                    return log
+                ssh_fail_streak += 1
+                log.poll_log.append(
+                    f"ssh failed but REST status={status} (streak {ssh_fail_streak}): {ssh_exc}"
+                )
+                if ssh_fail_streak >= 5:
+                    raise RuntimeError(
+                        f"5 consecutive ssh failures while REST reports {status}: {ssh_exc}"
+                    ) from ssh_exc
+                sleep_fn(poll_interval_seconds)
+                continue
             if check_out.strip():
                 log.poll_log.append(f"remote job signalled done: exit={check_out.strip()}")
                 _sync_incremental(client, pod_id, local_dir, log)

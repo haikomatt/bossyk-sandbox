@@ -380,3 +380,55 @@ def test_lifecycle_terminates_when_ssh_never_ready(tmp_path: Path) -> None:
     assert len(client.terminated) == 1  # finally still terminated the pod
     assert client.list_pod_ids() == []
     assert client.sent == []  # never uploaded
+
+
+# --- pod-lost vs visibility-blip handling (2026-08-30 post-mortem: "pod not
+# found" from the CLI is not pod death; REST account-key status arbitrates) --
+
+
+def test_poll_ssh_failure_with_pod_truly_gone_exits_gracefully(tmp_path: Path) -> None:
+    m = _import()
+
+    class PodVanishesClient(m.FakePodClient):  # type: ignore[name-defined,misc]
+        def ssh_run(
+            self, pod_id: str, command: str, *, timeout: float | None = None
+        ) -> tuple[int, str, str]:
+            self.commands.append(command)
+            if "detector_pod_train_all" in command:
+                return (0, "", "")  # launch succeeds
+            # then the pod dies for real before the first done-check
+            self.pods[pod_id] = "EXITED"
+            raise RuntimeError("pod not found")
+
+    client = PodVanishesClient()
+    log = m.run_lifecycle(client, pod_name="test-pod", local_dir=tmp_path, sleep_fn=_noop_sleep)
+
+    # graceful: no raise, reason records the REST-confirmed loss, synced
+    # results (received at least once during lifecycle) are what remains
+    assert "pod lost" in log.terminate_reason
+    assert log.error is None
+
+
+def test_poll_ssh_failure_with_pod_still_running_retries_then_raises(tmp_path: Path) -> None:
+    m = _import()
+
+    class BlippingClient(m.FakePodClient):  # type: ignore[name-defined,misc]
+        def ssh_run(
+            self, pod_id: str, command: str, *, timeout: float | None = None
+        ) -> tuple[int, str, str]:
+            self.commands.append(command)
+            if "detector_pod_train_all" in command:
+                return (0, "", "")
+            # visibility blip: ssh keeps failing but REST says RUNNING
+            raise RuntimeError("pod not found")
+
+    client = BlippingClient()
+    try:
+        m.run_lifecycle(client, pod_name="test-pod", local_dir=tmp_path, sleep_fn=_noop_sleep)
+        raise AssertionError("expected bounded retry to exhaust and raise")
+    except RuntimeError as exc:
+        assert "consecutive ssh failures" in str(exc)
+
+    # the finally still tore the pod down
+    assert len(client.terminated) == 1
+    assert client.list_pod_ids() == []
