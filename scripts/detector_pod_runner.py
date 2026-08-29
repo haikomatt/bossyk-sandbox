@@ -57,6 +57,8 @@ REPO_ROOT = Path(__file__).parent.parent
 A40_GPU_TYPE = "NVIDIA A40"
 TRAINING_TEMPLATE_ID = "runpod-torch-v280"  # torch 2.8, matches the house runbook convention
 POLL_INTERVAL_SECONDS = 30
+SSH_READY_MAX_ATTEMPTS = 60  # x 10s = up to ~10 min for image pull + boot
+SSH_READY_POLL_SECONDS = 10.0
 REMOTE_WORKDIR = "/workspace/bossyk-sandbox-partb"
 DONE_MARKER = "DETECTOR_TRAIN_ALL_DONE"
 # Live-checked against `runpodctl pod create --help` on 2026-08-29
@@ -103,6 +105,13 @@ class PodClient(Protocol):
         """Runs `command` on the pod over SSH; returns (returncode, stdout, stderr)."""
         ...
 
+    def ssh_ready(self, pod_id: str) -> bool:
+        """True once the pod's container is up and SSH is reachable. Fresh
+        pods (especially in regions with a cold image cache, e.g. EU-SE-1)
+        can take minutes before SSH exists -- attempt-2's crash was
+        `send_path` running before this was true."""
+        ...
+
     def send_path(self, pod_id: str, local_path: Path, remote_path: str) -> None: ...
 
     def receive_path(self, pod_id: str, remote_path: str, local_path: Path) -> None: ...
@@ -118,6 +127,9 @@ class FakePodClient:
 
     pods: dict[str, str] = field(default_factory=dict)  # pod_id -> status
     ssh_script: list[tuple[int, str, str]] = field(default_factory=list)  # scripted ssh_run replies
+    ssh_ready_script: list[bool] = field(
+        default_factory=list
+    )  # scripted ssh_ready replies (then True)
     _next_id: int = 0
     sent: list[tuple[str, Path, str]] = field(default_factory=list)
     received: list[tuple[str, str, Path]] = field(default_factory=list)
@@ -147,6 +159,11 @@ class FakePodClient:
         if self.ssh_script:
             return self.ssh_script.pop(0)
         return (0, "", "")
+
+    def ssh_ready(self, pod_id: str) -> bool:
+        if self.ssh_ready_script:
+            return self.ssh_ready_script.pop(0)
+        return True
 
     def send_path(self, pod_id: str, local_path: Path, remote_path: str) -> None:
         self.sent.append((pod_id, local_path, remote_path))
@@ -244,6 +261,13 @@ class RunpodCTLClient:
         if info.get("error"):
             raise RuntimeError(f"pod {pod_id} SSH not ready: {info['error']}")
         return str(info["ip"]), str(info.get("port", 22)), str(info["ssh_key"]["path"])
+
+    def ssh_ready(self, pod_id: str) -> bool:
+        try:
+            self._ssh_target(pod_id)
+        except (RuntimeError, subprocess.TimeoutExpired, json.JSONDecodeError, KeyError):
+            return False
+        return True
 
     def ssh_run(
         self, pod_id: str, command: str, *, timeout: float | None = None
@@ -460,6 +484,21 @@ def run_lifecycle(
         log.pod_id = pod_id
         log.provisioned_at = now_fn()
         log.poll_log.append(f"provisioned {pod_id}")
+
+        # Wait for the container + SSH before touching the pod (attempt-2's
+        # crash: EU-SE-1 image pull took longer than CA-MTL-1's 18s and
+        # send_path ran into "no container reported yet").
+        for attempt in range(SSH_READY_MAX_ATTEMPTS):
+            if client.ssh_ready(pod_id):
+                break
+            log.poll_log.append(f"ssh not ready (attempt {attempt + 1}/{SSH_READY_MAX_ATTEMPTS})")
+            sleep_fn(SSH_READY_POLL_SECONDS)
+        else:
+            raise RuntimeError(
+                f"pod {pod_id} SSH not ready after {SSH_READY_MAX_ATTEMPTS} attempts "
+                f"(~{int(SSH_READY_MAX_ATTEMPTS * SSH_READY_POLL_SECONDS / 60)} min)"
+            )
+        log.poll_log.append("ssh ready")
 
         client.send_path(pod_id, local_dir, REMOTE_WORKDIR)
         log.poll_log.append(f"uploaded {local_dir} -> {REMOTE_WORKDIR}")

@@ -334,3 +334,49 @@ def test_run_lifecycle_threads_cell_selection_into_the_remote_command(tmp_path: 
     assert "--families qwen_lora" in launch_commands[0]
     assert "--domains advice-eligibility" in launch_commands[0]
     assert "--seeds 1,2" in launch_commands[0]
+
+
+# --- SSH readiness wait (Amendment-4 retry attempt 2: EU-SE-1 pods can take
+# minutes to pull the image; the first attempt crashed in send_path because
+# run_lifecycle uploaded immediately after create_pod with no readiness wait) --
+
+
+def test_lifecycle_waits_for_ssh_ready_before_upload(tmp_path: Path) -> None:
+    m = _import()
+    client = m.FakePodClient()
+    client.ssh_ready_script = [False, False, True]  # ready on 3rd probe
+    client.ssh_script = [
+        (0, "", ""),  # launch
+        (0, "DETECTOR_TRAIN_ALL_DONE\n0\n", ""),  # done marker -> loop exits
+    ]
+
+    sleeps: list[float] = []
+    m.run_lifecycle(
+        client,
+        pod_name="test-pod",
+        local_dir=tmp_path,
+        sleep_fn=sleeps.append,
+    )
+
+    # two not-ready probes -> at least two readiness sleeps before upload
+    assert len(sleeps) >= 2
+    assert len(client.sent) == 1  # upload still happened, exactly once
+
+
+def test_lifecycle_terminates_when_ssh_never_ready(tmp_path: Path) -> None:
+    m = _import()
+
+    class NeverReadyClient(m.FakePodClient):  # type: ignore[name-defined,misc]
+        def ssh_ready(self, pod_id: str) -> bool:
+            return False
+
+    client = NeverReadyClient()
+    try:
+        m.run_lifecycle(client, pod_name="test-pod", local_dir=tmp_path, sleep_fn=_noop_sleep)
+        raise AssertionError("expected RuntimeError for SSH never ready")
+    except RuntimeError as exc:
+        assert "SSH not ready" in str(exc)
+
+    assert len(client.terminated) == 1  # finally still terminated the pod
+    assert client.list_pod_ids() == []
+    assert client.sent == []  # never uploaded
