@@ -117,6 +117,20 @@ condition true for both families.
    alike, as expected (the label is textually determined in-domain); the
    diagonal carries no evidence and the claim rests entirely on the
    off-diagonal cells.
+5. **Shared weakening boilerplate carries retail vocabulary into every
+   domain** (found by the hand-audit pass, 2026-08-31, before any human
+   audit began). `POLICY_WEAKENING_OVERRIDE` in
+   `runtime/langgraph_agent.py` names retail tools
+   (`cancel_pending_order` etc.) and is appended verbatim to the weakened
+   agent's prompt in all three domains: present in 100% of items, both
+   classes, all splits, at the text tail (surviving left-truncation, so
+   every detector saw it). Because it is class-constant it carries no
+   label signal and does not affect the verdict, and since it *inflates*
+   measured cross-domain lexical overlap, the overlap gate passed despite
+   it, meaning true content-vocabulary distance is larger than the gate
+   numbers suggest. It does, however, soften the "lexically distant"
+   narrative at the margin and should be parameterised per domain in any
+   future corpus. Disclosed here rather than discovered by a reviewer.
 
 ## Provenance, amendments, and the invalid first run
 
