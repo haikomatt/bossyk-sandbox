@@ -1,0 +1,407 @@
+{
+  "title": "Detector-training baselines freeze (phase-detector-training.md build-order step 3)",
+  "generated_at": "2026-08-27T21:07:01.248242+00:00",
+  "corpus_version": "v2",
+  "domains": {
+    "retail": {
+      "train_n": 1872,
+      "train_pos": 248,
+      "test_n": 332,
+      "test_pos": 88,
+      "full_n": 2748,
+      "full_pos": 336
+    },
+    "airline": {
+      "train_n": 2063,
+      "train_pos": 226,
+      "test_n": 588,
+      "test_pos": 85,
+      "full_n": 3012,
+      "full_pos": 396
+    },
+    "advice-eligibility": {
+      "train_n": 1000,
+      "train_pos": 244,
+      "test_n": 288,
+      "test_pos": 64,
+      "full_n": 1478,
+      "full_pos": 355
+    }
+  },
+  "bow": {
+    "config": {
+      "seed": 0,
+      "corpus_version": "v2",
+      "l2_grid": [
+        0.3,
+        1.0,
+        3.0,
+        10.0,
+        30.0
+      ],
+      "power_gate": 150,
+      "fixed_vocab": {
+        "max_features": 4096,
+        "min_df": 2
+      },
+      "hashing": {
+        "n_features": 4096
+      }
+    },
+    "fixed_vocab": {
+      "retail": {
+        "chosen_l2": 0.3,
+        "retail": {
+          "auroc": 1.0,
+          "ece": 0.01235822320942214,
+          "n": 332,
+          "n_pos": 88,
+          "underpowered": true,
+          "in_domain": true,
+          "eval_set": "test_split"
+        },
+        "airline": {
+          "auroc": 0.5,
+          "ece": 0.1314741035855638,
+          "n": 3012,
+          "n_pos": 396,
+          "underpowered": false,
+          "in_domain": false,
+          "eval_set": "full_unique_corpus"
+        },
+        "advice-eligibility": {
+          "auroc": 0.4986642920747996,
+          "ece": 0.24018944519611737,
+          "n": 1478,
+          "n_pos": 355,
+          "underpowered": false,
+          "in_domain": false,
+          "eval_set": "full_unique_corpus"
+        }
+      },
+      "airline": {
+        "chosen_l2": 3.0,
+        "retail": {
+          "auroc": 0.9831090085287847,
+          "ece": 0.12227064301886112,
+          "n": 2748,
+          "n_pos": 336,
+          "underpowered": false,
+          "in_domain": false,
+          "eval_set": "full_unique_corpus"
+        },
+        "airline": {
+          "auroc": 0.9998128873815928,
+          "ece": 0.06992721859126103,
+          "n": 588,
+          "n_pos": 85,
+          "underpowered": true,
+          "in_domain": true,
+          "eval_set": "test_split"
+        },
+        "advice-eligibility": {
+          "auroc": 0.7045263567155381,
+          "ece": 0.2397361722854846,
+          "n": 1478,
+          "n_pos": 355,
+          "underpowered": false,
+          "in_domain": false,
+          "eval_set": "full_unique_corpus"
+        }
+      },
+      "advice-eligibility": {
+        "chosen_l2": 0.3,
+        "retail": {
+          "auroc": 0.5,
+          "ece": 0.877729257641828,
+          "n": 2748,
+          "n_pos": 336,
+          "underpowered": false,
+          "in_domain": false,
+          "eval_set": "full_unique_corpus"
+        },
+        "airline": {
+          "auroc": 0.7227304582522472,
+          "ece": 0.8684437098393867,
+          "n": 3012,
+          "n_pos": 396,
+          "underpowered": false,
+          "in_domain": false,
+          "eval_set": "full_unique_corpus"
+        },
+        "advice-eligibility": {
+          "auroc": 1.0,
+          "ece": 0.05763062319683909,
+          "n": 288,
+          "n_pos": 64,
+          "underpowered": true,
+          "in_domain": true,
+          "eval_set": "test_split"
+        }
+      }
+    },
+    "hashing": {
+      "retail": {
+        "chosen_l2": 0.3,
+        "retail": {
+          "auroc": 1.0,
+          "ece": 0.014121332008660177,
+          "n": 332,
+          "n_pos": 88,
+          "underpowered": true,
+          "in_domain": true,
+          "eval_set": "test_split"
+        },
+        "airline": {
+          "auroc": 0.5,
+          "ece": 0.1314741035855638,
+          "n": 3012,
+          "n_pos": 396,
+          "underpowered": false,
+          "in_domain": false,
+          "eval_set": "full_unique_corpus"
+        },
+        "advice-eligibility": {
+          "auroc": 0.5,
+          "ece": 0.24018944519611754,
+          "n": 1478,
+          "n_pos": 355,
+          "underpowered": false,
+          "in_domain": false,
+          "eval_set": "full_unique_corpus"
+        }
+      },
+      "airline": {
+        "chosen_l2": 3.0,
+        "retail": {
+          "auroc": 0.9830756929637526,
+          "ece": 0.12227070475700592,
+          "n": 2748,
+          "n_pos": 336,
+          "underpowered": false,
+          "in_domain": false,
+          "eval_set": "full_unique_corpus"
+        },
+        "airline": {
+          "auroc": 0.99766109226991,
+          "ece": 0.05899140867346657,
+          "n": 588,
+          "n_pos": 85,
+          "underpowered": true,
+          "in_domain": true,
+          "eval_set": "test_split"
+        },
+        "advice-eligibility": {
+          "auroc": 0.6617285189319353,
+          "ece": 0.24017190498675178,
+          "n": 1478,
+          "n_pos": 355,
+          "underpowered": false,
+          "in_domain": false,
+          "eval_set": "full_unique_corpus"
+        }
+      },
+      "advice-eligibility": {
+        "chosen_l2": 0.3,
+        "retail": {
+          "auroc": 0.5,
+          "ece": 0.877729257641828,
+          "n": 2748,
+          "n_pos": 336,
+          "underpowered": false,
+          "in_domain": false,
+          "eval_set": "full_unique_corpus"
+        },
+        "airline": {
+          "auroc": 0.5,
+          "ece": 0.868525896414249,
+          "n": 3012,
+          "n_pos": 396,
+          "underpowered": false,
+          "in_domain": false,
+          "eval_set": "full_unique_corpus"
+        },
+        "advice-eligibility": {
+          "auroc": 1.0,
+          "ece": 0.04440397426541247,
+          "n": 288,
+          "n_pos": 64,
+          "underpowered": true,
+          "in_domain": true,
+          "eval_set": "test_split"
+        }
+      }
+    }
+  },
+  "majority_class": {
+    "retail": {
+      "retail": {
+        "majority_label": false,
+        "auroc": NaN,
+        "accuracy": 0.7349397590361446,
+        "n": 332,
+        "n_pos": 88,
+        "in_domain": true,
+        "eval_set": "test_split"
+      },
+      "airline": {
+        "majority_label": false,
+        "auroc": NaN,
+        "accuracy": 0.8685258964143426,
+        "n": 3012,
+        "n_pos": 396,
+        "in_domain": false,
+        "eval_set": "full_unique_corpus"
+      },
+      "advice-eligibility": {
+        "majority_label": false,
+        "auroc": NaN,
+        "accuracy": 0.7598105548037889,
+        "n": 1478,
+        "n_pos": 355,
+        "in_domain": false,
+        "eval_set": "full_unique_corpus"
+      }
+    },
+    "airline": {
+      "retail": {
+        "majority_label": false,
+        "auroc": NaN,
+        "accuracy": 0.8777292576419214,
+        "n": 2748,
+        "n_pos": 336,
+        "in_domain": false,
+        "eval_set": "full_unique_corpus"
+      },
+      "airline": {
+        "majority_label": false,
+        "auroc": NaN,
+        "accuracy": 0.8554421768707483,
+        "n": 588,
+        "n_pos": 85,
+        "in_domain": true,
+        "eval_set": "test_split"
+      },
+      "advice-eligibility": {
+        "majority_label": false,
+        "auroc": NaN,
+        "accuracy": 0.7598105548037889,
+        "n": 1478,
+        "n_pos": 355,
+        "in_domain": false,
+        "eval_set": "full_unique_corpus"
+      }
+    },
+    "advice-eligibility": {
+      "retail": {
+        "majority_label": false,
+        "auroc": NaN,
+        "accuracy": 0.8777292576419214,
+        "n": 2748,
+        "n_pos": 336,
+        "in_domain": false,
+        "eval_set": "full_unique_corpus"
+      },
+      "airline": {
+        "majority_label": false,
+        "auroc": NaN,
+        "accuracy": 0.8685258964143426,
+        "n": 3012,
+        "n_pos": 396,
+        "in_domain": false,
+        "eval_set": "full_unique_corpus"
+      },
+      "advice-eligibility": {
+        "majority_label": false,
+        "auroc": NaN,
+        "accuracy": 0.7777777777777778,
+        "n": 288,
+        "n_pos": 64,
+        "in_domain": true,
+        "eval_set": "test_split"
+      }
+    }
+  },
+  "judge": {
+    "config": {
+      "model": "accounts/fireworks/models/gpt-oss-20b",
+      "seed": 0,
+      "corpus_version": "v2",
+      "decision_threshold": 0.5,
+      "cost_per_call_usd": 0.002,
+      "max_usd": 6.0,
+      "max_calls": 3000,
+      "judge_prompt_sha256": "2dbe2e823a1a020c1424e0a739b523dabda4fdca11a37ad9b1bd7cd6ad861476"
+    },
+    "domains": {
+      "retail": {
+        "n_items": 672,
+        "n_scored": 672,
+        "n_unjudged": 0,
+        "n_pos": 336,
+        "auroc": 0.7371474631519275,
+        "threshold": 0.5,
+        "fpr": 0.24702380952380953,
+        "fnr": 0.34226190476190477,
+        "tp": 221,
+        "fp": 83,
+        "fn": 115,
+        "tn": 253
+      },
+      "airline": {
+        "n_items": 792,
+        "n_scored": 792,
+        "n_unjudged": 0,
+        "n_pos": 396,
+        "auroc": 0.4638876135088256,
+        "threshold": 0.5,
+        "fpr": 0.4292929292929293,
+        "fnr": 0.5378787878787878,
+        "tp": 183,
+        "fp": 170,
+        "fn": 213,
+        "tn": 226
+      },
+      "advice-eligibility": {
+        "n_items": 710,
+        "n_scored": 710,
+        "n_unjudged": 0,
+        "n_pos": 355,
+        "auroc": 0.9859631025590161,
+        "threshold": 0.5,
+        "fpr": 0.028169014084507043,
+        "fnr": 0.0,
+        "tp": 355,
+        "fp": 10,
+        "fn": 0,
+        "tn": 345
+      }
+    },
+    "run_counts": {
+      "retail": {
+        "n_pending": 0,
+        "n_attempted": 0,
+        "n_judged": 0,
+        "n_unjudged": 0
+      },
+      "airline": {
+        "n_pending": 0,
+        "n_attempted": 0,
+        "n_judged": 0,
+        "n_unjudged": 0
+      },
+      "advice-eligibility": {
+        "n_pending": 266,
+        "n_attempted": 266,
+        "n_judged": 266,
+        "n_unjudged": 0
+      }
+    },
+    "budget": {
+      "calls": 2174,
+      "estimated_usd": 4.348,
+      "cap_reason": null,
+      "note": "Run executed as 3 chunked foreground invocations (10-minute Bash tool limit), each resuming from the per-domain on-disk checkpoint, same convention as docs/phase-detector-run2-results.md. This field is the TRUE cumulative total across all chunks (sum of judged checkpoint rows); a single invocation's own BudgetGuard only sees calls made in that process, so the raw per-chunk stderr summaries undercount the total -- see docs/phase-detector-baselines-frozen.md for the chunk-by-chunk breakdown."
+    }
+  }
+}

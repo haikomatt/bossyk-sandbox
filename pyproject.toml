@@ -24,6 +24,19 @@ dependencies = [
 # scripts/benchmark_run.py, not for the deterministic test suite — install
 # with `uv sync --extra bench`.
 bench = ["auditk[nli]"]
+# Pod-only, phase-detector-training.md build-order step 4: HF Trainer full
+# fine-tune (DeBERTa-v3-small) + PEFT/LoRA (Qwen2.5-0.5B-Instruct). Installed
+# on the RunPod pod via `uv sync --extra detector-train`, never locally --
+# mirrors the `bench` extra's convention (see `HFTrainBackend`'s lazy imports
+# in `bossyk_sandbox.detector.train_backend`).
+detector-train = [
+    "torch>=2.5",
+    "transformers>=4.46",
+    "peft>=0.13",
+    "accelerate>=1.0",
+    "sentencepiece>=0.2",
+    "protobuf>=4",
+]
 
 [tool.uv.sources]
 auditk = { path = "../auditk", editable = true }
@@ -70,5 +83,7 @@ ignore_missing_imports = true
 # fresh checkouts type-check without the ~GBs of the bench extra installed.
 # nnsight/transformer_lens are the interp pod-only capture deps -- installed on
 # the RunPod pod, never locally; scripts/interp_capture.py imports nnsight lazily.
-module = ["transformers.*", "torch.*", "nnsight.*", "transformer_lens.*"]
+# peft/accelerate belong to the pod-only `detector-train` extra --
+# `HFTrainBackend` (bossyk_sandbox.detector.train_backend) imports them lazily.
+module = ["transformers.*", "torch.*", "nnsight.*", "transformer_lens.*", "peft.*", "accelerate.*"]
 ignore_missing_imports = true

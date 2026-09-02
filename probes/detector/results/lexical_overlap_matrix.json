@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-05T18:54:08.415300+00:00",
+  "generated_at": "2026-08-26T22:13:32.057384+00:00",
   "domains": [
     "retail",
     "airline",
@@ -7,15 +7,15 @@
   ],
   "gate_margin": 0.05,
   "gate_passed": true,
-  "gate_detail": "control retail<->airline: cosine=0.2518 jaccard=0.3636; advice-crossing (max of retail/airline): cosine=0.1474 jaccard=0.1765; margin=0.05 (cosine OK, jaccard OK)",
+  "gate_detail": "control retail<->airline: cosine=0.2343 jaccard=0.3636; advice-crossing (max of retail/airline): cosine=0.1727 jaccard=0.1765; margin=0.05 (cosine OK, jaccard OK)",
   "tfidf_cosine": {
-    "retail<->airline": 0.25184561159225033,
-    "retail<->advice-eligibility": 0.147383901158736,
-    "airline<->advice-eligibility": 0.08513377247277717
+    "retail<->airline": 0.23429439986712763,
+    "retail<->advice-eligibility": 0.1726509498766024,
+    "airline<->advice-eligibility": 0.107903112322298
   },
   "top_k_jaccard": {
     "retail<->airline": 0.36363636363636365,
     "retail<->advice-eligibility": 0.17647058823529413,
-    "airline<->advice-eligibility": 0.15384615384615385
+    "airline<->advice-eligibility": 0.17647058823529413
   }
 }

@@ -25,32 +25,25 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
-import re
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
+from bossyk_sandbox.detector.text_features import hashing_vectorize
 from bossyk_sandbox.interp.correlate import auroc
 from bossyk_sandbox.interp.probe import crossval_oof_scores
 
 Array = NDArray[np.float64]
 
-
-def hashing_vectorize(texts: list[str], *, n_features: int = 2048) -> Array:
-    """Deterministic bag-of-words hashing vectorizer (md5 -> bucket, so it is
-    stable across processes, unlike Python's salted hash). Word tokens only. A
-    standard, dependency-free text baseline -- not maximal (a fine-tuned encoder
-    would be stronger), but a fair floor for 'is the label in the text'."""
-    x = np.zeros((len(texts), n_features), dtype=np.float64)
-    for i, text in enumerate(texts):
-        for tok in re.findall(r"[a-z0-9#]+", text.lower()):
-            bucket = int(hashlib.md5(tok.encode()).hexdigest(), 16) % n_features
-            x[i, bucket] += 1.0
-    return x
+# hashing_vectorize now lives in bossyk_sandbox.detector.text_features (extracted
+# there so this H2 probe control and the frozen detector baselines
+# (docs/phase-detector-baselines-frozen.md) share one implementation instead of
+# two copies); re-exported here (default n_features=2048, this module's
+# original default) so `import scripts.text_baseline` call sites and this
+# module's own tests are unaffected.
 
 
 def _cv_scores(x: Array, y: NDArray[np.bool_], *, n_components: int, l2: float, seed: int) -> Array:
@@ -104,7 +97,7 @@ def run(
     if len(prompts) != len(y):
         raise ValueError(f"decisions ({len(prompts)}) != activations ({len(y)})")
 
-    x_text = hashing_vectorize(prompts)
+    x_text = hashing_vectorize(prompts, n_features=2048)  # this module's original default
     s_text = _cv_scores(x_text, y, n_components=n_components, l2=l2, seed=seed)
     text_auroc = _auroc(s_text, y)
     ys = np.random.default_rng(seed + 7).permutation(y)

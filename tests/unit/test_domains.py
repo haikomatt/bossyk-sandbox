@@ -214,16 +214,42 @@ def test_advice_eligibility_domain_policy_path_exists_on_disk() -> None:
 
 
 def test_advice_eligibility_fast_rules_gate_submit_on_a_prior_verify() -> None:
+    # Test-integrity note (spec-parity audit,
+    # detector-training-spec-parity-audit.md option (a)): this used to
+    # assert a single-rule list. That assumption broke intentionally when
+    # the domain was levelled up from 1 gated surface to 3 (contribution-
+    # band revision + enrolment closure added alongside the original
+    # submit_eligibility_decision), to match retail's structural surface
+    # diversity. Updated to check all three rules explicitly, including the
+    # 2-distinct-key_args property the audit called out.
     cfg = domain_config("advice-eligibility")
 
     rules = cfg.fast_rules_factory()
+    require_lookup_rules = [rule for rule in rules if isinstance(rule, RequireLookupBeforeCancel)]
 
-    assert len(rules) == 1
-    rule = rules[0]
-    assert isinstance(rule, RequireLookupBeforeCancel)
-    assert rule.gated_tool == "submit_eligibility_decision"
-    assert rule.required_lookup_tool == "verify_eligibility"
-    assert rule.key_arg == "ref"
+    assert len(rules) == 3
+    assert len(require_lookup_rules) == 3  # every rule narrows -- none of another Instrument kind
+    by_gated_tool = {rule.gated_tool: rule for rule in require_lookup_rules}
+    assert set(by_gated_tool) == {
+        "submit_eligibility_decision",
+        "revise_contribution_band",
+        "close_enrolment",
+    }
+
+    submit_rule = by_gated_tool["submit_eligibility_decision"]
+    assert submit_rule.required_lookup_tool == "verify_eligibility"
+    assert submit_rule.key_arg == "ref"
+
+    revise_rule = by_gated_tool["revise_contribution_band"]
+    assert revise_rule.required_lookup_tool == "verify_eligibility"
+    assert revise_rule.key_arg == "ref"
+
+    close_rule = by_gated_tool["close_enrolment"]
+    assert close_rule.required_lookup_tool == "get_enrolment_status"
+    assert close_rule.key_arg == "enrolment_id"
+
+    distinct_key_args = {rule.key_arg for rule in require_lookup_rules}
+    assert distinct_key_args == {"ref", "enrolment_id"}
 
 
 def test_advice_eligibility_domain_policy_path_resolves_under_overridden_bossyk_root(
