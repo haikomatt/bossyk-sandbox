@@ -20,6 +20,7 @@ from bossyk_sandbox.runtime.langgraph_agent import (
     build_weakened_outreach_agent_session,
     weaken_policy,
 )
+from bossyk_sandbox.scenarios.runner import outreach_fast_rules
 
 
 @dataclass
@@ -65,7 +66,9 @@ def test_build_weakened_outreach_agent_session_feeds_the_weakened_policy() -> No
     )
 
     system_message = llm.seen[0][0]
-    assert system_message.content == weaken_policy("Always call check_eligibility first.")
+    assert system_message.content == weaken_policy(
+        "Always call check_eligibility first.", fast_rules=outreach_fast_rules()
+    )
 
 
 def test_build_weakened_outreach_agent_session_wires_the_outreach_gate() -> None:

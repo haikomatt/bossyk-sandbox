@@ -7,16 +7,21 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.types import Command
 
-from bossyk_sandbox.instruments.base import ProposedAction
-from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel
+from bossyk_sandbox.instruments.base import Instrument, ProposedAction
+from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel, RequirePassedCheck
 from bossyk_sandbox.runtime.langgraph_agent import (
-    POLICY_WEAKENING_OVERRIDE_BORDERLINE,
     AirlineAgentSession,
     build_airline_agent_session,
     build_retail_agent_session,
     build_weakened_retail_agent_session,
     retail_tool_schemas,
     weaken_policy,
+)
+from bossyk_sandbox.scenarios.runner import (
+    advice_eligibility_fast_rules,
+    default_fast_rules,
+    outreach_fast_rules,
+    retail_fast_rules,
 )
 
 
@@ -352,7 +357,7 @@ class _RecordingLLM:
 
 def test_weaken_policy_preserves_the_policy_but_neutralizes_the_guardrails() -> None:
     original = "Authenticate the user identity before acting. Confirm before mutating."
-    weakened = weaken_policy(original)
+    weakened = weaken_policy(original, fast_rules=retail_fast_rules())
 
     assert original in weakened  # the domain policy is preserved
     assert weakened != original  # an override was appended
@@ -369,13 +374,15 @@ def test_weaken_policy_preserves_the_policy_but_neutralizes_the_guardrails() -> 
 
 def test_weaken_policy_default_is_dir1() -> None:
     original = "Authenticate first."
-    assert weaken_policy(original) == weaken_policy(original, strength="dir1")
+    assert weaken_policy(original, fast_rules=retail_fast_rules()) == weaken_policy(
+        original, strength="dir1", fast_rules=retail_fast_rules()
+    )
 
 
 def test_weaken_policy_aggressive_is_a_blunter_distinct_override() -> None:
     original = "Authenticate the user identity before acting."
-    dir1 = weaken_policy(original, strength="dir1")
-    aggressive = weaken_policy(original, strength="aggressive")
+    dir1 = weaken_policy(original, strength="dir1", fast_rules=retail_fast_rules())
+    aggressive = weaken_policy(original, strength="aggressive", fast_rules=retail_fast_rules())
     assert original in aggressive  # policy still preserved
     assert aggressive != dir1  # a different, stronger override
     low = aggressive.lower()
@@ -385,15 +392,25 @@ def test_weaken_policy_aggressive_is_a_blunter_distinct_override() -> None:
 
 def test_weaken_policy_rejects_unknown_strength() -> None:
     with pytest.raises(ValueError, match="unknown weakening strength"):
-        weaken_policy("x", strength="nope")
+        weaken_policy("x", strength="nope", fast_rules=retail_fast_rules())
+
+
+def test_weaken_policy_rejects_rules_with_no_gated_tool() -> None:
+    # A domain whose fast rules gate nothing (e.g. `advice_fast_rules() == []`)
+    # has no tool names to render into the override -- weakening such a domain
+    # would silently produce a malformed prompt, so it must fail loudly instead.
+    with pytest.raises(ValueError, match="no gated tools"):
+        weaken_policy("x", fast_rules=[])
 
 
 def test_weaken_policy_borderline_is_ambiguous_and_distinct() -> None:
     original = "Authenticate the user identity before acting."
-    borderline = weaken_policy(original, strength="borderline")
+    borderline = weaken_policy(original, strength="borderline", fast_rules=retail_fast_rules())
     assert original in borderline
-    assert borderline != weaken_policy(original, strength="dir1")
-    assert borderline != weaken_policy(original, strength="aggressive")
+    assert borderline != weaken_policy(original, strength="dir1", fast_rules=retail_fast_rules())
+    assert borderline != weaken_policy(
+        original, strength="aggressive", fast_rules=retail_fast_rules()
+    )
     low = borderline.lower()
     assert "may" in low  # latitude, not a mandate (the coin-flip regime)
     assert "mandatory" not in low and "must not" not in low
@@ -405,11 +422,12 @@ def test_weaken_policy_borderline_cot_composes_borderline_plus_reasoning() -> No
     # a <reasoning> block BEFORE emitting exactly one tool call, so a real
     # backward window exists between deciding and acting.
     original = "Authenticate the user identity before acting."
-    cot = weaken_policy(original, strength="borderline_cot")
-    borderline = weaken_policy(original, strength="borderline")
+    cot = weaken_policy(original, strength="borderline_cot", fast_rules=retail_fast_rules())
+    borderline = weaken_policy(original, strength="borderline", fast_rules=retail_fast_rules())
     assert original in cot
-    # composes the borderline override verbatim...
-    assert POLICY_WEAKENING_OVERRIDE_BORDERLINE in cot
+    # composes the rendered borderline override verbatim (weakening "" yields
+    # just the override text)...
+    assert weaken_policy("", strength="borderline", fast_rules=retail_fast_rules()) in cot
     # ...and adds the reasoning elicitation on top (distinct from plain borderline)
     assert cot != borderline
     low = cot.lower()
@@ -418,6 +436,79 @@ def test_weaken_policy_borderline_cot_composes_borderline_plus_reasoning() -> No
     assert "exactly one tool" in low
     # still latitude, not a mandate (keeps the coin-flip outcome)
     assert "mandatory" not in low and "must not" not in low
+
+
+# Domain -> fast-rules factory, mirroring `bossyk_sandbox.domains` wiring
+# (airline=default, plus the three non-airline domains with gated tools).
+# Used to assert the override renders each domain's OWN tool names and no
+# other domain's.
+_DOMAIN_FAST_RULES = {
+    "airline": default_fast_rules,
+    "retail": retail_fast_rules,
+    "advice-eligibility": advice_eligibility_fast_rules,
+    "outreach": outreach_fast_rules,
+}
+
+_ALL_STRENGTHS = ["dir1", "aggressive", "borderline", "borderline_cot"]
+
+
+def _rule_tool_names(rules: list[Instrument]) -> set[str]:
+    """Every tool name a domain's fast rules mention: the gated action tools
+    plus their required lookup/check tools."""
+    names: set[str] = set()
+    for rule in rules:
+        if isinstance(rule, RequireLookupBeforeCancel):
+            names.update((rule.gated_tool, rule.required_lookup_tool))
+        elif isinstance(rule, RequirePassedCheck):
+            names.update((rule.gated_tool, rule.check_tool))
+    return names
+
+
+def _gated_tool_names(rules: list[Instrument]) -> set[str]:
+    return {
+        rule.gated_tool
+        for rule in rules
+        if isinstance(rule, RequireLookupBeforeCancel | RequirePassedCheck)
+    }
+
+
+@pytest.mark.parametrize("strength", _ALL_STRENGTHS)
+@pytest.mark.parametrize("domain", ["airline", "advice-eligibility"])
+def test_weakened_prompt_names_only_the_domains_own_tools(domain: str, strength: str) -> None:
+    # Regression for docs/phase-detector-transfer-results.md limitation 5: the
+    # weakening override used to hardcode retail tool names, so retail
+    # vocabulary appeared verbatim in 100% of every domain's generated decision
+    # corpus (class-constant, so no label leak -- but it weakened the
+    # lexical-distance design). The rendered override must name the domain's
+    # own gated tools and no other domain's tools.
+    own_rules = _DOMAIN_FAST_RULES[domain]()
+    rendered = weaken_policy("Domain policy.", strength=strength, fast_rules=own_rules)
+
+    own_gated = _gated_tool_names(own_rules)
+    assert own_gated  # sanity: the own-tools check is not vacuous
+    for name in own_gated:
+        assert name in rendered
+
+    own_names = _rule_tool_names(own_rules)
+    foreign_names = (
+        set().union(
+            *(_rule_tool_names(f()) for name, f in _DOMAIN_FAST_RULES.items() if name != domain)
+        )
+        - own_names
+    )
+    assert foreign_names  # sanity: the cross-domain check is not vacuous
+    for name in foreign_names:
+        assert name not in rendered
+
+
+@pytest.mark.parametrize("strength", ["dir1", "aggressive"])
+def test_weakened_prompt_names_the_domains_own_lookup_tools(strength: str) -> None:
+    # dir1/aggressive tell the agent which lookup tools NOT to call -- those
+    # must be the domain's own registered lookup tools, not retail's.
+    rendered = weaken_policy(
+        "Domain policy.", strength=strength, fast_rules=advice_eligibility_fast_rules()
+    )
+    assert "verify_eligibility" in rendered
 
 
 def test_build_weakened_retail_agent_session_accepts_borderline_and_temperature() -> None:
@@ -431,7 +522,7 @@ def test_build_weakened_retail_agent_session_accepts_borderline_and_temperature(
         config={"configurable": {"thread_id": "t-border"}},
     )
     assert llm.seen[0][0].content == weaken_policy(
-        "Authenticate the user first.", strength="borderline"
+        "Authenticate the user first.", strength="borderline", fast_rules=retail_fast_rules()
     )
 
 
@@ -450,7 +541,9 @@ def test_build_weakened_retail_agent_session_feeds_the_weakened_policy_to_the_mo
     )
 
     system_message = llm.seen[0][0]
-    assert system_message.content == weaken_policy("Authenticate the user first.")
+    assert system_message.content == weaken_policy(
+        "Authenticate the user first.", fast_rules=retail_fast_rules()
+    )
 
 
 # --- action-execution timing (§15B+ latency budget) --------------------------

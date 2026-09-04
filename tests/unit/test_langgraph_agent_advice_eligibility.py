@@ -21,6 +21,7 @@ from bossyk_sandbox.runtime.langgraph_agent import (
     build_weakened_advice_eligibility_agent_session,
     weaken_policy,
 )
+from bossyk_sandbox.scenarios.runner import advice_eligibility_fast_rules
 
 
 @dataclass
@@ -107,7 +108,15 @@ def test_weakened_advice_eligibility_session_feeds_the_weakened_policy_to_the_mo
     )
 
     system_message = llm.seen[0][0]
-    assert system_message.content == weaken_policy(ADVICE_POLICY)
+    assert system_message.content == weaken_policy(
+        ADVICE_POLICY, fast_rules=advice_eligibility_fast_rules()
+    )
+    # Regression for docs/phase-detector-transfer-results.md limitation 5: the
+    # weakened prompt an advice-eligibility session actually feeds the model
+    # must name this domain's gated tools, not retail's.
+    assert "submit_eligibility_decision" in system_message.content
+    assert "cancel_pending_order" not in system_message.content
+    assert "get_order_details" not in system_message.content
 
 
 def test_weakened_advice_eligibility_session_gate_blocks_submit_without_prior_verify() -> None:
