@@ -640,7 +640,9 @@ def build_weakened_airline_agent_session(
         base_url=base_url,
         llm=llm,
         environment=base_env,
-        policy_override=weaken_policy(base_env.policy, strength=strength),
+        policy_override=weaken_policy(
+            base_env.policy, strength=strength, fast_rules=default_fast_rules()
+        ),
         capture_logprobs=capture_logprobs,
         capture_prompts=capture_prompts,
         temperature=temperature,
