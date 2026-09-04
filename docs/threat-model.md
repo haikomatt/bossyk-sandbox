@@ -125,7 +125,7 @@ distinction is load-bearing for the utterance gate below.
 | B | Irreversible once emitted, but mediable between generation and emission | Enforce by suppression/rewrite; strictly stronger than A's primitive |
 | C | Safety, but the witness is outside what the monitor observes | Not enforceable as built; fixable by widening observation |
 | D | Witness is semantic: computable only via an unreliable classifier | Annotate only; enforcing it would enforce the classifier, not the policy |
-| E | Not a property of a single execution (information flow) | Not enforceable by any single-trace monitor; sound-but-incomplete proxy only |
+| E | Not a property of a single execution at all (information flow); a *hyperproperty* | Inexpressible by a session-scoped monitor. Detectable with cross-session memory, after the fact. General enforcement in a session-at-a-time deployment is undecidable. See out of scope |
 
 **The shipped policy set, classified.**
 
@@ -145,8 +145,8 @@ Operational policies in support and outreach domains overwhelmingly take the
 form "not this action without that precondition", which is exactly the
 EM-enforceable shape. The reference-monitor architecture is not a lucky fit for
 these domains; it is matched to the class of policy they generate. The single
-class-E line is the only permanent hole, and it is stated below rather than left
-looking like unfinished work.
+class-E line is the only one this architecture cannot reach, and it is stated
+below with its precise boundary rather than left looking like unfinished work.
 
 ## Threat table (STRIDE x OWASP-LLM)
 
@@ -191,17 +191,52 @@ the old version of this list conflated them.
   channel out of three. Tracked with the discharge narrowing in the same branch
   as this revision.
 
-**Genuinely and permanently out of scope:**
+**Out of scope for this architecture, with the boundary stated precisely:**
 
 - **Cross-session information flow.** "Do not disclose one customer's data in
-  another customer's session" (advice domain) cannot be violated by any single
-  execution considered alone, since whether a disclosure leaked depends on a
-  different session. It is a class-E policy, excluded from Schneider's framework
-  as a non-property of individual executions. `advice_fast_rules()` is empty for
-  this reason and not for want of effort. A single-trace proxy (session-scoped
-  identity tainting, refuse any emission carrying a foreign taint) is available,
-  strictly weaker than the policy, and not built. The gap between the proxy and
-  the policy is the thing an assurance case owes its reader.
+  another customer's session" (advice domain). **Corrected 2026-09-04: an earlier
+  revision of this section called it "permanently out of scope", which overstated
+  a blanket impossibility that the literature does not support.** The accurate
+  position is a three-part split.
+
+  1. **A session-scoped monitor with no cross-session memory cannot express it,
+     let alone enforce it.** This part is solid and is the reason
+     `advice_fast_rules()` is empty. The policy is a *hyperproperty* (Clarkson &
+     Schneider, JCS 18(6), 2010) rather than a trace property, and Schneider's EM
+     framework quantifies over single executions. Specifically it is
+     **2-hypersafety**: a violation is witnessed by a set of at most two traces,
+     never by one. Termination-insensitive noninterference is the standard
+     example of the same shape.
+  2. **With cross-session memory it becomes detectable, but only after the fact.**
+     k-safety hyperproperties are monitorable in the runtime-verification sense
+     (Agrawal & Bonakdarpour, CSF 2016). Two caveats that matter: a hypersafety
+     property can only ever be declared *violated* at runtime, never *satisfied*;
+     and the monitor's cost grows combinatorially, since each new session must be
+     checked against every prior one. Detection, not prevention.
+  3. **Enforcement in exactly our setting is undecidable in general.** Coenen,
+     Finkbeiner, Hahn, Hofmann & Schillo (*Runtime Enforcement of
+     Hyperproperties*, ATVA 2021) formalise a **sequential trace input model** —
+     traces produced one at a time with no a-priori bound on how many, which is
+     precisely a session-based agent deployment — and prove the enforcement
+     problem undecidable there. Algorithms exist only for restricted cases
+     (safety-shaped specifications, or partial rather than full guarantees).
+
+  So the honest claim is not "no mechanism can ever do this". It is that the
+  *general* problem is proven undecidable in our deployment model, and that
+  anything better than the status quo requires a mechanism that retains and
+  compares sessions, which is a different architecture rather than one more rule.
+
+  **On the obvious workaround:** session-scoped taint tracking is the natural
+  approximation, and it is worth being careful about what it buys. Dynamic
+  information-flow monitors cannot match the precision of flow-sensitive static
+  analysis without static assistance (Russo & Sabelfeld, CSF 2010), and taint
+  trackers as usually deployed follow explicit flows only, which makes them
+  *unsound* for full information flow rather than merely incomplete: they miss
+  implicit flows. Secure multi-execution (Devriese & Piessens, S&P 2010) does
+  enforce termination-insensitive noninterference, at the cost of running the
+  system once per principal. Neither is built here. The gap between whichever
+  approximation is chosen and the stated policy is what an assurance case owes
+  its reader.
 - **Model-internal deception** that never surfaces as an action. Act 4's
   negative results are the reason this is out of scope rather than a roadmap
   item: reading intent from internals added nothing over text in the regime
@@ -223,7 +258,9 @@ this document least likely to be written by a vendor.
    specification, it does not write a good one (T8).
 4. The policy being asked for is inside the enforceable class. A class-D or
    class-E policy (see Expressiveness) does not become enforceable through
-   better rules, more mediation, or a stronger key. Assumptions 1-3 are the
-   preconditions Schneider names for EM enforcement -- Target Control,
-   mechanism integrity, competent specification -- which is a useful check that
-   the honest gaps found here are the standard ones and not exotic.
+   better rules, more mediation, or a stronger key. Class E in particular needs
+   a mechanism of a different shape (one that retains and compares sessions),
+   not a further rule in this one. Assumptions 1-3 are the preconditions
+   Schneider names for EM enforcement -- Target Control, mechanism integrity,
+   competent specification -- which is a useful check that the honest gaps found
+   here are the standard ones and not exotic.
