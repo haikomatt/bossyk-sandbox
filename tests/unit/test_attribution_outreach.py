@@ -104,17 +104,36 @@ def test_apply_discount_adds_the_consumer_duty_control() -> None:
 # --- deterministic vs judged discharge ---------------------------------------
 
 
-def test_outreach_tier_c_controls_are_deterministic() -> None:
+def test_outreach_gated_tier_c_controls_are_deterministic() -> None:
+    # Test assumption CORRECTED 2026-09-04 (see "Issues & Fixes" in the
+    # vault note `deterministic-discharge-defect-2026-09-04`). This test
+    # previously asserted all five outreach Tier-C tools discharge
+    # `deterministic`. That assumption was wrong: only place_call and
+    # book_survey have a wired RequirePassedCheck, so only they have a
+    # check result in the trace to reproduce. The other three are asserted
+    # to stay `judged` below. The invariant that stops this recurring lives
+    # in `test_discharge_invariant.py`.
     for proposed, ref in (
         (_PLACE_CALL, "pecr:reg-21"),
-        (_SEND_SMS, "pecr:reg-21"),
-        (_SEND_EMAIL, "pecr:reg-21"),
         (_BOOK_SURVEY, "fca:consumer-duty"),
-        (_APPLY_DISCOUNT, "fca:consumer-duty"),
     ):
         tags = controls_for_step(proposed, Verdict.ALLOW, overridden=False)
         tag = _tag_by_ref(tags, ref)
         assert tag.discharge == "deterministic", f"{proposed.tool_name} -> {ref}"
+
+
+def test_outreach_ungated_tier_c_controls_stay_judged() -> None:
+    # send_sms/send_email/apply_discount keep their Tier-C control REF (the
+    # policy mapping is unchanged and still correct) but must not claim a
+    # reproducible discharge, because no rule gates them.
+    for proposed, ref in (
+        (_SEND_SMS, "pecr:reg-21"),
+        (_SEND_EMAIL, "pecr:reg-21"),
+        (_APPLY_DISCOUNT, "fca:consumer-duty"),
+    ):
+        tags = controls_for_step(proposed, Verdict.ALLOW, overridden=False)
+        tag = _tag_by_ref(tags, ref)
+        assert tag.discharge == "judged", f"{proposed.tool_name} -> {ref}"
 
 
 def test_airline_and_retail_tier_c_controls_stay_judged() -> None:

@@ -96,18 +96,30 @@ _ACTION_CONTROLS: dict[str, tuple[str, tuple[str, ...]]] = {
 # Tool names whose Tier-C control is discharged by a REPRODUCIBLE CHECK
 # (deterministic -- the evidence pack can drop the "directional mapping"
 # disclaimer for it), not merely a structural/directional inference
-# (judged, ControlTag's default). Outreach's boundaries 1/3/4 each have a
-# genuine external oracle backing them -- the suppression-list result
-# (RequirePassedCheck on check_suppression), the eligibility result
-# (RequirePassedCheck on check_eligibility), and the discount amount
-# (already in apply_discount's own arguments) -- so their discharge is
-# reproducible offline from the signed trace. Airline/retail's existing
-# Tier-C tags (a cancellation tool "is" a consumer-facing mutation; a
-# user-lookup tool "is" a personal-data access) have no such oracle behind
-# them -- they stay judged, unchanged, by not appearing here.
-_DETERMINISTIC_ACTION_TOOLS: frozenset[str] = frozenset(
-    {"place_call", "send_sms", "send_email", "book_survey", "apply_discount"}
-)
+# (judged, ControlTag's default). Membership REQUIRES a wired gate whose
+# result is recorded in the trace, enforced by
+# `tests/unit/test_discharge_invariant.py`:
+#   - place_call  <- RequirePassedCheck on check_suppression (boundary 1)
+#   - book_survey <- RequirePassedCheck on check_eligibility (boundary 3)
+# Both are wired in `scenarios.runner.outreach_fast_rules`, so their
+# discharge is reproducible offline from the signed trace.
+#
+# NOT members, and why (narrowed 2026-09-04, see below):
+#   - send_sms / send_email: share boundary 1's policy line but have NO rule
+#     wired to them in any domain, so there is no check result in the trace
+#     to reproduce. Adding a RequirePassedCheck on check_suppression for both
+#     would earn them a place here; until then the claim is false.
+#   - apply_discount: its justification was self-referential (the amount is
+#     in the tool's own arguments), which is not an independent oracle. The
+#     standing/amount check that does exist (`standing.evaluate_authority`)
+#     is reachable only from the console entry points, never from
+#     `runtime.langgraph_agent`, which is what produces scenario evidence.
+#
+# Airline/retail's existing Tier-C tags (a cancellation tool "is" a
+# consumer-facing mutation; a user-lookup tool "is" a personal-data access)
+# have no oracle behind them either -- they stay judged, unchanged, by not
+# appearing here.
+_DETERMINISTIC_ACTION_TOOLS: frozenset[str] = frozenset({"place_call", "book_survey"})
 
 # Boundary 5 (prohibited_financial_promotion): the control a BLOCKED
 # utterance discharges. The closed regulated-phrase-list match
