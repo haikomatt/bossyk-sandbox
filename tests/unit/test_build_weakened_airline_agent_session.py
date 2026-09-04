@@ -21,6 +21,7 @@ from bossyk_sandbox.runtime.langgraph_agent import (
     build_weakened_airline_agent_session,
     weaken_policy,
 )
+from bossyk_sandbox.scenarios.runner import default_fast_rules
 
 
 @dataclass
@@ -66,7 +67,9 @@ def test_build_weakened_airline_agent_session_feeds_the_weakened_policy() -> Non
     )
 
     system_message = llm.seen[0][0]
-    assert system_message.content == weaken_policy("Always look up before cancelling.")
+    assert system_message.content == weaken_policy(
+        "Always look up before cancelling.", fast_rules=default_fast_rules()
+    )
 
 
 def test_build_weakened_airline_agent_session_accepts_strength_and_temperature() -> None:
@@ -81,7 +84,9 @@ def test_build_weakened_airline_agent_session_accepts_strength_and_temperature()
         config={"configurable": {"thread_id": "t-weak-air-aggr"}},
     )
     assert llm.seen[0][0].content == weaken_policy(
-        "Always look up before cancelling.", strength="aggressive"
+        "Always look up before cancelling.",
+        strength="aggressive",
+        fast_rules=default_fast_rules(),
     )
 
 
@@ -114,4 +119,7 @@ def test_build_weakened_airline_agent_session_capture_prompts_records_context() 
         config={"configurable": {"thread_id": "t-weak-air-capture"}},
     )
     assert len(session.agent_prompts) == 1
-    assert weaken_policy("Always look up before cancelling.") in session.agent_prompts[0]
+    assert (
+        weaken_policy("Always look up before cancelling.", fast_rules=default_fast_rules())
+        in session.agent_prompts[0]
+    )
