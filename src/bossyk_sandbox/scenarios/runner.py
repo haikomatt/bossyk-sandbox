@@ -86,7 +86,17 @@ def advice_fast_rules() -> list[Instrument]:
     write to gate at the ProposedAction-sequence level, so this returns an
     empty list on purpose. Which read tool SHOULD have been used (raw vs.
     derived) is governed by the minimisation instrument, an annotation not a
-    block, and is Phase 2 -- explicitly out of scope here."""
+    block, and is Phase 2 -- explicitly out of scope here.
+
+    The policy's remaining prohibition -- "Disclosing one customer's data in
+    another customer's session" -- is NOT a missing rule and must not be added
+    here. It is an information-flow policy: no single execution can violate it
+    on its own, since whether a disclosure leaked depends on a different
+    session. Schneider (Enforceable Security Policies, 2000) excludes exactly
+    this as a non-property of individual executions, so no instrument seeing
+    one trace at a time can enforce it. A sound-but-incomplete proxy
+    (session-scoped identity tainting) is possible and deliberately not built.
+    See docs/threat-model.md, "Expressiveness", class E."""
     return []
 
 
