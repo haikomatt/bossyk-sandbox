@@ -94,9 +94,17 @@ def advice_fast_rules() -> list[Instrument]:
     on its own, since whether a disclosure leaked depends on a different
     session. Schneider (Enforceable Security Policies, 2000) excludes exactly
     this as a non-property of individual executions, so no instrument seeing
-    one trace at a time can enforce it. A sound-but-incomplete proxy
-    (session-scoped identity tainting) is possible and deliberately not built.
-    See docs/threat-model.md, "Expressiveness", class E."""
+    one trace at a time can enforce it. Formally it is 2-hypersafety: any
+    violation needs at least two traces to witness it.
+
+    Closing it needs a mechanism of a different shape, one that retains and
+    compares sessions -- not another Instrument here. Note the general
+    enforcement problem in a session-at-a-time deployment is undecidable
+    (Coenen et al., Runtime Enforcement of Hyperproperties, ATVA 2021), and
+    session-scoped taint tracking is an approximation rather than a sound
+    substitute: taint trackers that follow explicit flows only are unsound for
+    information flow, not merely incomplete. See docs/threat-model.md,
+    "Expressiveness", class E."""
     return []
 
 
