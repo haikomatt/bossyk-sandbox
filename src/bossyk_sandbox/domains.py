@@ -3,10 +3,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 from bossyk_sandbox.instruments.base import Instrument
 from bossyk_sandbox.instruments.policy import default_policy_path
-from bossyk_sandbox.scenarios.loader import SCENARIOS_PATH
+from bossyk_sandbox.scenarios.loader import SCENARIOS_PATH, Scenario
 from bossyk_sandbox.scenarios.runner import (
     advice_eligibility_fast_rules,
     advice_fast_rules,
@@ -14,6 +15,21 @@ from bossyk_sandbox.scenarios.runner import (
     outreach_fast_rules,
     retail_fast_rules,
 )
+
+
+class FastRulesFactory(Protocol):
+    """Builds a domain's fast-path rules.
+
+    `scenario` is OPTIONAL by design, which is why this is a Protocol rather
+    than `Callable[[Scenario | None], ...]`: the latter demands the argument at
+    every call site, so the many existing zero-argument calls
+    (`cfg.fast_rules_factory()`) would stop type-checking despite working
+    fine. Only the advice domain reads the scenario -- it threads that
+    scenario's own required band into the minimisation instrument -- and every
+    other domain accepts and ignores it, keeping one uniform signature.
+    """
+
+    def __call__(self, scenario: Scenario | None = None) -> list[Instrument]: ...
 
 
 @dataclass(frozen=True)
@@ -29,7 +45,7 @@ class DomainConfig:
     name: str
     scenarios_path: Path
     policy_path: Path
-    fast_rules_factory: Callable[[], list[Instrument]]
+    fast_rules_factory: FastRulesFactory
 
 
 def _airline_domain() -> DomainConfig:

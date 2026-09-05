@@ -104,7 +104,7 @@ class MinimisationConfig:
 
 
 def config_for_scenario(
-    scenario: Scenario, *, base: MinimisationConfig | None = None
+    scenario: Scenario | None, *, base: MinimisationConfig | None = None
 ) -> MinimisationConfig:
     """Builds the config for one scenario, threading that scenario's OWN
     required band width.
@@ -120,7 +120,7 @@ def config_for_scenario(
     a smaller budget. Pass `base` to keep other knobs (tool names, arg names)
     while still deriving these two.
     """
-    band = scenario.required_band_width
+    band = scenario.required_band_width if scenario is not None else None
     if band is None:
         band = DEFAULT_REQUIRED_BAND_WIDTH_GBP
     band = float(band)
