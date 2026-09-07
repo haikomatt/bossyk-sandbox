@@ -251,3 +251,28 @@ class TestHealthAndConfig:
         assert uds.uds == str(tmp_path / "gate.sock") and uds.listen is None
         with pytest.raises(SystemExit):
             build_config([*base, "--listen", "127.0.0.1:8200", "--uds", "/tmp/x.sock"])
+
+
+class TestEventPolicyId:
+    """Phase 3 (scorecard) addition: tool_call events carry the violated
+    policy's id as a structured field, not only inside the reason string.
+    Documented post-Green additive test -- no existing assertion changed."""
+
+    def test_block_event_carries_policy_id(self, config: GateProxyConfig) -> None:
+        client = _client(
+            config,
+            openai_response(
+                tool_calls=[tool_call("c1", "bash", '{"command": "curl http://x.example"}')]
+            ),
+        )
+        client.post("/v1/chat/completions", json=_REQUEST)
+        events = [json.loads(line)["event"] for line in config.events_path.read_text().splitlines()]
+        assert events[0]["policy_id"] == "no-network-egress"
+
+    def test_allow_event_policy_id_is_null(self, config: GateProxyConfig) -> None:
+        client = _client(
+            config, openai_response(tool_calls=[tool_call("c1", "bash", '{"command": "ls"}')])
+        )
+        client.post("/v1/chat/completions", json=_REQUEST)
+        events = [json.loads(line)["event"] for line in config.events_path.read_text().splitlines()]
+        assert events[0]["policy_id"] is None
