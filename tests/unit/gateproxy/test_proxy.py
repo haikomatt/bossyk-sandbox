@@ -316,7 +316,11 @@ class TestUpstreamAuth:
         client.post("/v1/chat/completions", json=_REQUEST)
         assert captured_headers[0].get("Authorization") == "Bearer gate-configured-key"
 
-    def test_client_header_wins_over_configured_key(self, config: GateProxyConfig) -> None:
+    def test_configured_key_wins_over_client_header(self, config: GateProxyConfig) -> None:
+        """Deployment semantics: the gate operator holds the real upstream
+        credential; agent harnesses are given dummy provider keys that must
+        never reach the upstream. So a configured key OVERRIDES the
+        client's Authorization, and pure pass-through is the no-key case."""
         config.upstream_api_key = "gate-configured-key"
         client, captured_headers = _client_with_header_capture(
             config, openai_response(content="hi")
@@ -324,9 +328,9 @@ class TestUpstreamAuth:
         client.post(
             "/v1/chat/completions",
             json=_REQUEST,
-            headers={"Authorization": "Bearer client-token-abc"},
+            headers={"Authorization": "Bearer client-dummy-token"},
         )
-        assert captured_headers[0].get("Authorization") == "Bearer client-token-abc"
+        assert captured_headers[0].get("Authorization") == "Bearer gate-configured-key"
 
     def test_no_auth_anywhere_sends_no_authorization(self, config: GateProxyConfig) -> None:
         client, captured_headers = _client_with_header_capture(
