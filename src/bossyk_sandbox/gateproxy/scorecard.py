@@ -110,6 +110,8 @@ class Scorecard:
     refusal_texts: list[str]
     report_md: str | None
     step_count: int
+    pack_sha256: str | None
+    gate_version: str | None
 
 
 def _verify_pack(raw_pack: dict[str, Any], public_key_pem: str) -> tuple[bool, str]:
@@ -206,6 +208,12 @@ def build_scorecard(inputs: ScorecardInputs) -> Scorecard:
     )
 
     model = next((str(e["model"]) for e in events if e.get("model")), None)
+    # Build A provenance: caller-supplied fields on the event dict, same
+    # pattern as `model` above -- first event that has it wins. Absent on
+    # any log predating Build A (or from elsewhere), in which case this
+    # stays None and the header states "not recorded" rather than raising.
+    pack_sha256 = next((str(e["pack_sha256"]) for e in events if e.get("pack_sha256")), None)
+    gate_version = next((str(e["gate_version"]) for e in events if e.get("gate_version")), None)
     report_md = (
         inputs.report_md_path.read_text()
         if inputs.report_md_path is not None and inputs.report_md_path.exists()
@@ -224,6 +232,8 @@ def build_scorecard(inputs: ScorecardInputs) -> Scorecard:
         refusal_texts=refusal_texts,
         report_md=report_md,
         step_count=len(steps),
+        pack_sha256=pack_sha256,
+        gate_version=gate_version,
     )
 
 
@@ -264,6 +274,12 @@ def _mark(ok: bool, good: str, bad: str) -> str:
         if ok
         else (f'<span class="bad">&#10007; {_esc(bad)}</span>')
     )
+
+
+def _provenance_line(card: Scorecard) -> str:
+    pack = f"pack {card.pack_sha256[:12]}…" if card.pack_sha256 else "pack not recorded"
+    gate = f"gate v{card.gate_version}" if card.gate_version else "gate version not recorded"
+    return f"{pack} · {gate}"
 
 
 def render_scorecard_html(card: Scorecard) -> str:
@@ -313,6 +329,7 @@ def render_scorecard_html(card: Scorecard) -> str:
  · session {_esc(card.trace_id)}
  · model {_esc(card.model or "unknown")}
  · {card.step_count} trace steps
+ · {_esc(_provenance_line(card))}
  · generated {_esc(card.generated_at.isoformat())}</p>
 
 <h2>Verification (offline, public keys only)</h2>

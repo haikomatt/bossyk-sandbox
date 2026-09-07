@@ -18,6 +18,7 @@ and its latency cost is measured and stated, not hidden.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import time
 import uuid
@@ -30,6 +31,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from bossyk_sandbox.gate import Gate
+from bossyk_sandbox.gateproxy import __version__ as _GATE_VERSION
 from bossyk_sandbox.gateproxy.events import EventLog
 from bossyk_sandbox.gateproxy.policies import compile_instruments, load_policy_pack
 from bossyk_sandbox.instruments.base import Decision, ProposedAction, Verdict
@@ -118,6 +120,13 @@ def _sse_chunks(response_body: dict[str, Any]) -> Iterator[str]:
 def create_app(config: GateProxyConfig, upstream: Upstream | None = None) -> FastAPI:
     pack = load_policy_pack(config.policy_pack_path)
     instruments = compile_instruments(pack, workspace_root=config.workspace_root)
+    # Computed once from the pack file's own bytes -- not the parsed
+    # PolicyPack -- so it binds to exactly what was on disk (whitespace,
+    # comments, key order and all), not merely the pack's declared
+    # semantics. Stamped on every event alongside the running gate_version
+    # so a scorecard/incident report can tie a decision to precise
+    # provenance rather than "some pack this gate loaded at some point."
+    pack_sha256 = hashlib.sha256(config.policy_pack_path.read_bytes()).hexdigest()
     call_upstream = upstream or _default_upstream(config.upstream_base_url)
     events = EventLog(
         path=config.events_path,
@@ -198,6 +207,8 @@ def create_app(config: GateProxyConfig, upstream: Upstream | None = None) -> Fas
                         "policy_id": policy_id,
                         "reason": decision.reason,
                         "model": upstream_response.get("model"),
+                        "pack_sha256": pack_sha256,
+                        "gate_version": _GATE_VERSION,
                     }
                 )
         else:
@@ -207,6 +218,8 @@ def create_app(config: GateProxyConfig, upstream: Upstream | None = None) -> Fas
                     "verdict": "allow",
                     "reason": "no tool calls proposed",
                     "model": upstream_response.get("model"),
+                    "pack_sha256": pack_sha256,
+                    "gate_version": _GATE_VERSION,
                 }
             )
 
