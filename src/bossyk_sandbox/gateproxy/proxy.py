@@ -34,6 +34,7 @@ from bossyk_sandbox.gate import Gate
 from bossyk_sandbox.gateproxy import __version__ as _GATE_VERSION
 from bossyk_sandbox.gateproxy.events import EventLog
 from bossyk_sandbox.gateproxy.policies import compile_instruments, load_policy_pack
+from bossyk_sandbox.gateproxy.sensitive import Marker, detect
 from bossyk_sandbox.instruments.base import Decision, ProposedAction, Verdict
 
 Upstream = Callable[[dict[str, Any], dict[str, str]], dict[str, Any]]
@@ -86,6 +87,13 @@ def _parse_tool_call(call: dict[str, Any]) -> tuple[str, dict[str, Any] | None]:
     except json.JSONDecodeError:
         parsed = None
     return name, parsed if isinstance(parsed, dict) else None
+
+
+def _marker_dicts(markers: list[Marker]) -> list[dict[str, str]]:
+    """Build B: the wire shape logged into an event -- a plain list of
+    {kind, redacted_excerpt}, never the Marker's own richer type, so the
+    event log stays plain JSON like every other field on it."""
+    return [{"kind": m.kind, "redacted_excerpt": m.redacted_excerpt} for m in markers]
 
 
 def _sse_chunks(response_body: dict[str, Any]) -> Iterator[str]:
@@ -198,6 +206,11 @@ def create_app(config: GateProxyConfig, upstream: Upstream | None = None) -> Fas
                     (p.id for p in pack.policies if decision.reason.startswith(f"{p.id}:")),
                     None,
                 )
+                # Scanned over this call's OWN arguments only (never the
+                # whole request/response), before the event is signed --
+                # markers can never expose more of a secret than the
+                # `arguments` field above already carries verbatim.
+                markers = detect(json.dumps(logged_arguments))
                 events.append(
                     {
                         "kind": "tool_call",
@@ -209,9 +222,16 @@ def create_app(config: GateProxyConfig, upstream: Upstream | None = None) -> Fas
                         "model": upstream_response.get("model"),
                         "pack_sha256": pack_sha256,
                         "gate_version": _GATE_VERSION,
+                        "sensitive_markers": _marker_dicts(markers),
                     }
                 )
         else:
+            # Scanned over this utterance's own content only. Unlike
+            # tool_call arguments, the raw content is NOT itself stored
+            # on the event -- only the redacted markers are -- so an
+            # utterance event never carries more of the raw text than a
+            # tool_call event carries of its raw arguments.
+            utterance_markers = detect(message.get("content") or "")
             events.append(
                 {
                     "kind": "utterance",
@@ -220,6 +240,7 @@ def create_app(config: GateProxyConfig, upstream: Upstream | None = None) -> Fas
                     "model": upstream_response.get("model"),
                     "pack_sha256": pack_sha256,
                     "gate_version": _GATE_VERSION,
+                    "sensitive_markers": _marker_dicts(utterance_markers),
                 }
             )
 
