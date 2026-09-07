@@ -47,12 +47,24 @@ def config(
     )
 
 
+def _client_with_header_capture(
+    config: GateProxyConfig, upstream_body: dict[str, Any]
+) -> tuple[TestClient, list[dict[str, str]]]:
+    captured: list[dict[str, str]] = []
+
+    def upstream(request_body: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
+        captured.append(headers)
+        return upstream_body
+
+    return TestClient(create_app(config, upstream=upstream)), captured
+
+
 def _client_with_capture(
     config: GateProxyConfig, upstream_body: dict[str, Any]
 ) -> tuple[TestClient, list[dict[str, Any]]]:
     captured: list[dict[str, Any]] = []
 
-    def upstream(request_body: dict[str, Any]) -> dict[str, Any]:
+    def upstream(request_body: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
         captured.append(request_body)
         return upstream_body
 
@@ -204,7 +216,7 @@ class TestStreaming:
 
 class TestUpstreamFailure:
     def test_upstream_exception_returns_502_without_event(self, config: GateProxyConfig) -> None:
-        def upstream(_body: dict[str, Any]) -> dict[str, Any]:
+        def upstream(_body: dict[str, Any], _headers: dict[str, str]) -> dict[str, Any]:
             raise ConnectionError("upstream down")
 
         app = create_app(config, upstream=upstream)
@@ -276,3 +288,49 @@ class TestEventPolicyId:
         client.post("/v1/chat/completions", json=_REQUEST)
         events = [json.loads(line)["event"] for line in config.events_path.read_text().splitlines()]
         assert events[0]["policy_id"] is None
+
+
+class TestUpstreamAuth:
+    """Phase 4 (live validation) Red: the gate must be able to authenticate
+    to the upstream. Two paths, both pinned: the client's own Authorization
+    header is forwarded verbatim, and a gate-configured key (CLI: read from
+    an env var at startup) fills it when the client sent none. The upstream
+    callable contract widens to (body, headers) for this."""
+
+    def test_client_authorization_header_forwarded(self, config: GateProxyConfig) -> None:
+        client, captured_headers = _client_with_header_capture(
+            config, openai_response(content="hi")
+        )
+        client.post(
+            "/v1/chat/completions",
+            json=_REQUEST,
+            headers={"Authorization": "Bearer client-token-abc"},
+        )
+        assert captured_headers[0].get("Authorization") == "Bearer client-token-abc"
+
+    def test_configured_upstream_key_fills_missing_auth(self, config: GateProxyConfig) -> None:
+        config.upstream_api_key = "gate-configured-key"
+        client, captured_headers = _client_with_header_capture(
+            config, openai_response(content="hi")
+        )
+        client.post("/v1/chat/completions", json=_REQUEST)
+        assert captured_headers[0].get("Authorization") == "Bearer gate-configured-key"
+
+    def test_client_header_wins_over_configured_key(self, config: GateProxyConfig) -> None:
+        config.upstream_api_key = "gate-configured-key"
+        client, captured_headers = _client_with_header_capture(
+            config, openai_response(content="hi")
+        )
+        client.post(
+            "/v1/chat/completions",
+            json=_REQUEST,
+            headers={"Authorization": "Bearer client-token-abc"},
+        )
+        assert captured_headers[0].get("Authorization") == "Bearer client-token-abc"
+
+    def test_no_auth_anywhere_sends_no_authorization(self, config: GateProxyConfig) -> None:
+        client, captured_headers = _client_with_header_capture(
+            config, openai_response(content="hi")
+        )
+        client.post("/v1/chat/completions", json=_REQUEST)
+        assert "Authorization" not in captured_headers[0]

@@ -34,7 +34,7 @@ from bossyk_sandbox.gateproxy.events import EventLog
 from bossyk_sandbox.gateproxy.policies import compile_instruments, load_policy_pack
 from bossyk_sandbox.instruments.base import Decision, ProposedAction, Verdict
 
-Upstream = Callable[[dict[str, Any]], dict[str, Any]]
+Upstream = Callable[[dict[str, Any], dict[str, str]], dict[str, Any]]
 
 _REFUSAL_HEADER = "[bossyk gate] BLOCKED: this response proposed actions that violate policy."
 
@@ -49,14 +49,22 @@ class GateProxyConfig:
     run_label: str
     listen: str | None = None
     uds: str | None = None
+    # Set from --upstream-key-env at startup; fills the upstream
+    # Authorization header when the client itself sent none.
+    upstream_api_key: str | None = None
 
 
 def _default_upstream(base_url: str) -> Upstream:
     """The real httpx path, used when no upstream callable is injected."""
     import httpx
 
-    def call(body: dict[str, Any]) -> dict[str, Any]:
-        response = httpx.post(f"{base_url.rstrip('/')}/chat/completions", json=body, timeout=600.0)
+    def call(body: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
+        response = httpx.post(
+            f"{base_url.rstrip('/')}/chat/completions",
+            json=body,
+            headers=headers,
+            timeout=600.0,
+        )
         response.raise_for_status()
         return response.json()  # type: ignore[no-any-return]
 
@@ -131,9 +139,13 @@ def create_app(config: GateProxyConfig, upstream: Upstream | None = None) -> Fas
         body = await request.json()
         wants_stream = bool(body.get("stream"))
         upstream_body = {**body, "stream": False}
+        auth = request.headers.get("authorization") or (
+            f"Bearer {config.upstream_api_key}" if config.upstream_api_key else None
+        )
+        upstream_headers = {"Authorization": auth} if auth else {}
 
         try:
-            upstream_response = call_upstream(upstream_body)
+            upstream_response = call_upstream(upstream_body, upstream_headers)
         except Exception as exc:
             return JSONResponse(
                 status_code=502,
@@ -226,9 +238,16 @@ def build_config(argv: list[str]) -> GateProxyConfig:
     parser.add_argument("--key", required=True, help="Ed25519 private key (PEM) for event signing.")
     parser.add_argument("--events", required=True, help="Signed gate-events JSONL output path.")
     parser.add_argument("--run-label", required=True, help="Label stamped on every event.")
+    parser.add_argument(
+        "--upstream-key-env",
+        default="FIREWORKS_API_KEY",
+        help="Env var holding the upstream API key (used when the client sends no Authorization).",
+    )
     listener = parser.add_mutually_exclusive_group(required=True)
     listener.add_argument("--listen", help="TCP listen address, host:port.")
     listener.add_argument("--uds", help="Unix domain socket path to listen on.")
+    import os
+
     args = parser.parse_args(argv)
     return GateProxyConfig(
         upstream_base_url=args.upstream,
@@ -239,6 +258,7 @@ def build_config(argv: list[str]) -> GateProxyConfig:
         run_label=args.run_label,
         listen=args.listen,
         uds=args.uds,
+        upstream_api_key=os.environ.get(args.upstream_key_env),
     )
 
 
