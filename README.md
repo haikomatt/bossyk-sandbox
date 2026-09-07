@@ -1,10 +1,67 @@
 # bossyk-sandbox
 
-A live, cross-domain agent governance demonstrator: observe → attest →
-interrupt across model/agent/eval layers.
+A **reference monitor for tool-using LLM agents**, built as a live,
+cross-domain demonstrator: observe → attest → interrupt. The load-bearing
+design decision, stated once and tested throughout: **govern the effect an
+action would have, attest the record, do not try to read intent.** An
+injected, jailbroken, or merely confused agent that proposes
+cancel-without-verify is blocked by the same rule as a misconfigured one.
 
-Parent plan: `sandbox-demonstrator-plan-v0.1` (Obsidian vault,
-`Projects/bossyk`). This repo is the executable build, phase by phase.
+This is a research artifact. The question it answers is what a correctly
+positioned runtime monitor **can and cannot enforce** for agentic AI — with
+the "cannot" half stated as precisely as the "can" half, and every claim
+graded against what was actually measured (live measurement / scripted proxy
+/ modelled counterfactual / deterministic recompute / open). The
+architectural analysis lives in [`docs/threat-model.md`](docs/threat-model.md);
+the narrated, lint-checked claim set in [`story/story.yaml`](story/story.yaml).
+
+## Results at a glance
+
+- **Policy expressiveness, classified against Schneider (2000) and Ligatti
+  et al. (2005).** Of the eight shipped policy lines across five domains, six
+  are enforceable-class ("not this action without that precondition" — the
+  EM-enforceable shape), one is enforced by suppression-before-emit (strictly
+  stronger than halting), and exactly one — cross-session information flow —
+  is a hyperproperty no session-scoped monitor can express, stated as a
+  permanent boundary with citations rather than left looking unfinished. The
+  architecture is matched to the policy class these domains generate, not
+  luckily suited. Full table: [`docs/threat-model.md`](docs/threat-model.md).
+- **Layered-defence measurements (H1–H5).** Live guardrail-bypass
+  measurement: 0.194 (airline) / 0.156 (retail), with a domain-invariant
+  blind-spot ordering. The full matrix below keeps each hypothesis at its
+  honest evidence grade — two are open or pending, and say so.
+- **Reading the model adds nothing here (measured negative).** Laundering
+  the request costs the text probe ≤ 0.001 AUROC because the violation *is*
+  the mutation request; enforcement never depends on detection (threat T10,
+  demo Act 4). The probe stays a cheap cascade filter, never a control.
+- **Attestation with its own claim boundary.** Ed25519-signed evidence
+  packs, plus a *working forgery demonstration* against the trusted
+  computing base and the oracle-binding countermeasure that catches it
+  (`probes/attestation/tcb_claim_boundary.md`). A signed trace proves the
+  record; it does not prove fidelity of capture — that gap is documented,
+  bounded, and kept visible.
+- **A governance loop that closes.** A detected-too-late failure fed back as
+  a fast-path rule (SMACTR): retail prevention 5/12 → 6/12, replay-tested
+  against a real regression probe.
+
+## What this does not claim
+
+- Mediation is **structural within the shipped graph**, not OS-level
+  interposition; an agent path not wired through the gate nodes would not be
+  gated. Non-bypassable interposition is future work, named first because it
+  is the classic way reference monitors fail.
+- A signed trace does **not** prove capture fidelity: a compromised tracer
+  or exfiltrated key can sign a clean trace of a dirty run (demonstrated in
+  the TCB analysis; the oracle-bindable subset is falsifiable, the rest is
+  not).
+- The cross-session information-flow line is **not enforceable by this
+  architecture**, and the utterance-side governance that exists is a phrase
+  list in one domain — an existence proof of the suppression class, not
+  coverage.
+- Semantic predicates ("without explicit customer request") are enforced by
+  **structural proxy** only; the semantic version is annotated, never gated.
+- H2 remains open and H4 is a modelled counterfactual — see the matrix and
+  **Honest limitations** below.
 
 ## Status
 
@@ -152,7 +209,8 @@ shape:
 - `retail-weak-modes` — the enforcement-delivery taxonomy: each turn resolves
   into a **mode** (allow / redirect / defer / step-up / escalate) and the
   irreversible over-authority actions land in a priority-ordered **HITL review
-  queue**. (Design: `enforcement-delivery-model-v0.1` in the vault.)
+  queue**. (Design doc: `enforcement-delivery-model-v0.1`, private planning
+  notes.)
 
 In the replay the structural gate verdicts are recomputed live from the real
 gate, but the resolution `mode`/`hitl` are authored demo choreography (per
@@ -194,7 +252,7 @@ This repo expects **four sibling checkouts** next to it:
 | `auditk` | `../auditk` | editable path dependency (public: github.com/auditk/auditk) |
 | `tau2-bench` | `../tau2-bench` | editable path dependency, package `tau2` (public: github.com/sierra-research/tau2-bench) |
 | `auditk-spec` | `../auditk-spec` | not a package — trace tests validate against its JSON schemas by relative path (public: github.com/auditk/auditk-spec) |
-| `bossyk` | `~/Projects/bossyk` (or `$BOSSYK_ROOT`) | private repo; resolved via `env.bossyk_root()` — a `sys.path` insert at judge-build time plus its policy YAMLs under `data/policies/` |
+| `bossyk` | `~/Projects/bossyk` (or `$BOSSYK_ROOT`) | private companion repo, **optional** — resolved via `env.bossyk_root()` (a `sys.path` insert at judge-build time plus its policy YAMLs under `data/policies/`); only the real policy judge imports it, nothing else needs it |
 
 `bossyk` is not needed for the deterministic test suite — the import is
 env-gated and only exercised by the real policy judge. `BOSSYK_ROOT` isn't
@@ -288,3 +346,22 @@ retail-008 failure, see Phase 4).
   only bound when `resume is not None`, but read unconditionally a few
   lines later). Always resume with an explicit value — this codebase
   always resumes with the GATE's verdict string rather than `None`.
+
+## Licence
+
+[Business Source License 1.1](LICENSE). You may copy, modify, redistribute,
+and make non-production use freely; the Additional Use Grant also permits
+production use except offering this work to third parties, hosted or
+embedded, as a competing agent-governance or AI-assurance product. On
+**2030-01-01** the licence converts automatically to **Apache-2.0**.
+
+## Citing
+
+```bibtex
+@software{dawson2026bossyk,
+  author = {Dawson, Matt},
+  title  = {bossyk-sandbox: a reference monitor for tool-using LLM agents},
+  year   = {2026},
+  url    = {https://github.com/haikomatt/bossyk-sandbox}
+}
+```
