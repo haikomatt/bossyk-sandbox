@@ -278,7 +278,10 @@ def render_scorecard_html(card: Scorecard) -> str:
         for d in card.gate.decisions
     )
     labels = ", ".join(f"{_esc(k)}: {v}" for k, v in card.audit.label_counts.items()) or "—"
-    drift = "—" if card.audit.drift_score is None else _esc(card.audit.drift_score)
+    if card.audit.drift_score is None:
+        drift = "—"
+    else:
+        drift = _esc(f"{card.audit.drift_score:.3f}".rstrip("0").rstrip(".") or "0")
     corroboration_line = (
         f"{card.corroboration.block_events} gate BLOCK(s) &harr; "
         f"{card.corroboration.refusals_in_trace} refusal(s) recorded in the session trace: "

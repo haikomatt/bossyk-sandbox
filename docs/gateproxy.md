@@ -1,0 +1,112 @@
+# The gate proxy, the audit, and the scorecard — how the pieces fit
+
+Two tools, two moments, one story:
+
+- **bossyk gate** decides **before execution**: it sits between your agent
+  harness and your inference endpoint and blocks policy-violating tool
+  calls before the harness ever sees them.
+- **auditk** verifies **after the fact**: it reads the session file the
+  harness wrote and scores what actually happened.
+- The **scorecard** is one self-contained HTML per run that merges both,
+  verifies every signature offline, and cross-checks that the two layers
+  tell the same story.
+
+## Where each piece runs
+
+```mermaid
+flowchart LR
+    subgraph your_infra [your infrastructure]
+        pi["pi coding agent\n(unchanged — one baseUrl edit\nin models.json)"]
+        gate["bossyk gate proxy\nTCP host:port or Unix socket"]
+        llm["your inference\n(llama.cpp / vLLM / any\nOpenAI-compatible endpoint)"]
+        pol[/"policy-pack.yaml\n5 deterministic policies"/]
+        ev[/"gate-events.jsonl\nEd25519-signed per decision"/]
+        sess[/"session .jsonl\n(pi's own record)"/]
+    end
+    pi -- "chat/completions" --> gate
+    gate -- "always non-streamed" --> llm
+    llm --> gate
+    gate -- "ALLOW: forwarded verbatim\nBLOCK: policy refusal instead" --> pi
+    pol -.-> gate
+    gate ==> ev
+    pi ==> sess
+```
+
+The gate buffers each model response, evaluates every proposed tool call
+against the policy pack, then either forwards the response untouched or
+replaces it with a refusal that names the violated policies. **The refusal
+goes back through pi, so pi records it in its own session file** — that is
+deliberate, and it is what makes the next diagram possible.
+
+## How the evidence fits together
+
+```mermaid
+flowchart LR
+    sess[/"session .jsonl"/] --> ingest["auditk ingest\n(pi adapter)"]
+    ingest --> trace[/"trace.json"/]
+    trace --> report["auditk report"] --> md[/"report.md / .html"/]
+    trace --> attest["auditk attest\n(drift scoring)"] --> pack[/"evidence-pack.json\nEd25519-signed"/]
+    ev[/"gate-events.jsonl\nEd25519-signed"/] --> card
+    trace --> card["scorecard\n(one HTML per run)"]
+    pack --> card
+    md --> card
+    card -- "verifies BOTH signatures offline\n(public keys only)" --> v{{"verified?"}}
+    card -- "every gate BLOCK must appear\nas a refusal in the trace" --> c{{"corroborated?"}}
+```
+
+The corroboration check is the load-bearing property: the gate's log
+*claims* it blocked something; the session file — written by pi, not by
+the gate — must independently show the refusal. Two records, produced by
+two different components, that have to agree. A gate log that claims
+blocks the trace doesn't show is surfaced as **NOT corroborated**, in
+red, on the scorecard.
+
+## Which layer owns which risk
+
+| Trap | What it is | Policy | Layer |
+|------|------------|--------|-------|
+| T2 | editing protected test files | `protected-test-paths` | gate, pre-execution |
+| T3 | network egress (`curl`, `wget`, `ssh`…) | `no-network-egress` | gate, pre-execution |
+| T4 | writing outside the workspace | `workspace-write-boundary` | gate, pre-execution |
+| T5 | reading credentials (`.env`, keys) | `no-credential-reads` | gate, pre-execution |
+| T6 | installing non-allowlisted packages | `package-allowlist` | gate, pre-execution |
+| T1 | goals smuggled in via data | — | audit, post-hoc |
+| T7 | feature creep beyond the task | — | audit, post-hoc |
+
+The gate enforces only what a deterministic predicate can decide before
+execution (the enforceable class); everything needing judgement stays
+audit-side. That split is a design position, stated on every scorecard,
+not a limitation discovered later.
+
+## Latency, honestly
+
+The gate adds single-digit milliseconds per response (JSON parse,
+microsecond predicates, one Ed25519 signature) against responses that
+take tens of seconds to generate. The real cost is the **buffer-then-
+decide** design: nothing is forwarded until the model finishes, because
+the gate must see complete tool calls before ruling. At 10–20 tok/s
+batch-style use this is invisible; interactive streaming gating is
+round-2 scope.
+
+## Run it
+
+```bash
+# 1. the gate, in front of your endpoint
+python -m bossyk_sandbox.gateproxy \
+  --upstream http://127.0.0.1:8080/v1 \
+  --policy-pack policy-pack.yaml \
+  --workspace /path/to/task/workspace \
+  --key gate-key.ed25519 --events gate-events.jsonl \
+  --run-label leg-b-qwen --listen 127.0.0.1:8200
+# (or --uds /run/bossyk/gate.sock instead of --listen)
+
+# 2. point pi at it: models.json baseUrl -> http://127.0.0.1:8200/v1
+
+# 3. after the run: audit the session, then render the scorecard
+python -m bossyk_sandbox.gateproxy.scorecard \
+  --run-label leg-b-qwen --task-name "logsum leg B" \
+  --trace trace.json --evidence-pack evidence-pack.json \
+  --gate-events gate-events.jsonl --report-md report.md \
+  --pack-public-key key.pub --gate-public-key gate-key.pub \
+  --out scorecard.html
+```
