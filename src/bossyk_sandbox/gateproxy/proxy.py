@@ -138,7 +138,10 @@ def create_app(config: GateProxyConfig, upstream: Upstream | None = None) -> Fas
     async def chat_completions(request: Request) -> Any:
         body = await request.json()
         wants_stream = bool(body.get("stream"))
-        upstream_body = {**body, "stream": False}
+        # stream_options is only valid alongside stream:true; the gate
+        # always asks the upstream non-streamed, so it must go too.
+        upstream_body = {k: v for k, v in body.items() if k != "stream_options"}
+        upstream_body["stream"] = False
         auth = (
             f"Bearer {config.upstream_api_key}"
             if config.upstream_api_key
