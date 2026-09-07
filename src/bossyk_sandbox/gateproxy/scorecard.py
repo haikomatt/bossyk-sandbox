@@ -26,7 +26,8 @@ from typing import Any
 from auditk.attestation.canonical import canonicalize
 from auditk.attestation.signer import LocalEd25519Verifier
 
-from bossyk_sandbox.gateproxy.events import verify_event_log
+from bossyk_sandbox.gateproxy.events import load_events, verify_event_log
+from bossyk_sandbox.gateproxy.sensitive import detect
 
 _REFUSAL_MARKER = "[bossyk gate] BLOCKED"
 
@@ -88,6 +89,23 @@ class Corroboration:
 
 
 @dataclass(frozen=True)
+class SensitiveRow:
+    step_id: str
+    kind: str
+    redacted_excerpt: str
+
+
+@dataclass(frozen=True)
+class SensitiveSummary:
+    rows: list[SensitiveRow]
+    counts_by_kind: dict[str, int]
+
+    @property
+    def any_observed(self) -> bool:
+        return bool(self.rows)
+
+
+@dataclass(frozen=True)
 class Verification:
     pack_verified: bool
     pack_detail: str
@@ -110,6 +128,9 @@ class Scorecard:
     refusal_texts: list[str]
     report_md: str | None
     step_count: int
+    pack_sha256: str | None
+    gate_version: str | None
+    sensitive: SensitiveSummary
 
 
 def _verify_pack(raw_pack: dict[str, Any], public_key_pem: str) -> tuple[bool, str]:
@@ -127,25 +148,36 @@ def _verify_pack(raw_pack: dict[str, Any], public_key_pem: str) -> tuple[bool, s
     return True, f"{len(signatures)} signature(s) verified against the trusted public key"
 
 
-def _load_events(path: Path) -> list[dict[str, Any]]:
-    events: list[dict[str, Any]] = []
-    for line in path.read_text().splitlines():
-        if not line.strip():
+def _scan_steps_for_sensitive_data(steps: list[dict[str, Any]]) -> SensitiveSummary:
+    """Build B: scan every trace step's own action payload (the whole
+    payload dict, JSON-dumped -- covers both an utterance's `text` and a
+    tool_call's `input`/`name` uniformly) for deterministic markers. This
+    is independent of the gate's own per-event `sensitive_markers` --
+    the trace can carry session content the gate never saw a tool_call
+    for (e.g. plain narration), so this scan is broader by design."""
+    rows: list[SensitiveRow] = []
+    counts: Counter[str] = Counter()
+    for step in steps:
+        action = step.get("action")
+        payload = action.get("payload") if isinstance(action, dict) else None
+        if not isinstance(payload, dict):
             continue
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        event = entry.get("event")
-        if isinstance(event, dict):
-            events.append(event)
-    return events
+        for marker in detect(json.dumps(payload)):
+            rows.append(
+                SensitiveRow(
+                    step_id=str(step.get("step_id", "")),
+                    kind=marker.kind,
+                    redacted_excerpt=marker.redacted_excerpt,
+                )
+            )
+            counts[marker.kind] += 1
+    return SensitiveSummary(rows=rows, counts_by_kind=dict(counts))
 
 
 def build_scorecard(inputs: ScorecardInputs) -> Scorecard:
     trace = json.loads(inputs.trace_path.read_text())
     raw_pack = json.loads(inputs.evidence_pack_path.read_text())
-    events = _load_events(inputs.gate_events_path)
+    events = load_events(inputs.gate_events_path)
 
     decisions = [
         GateDecisionRow(
@@ -194,6 +226,7 @@ def build_scorecard(inputs: ScorecardInputs) -> Scorecard:
     corroboration = Corroboration(
         block_events=gate.blocked_count, refusals_in_trace=len(refusal_texts)
     )
+    sensitive = _scan_steps_for_sensitive_data(steps)
 
     pack_verified, pack_detail = _verify_pack(raw_pack, inputs.pack_public_key_pem)
     gate_log = verify_event_log(inputs.gate_events_path, inputs.gate_public_key_pem)
@@ -206,6 +239,12 @@ def build_scorecard(inputs: ScorecardInputs) -> Scorecard:
     )
 
     model = next((str(e["model"]) for e in events if e.get("model")), None)
+    # Build A provenance: caller-supplied fields on the event dict, same
+    # pattern as `model` above -- first event that has it wins. Absent on
+    # any log predating Build A (or from elsewhere), in which case this
+    # stays None and the header states "not recorded" rather than raising.
+    pack_sha256 = next((str(e["pack_sha256"]) for e in events if e.get("pack_sha256")), None)
+    gate_version = next((str(e["gate_version"]) for e in events if e.get("gate_version")), None)
     report_md = (
         inputs.report_md_path.read_text()
         if inputs.report_md_path is not None and inputs.report_md_path.exists()
@@ -224,6 +263,9 @@ def build_scorecard(inputs: ScorecardInputs) -> Scorecard:
         refusal_texts=refusal_texts,
         report_md=report_md,
         step_count=len(steps),
+        pack_sha256=pack_sha256,
+        gate_version=gate_version,
+        sensitive=sensitive,
     )
 
 
@@ -263,6 +305,36 @@ def _mark(ok: bool, good: str, bad: str) -> str:
         f'<span class="ok">&#10003; {_esc(good)}</span>'
         if ok
         else (f'<span class="bad">&#10007; {_esc(bad)}</span>')
+    )
+
+
+def _provenance_line(card: Scorecard) -> str:
+    pack = f"pack {card.pack_sha256[:12]}…" if card.pack_sha256 else "pack not recorded"
+    gate = f"gate v{card.gate_version}" if card.gate_version else "gate version not recorded"
+    return f"{pack} · {gate}"
+
+
+def _sensitive_section(card: Scorecard) -> str:
+    if not card.sensitive.any_observed:
+        return "<h2>Sensitive data observed</h2>\n<p>none observed</p>"
+    counts = ", ".join(
+        f"{_esc(kind)}: {count}" for kind, count in card.sensitive.counts_by_kind.items()
+    )
+    rows = "\n".join(
+        "<tr>"
+        f"<td>{_esc(row.step_id)}</td>"
+        f"<td>{_esc(row.kind)}</td>"
+        f"<td>{_esc(row.redacted_excerpt)}</td>"
+        "</tr>"
+        for row in card.sensitive.rows
+    )
+    return (
+        "<h2>Sensitive data observed</h2>\n"
+        f"<p>{counts}</p>\n"
+        "<table>\n"
+        "<tr><th>step</th><th>kind</th><th>redacted excerpt</th></tr>\n"
+        f"{rows}\n"
+        "</table>"
     )
 
 
@@ -313,6 +385,7 @@ def render_scorecard_html(card: Scorecard) -> str:
  · session {_esc(card.trace_id)}
  · model {_esc(card.model or "unknown")}
  · {card.step_count} trace steps
+ · {_esc(_provenance_line(card))}
  · generated {_esc(card.generated_at.isoformat())}</p>
 
 <h2>Verification (offline, public keys only)</h2>
@@ -332,6 +405,8 @@ Gate event log: {_mark(card.verification.gate_log_ok, "verified", "FAILED")}
 <h2>Corroboration</h2>
 <p>{corroboration_line}</p>
 {refusals}
+
+{_sensitive_section(card)}
 
 <h2>Audit (post-hoc)</h2>
 <p>drift score <strong>{drift}</strong> · {card.audit.flagged_count} flagged step(s)

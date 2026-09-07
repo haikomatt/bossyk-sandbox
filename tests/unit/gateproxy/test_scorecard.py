@@ -31,6 +31,11 @@ from bossyk_sandbox.gateproxy.scorecard import (
 
 _GENERATED_AT = datetime(2026, 9, 7, 22, 0, 0, tzinfo=UTC)
 
+# A syntactically valid but never-real OpenAI-shaped key, used only to
+# prove the scorecard's "Sensitive data observed" section never leaks
+# the underlying literal into rendered HTML.
+_FAKE_OPENAI_KEY = "sk-" + "a" * 20 + "T3BlbkFJ" + "b" * 20
+
 _REFUSAL_TEXT = (
     "[bossyk gate] BLOCKED: this response proposed actions that violate policy.\n"
     "- no-network-egress: network egress via 'curl' is not permitted"
@@ -102,6 +107,10 @@ def _write_pack(path: Path, signer_key: Path, *, drift_score: float = 0.125) -> 
     path.write_text(json.dumps({**manifest, "signatures": [signature.model_dump(mode="json")]}))
 
 
+_TEST_PACK_SHA256 = "a1b2c3d4e5f6" + "0" * 52
+_TEST_GATE_VERSION = "0.1.0"
+
+
 def _write_events(path: Path, signer_key: Path, run_label: str = "leg-b-test") -> None:
     log = EventLog(path=path, signer_key_path=signer_key, run_label=run_label)
     log.append(
@@ -113,6 +122,8 @@ def _write_events(path: Path, signer_key: Path, run_label: str = "leg-b-test") -
             "policy_id": None,
             "reason": "no instrument blocked",
             "model": "accounts/fireworks/models/minimax-m3",
+            "pack_sha256": _TEST_PACK_SHA256,
+            "gate_version": _TEST_GATE_VERSION,
         }
     )
     log.append(
@@ -124,6 +135,8 @@ def _write_events(path: Path, signer_key: Path, run_label: str = "leg-b-test") -
             "policy_id": "no-network-egress",
             "reason": "no-network-egress: network egress via 'curl' is not permitted",
             "model": "accounts/fireworks/models/minimax-m3",
+            "pack_sha256": _TEST_PACK_SHA256,
+            "gate_version": _TEST_GATE_VERSION,
         }
     )
 
@@ -184,6 +197,32 @@ class TestBuild:
         card = build_scorecard(inputs)
         assert card.corroboration.refusals_in_trace == 0
         assert card.corroboration.corroborated is False
+
+
+class TestProvenance:
+    """Build A: the scorecard surfaces the pack sha256 and gate_version
+    carried on the events it reads (proxy.py stamps both at create_app)."""
+
+    def test_pack_sha256_and_gate_version_read_from_events(self, inputs: ScorecardInputs) -> None:
+        card = build_scorecard(inputs)
+        assert card.pack_sha256 == _TEST_PACK_SHA256
+        assert card.gate_version == _TEST_GATE_VERSION
+
+    def test_missing_provenance_on_events_is_none(
+        self, inputs: ScorecardInputs, tmp_path: Path, signing_keys: tuple[Path, str]
+    ) -> None:
+        """Events predating Build A (or a foreign log) carry neither field;
+        the scorecard must degrade gracefully rather than raise."""
+        import dataclasses
+
+        priv, _ = signing_keys
+        legacy_events = tmp_path / "legacy-events.jsonl"
+        log = EventLog(path=legacy_events, signer_key_path=priv, run_label="leg-b-test")
+        log.append({"kind": "utterance", "verdict": "allow", "reason": "no tool calls proposed"})
+        legacy_inputs = dataclasses.replace(inputs, gate_events_path=legacy_events)
+        card = build_scorecard(legacy_inputs)
+        assert card.pack_sha256 is None
+        assert card.gate_version is None
 
 
 class TestVerification:
@@ -254,10 +293,112 @@ class TestRender:
         for deferred in ("t1", "t7", "hold", "otel", "spiffe"):
             assert deferred in lower
 
+    def test_header_shows_pack_hash_and_gate_version(self, inputs: ScorecardInputs) -> None:
+        html = render_scorecard_html(build_scorecard(inputs))
+        assert _TEST_PACK_SHA256[:12] in html
+        assert f"gate v{_TEST_GATE_VERSION}" in html
+
     def test_deterministic_for_fixed_generated_at(self, inputs: ScorecardInputs) -> None:
         first = render_scorecard_html(build_scorecard(inputs))
         second = render_scorecard_html(build_scorecard(inputs))
         assert first == second
+
+
+class TestSensitiveDataSection:
+    """Build B: the scorecard scans every trace step's own payload text
+    (deterministic markers only, see gateproxy.sensitive) and gains a
+    'Sensitive data observed' section -- counts by kind with step ids and
+    redacted excerpts, or an explicit 'none observed' when nothing hit."""
+
+    def _append_step(self, inputs: ScorecardInputs, step: dict[str, Any]) -> None:
+        trace = json.loads(inputs.trace_path.read_text())
+        trace["steps"].append(step)
+        inputs.trace_path.write_text(json.dumps(trace))
+
+    def test_none_observed_by_default(self, inputs: ScorecardInputs) -> None:
+        card = build_scorecard(inputs)
+        assert card.sensitive.any_observed is False
+        html = render_scorecard_html(card)
+        assert "sensitive data observed" in html.lower()
+        assert "none observed" in html.lower()
+
+    def test_secret_in_trace_step_reported_by_kind_and_step_id(
+        self, inputs: ScorecardInputs
+    ) -> None:
+        self._append_step(
+            inputs,
+            {
+                "step_id": "s5",
+                "actor": "agent",
+                "timestamp": "2026-09-07T20:00:11+00:00",
+                "action": {
+                    "type": "tool_call",
+                    "payload": {
+                        "name": "bash",
+                        "input": {"command": f"echo {_FAKE_OPENAI_KEY}"},
+                    },
+                },
+            },
+        )
+        card = build_scorecard(inputs)
+        assert card.sensitive.any_observed is True
+        assert card.sensitive.counts_by_kind == {"openai_api_key": 1}
+        (row,) = card.sensitive.rows
+        assert row.step_id == "s5"
+        assert row.kind == "openai_api_key"
+        assert _FAKE_OPENAI_KEY not in row.redacted_excerpt
+
+    def test_full_secret_literal_never_appears_in_rendered_html(
+        self, inputs: ScorecardInputs
+    ) -> None:
+        """The property test: however the fake key travels through the
+        pipeline, the rendered scorecard shows only a redacted excerpt --
+        never the literal secret, anywhere in the document."""
+        self._append_step(
+            inputs,
+            {
+                "step_id": "s5",
+                "actor": "agent",
+                "timestamp": "2026-09-07T20:00:11+00:00",
+                "action": {
+                    "type": "tool_call",
+                    "payload": {
+                        "name": "bash",
+                        "input": {"command": f"echo {_FAKE_OPENAI_KEY}"},
+                    },
+                },
+            },
+        )
+        html = render_scorecard_html(build_scorecard(inputs))
+        assert _FAKE_OPENAI_KEY not in html
+        assert "openai_api_key" in html
+        assert _FAKE_OPENAI_KEY[:4] in html
+
+    def test_luhn_valid_card_in_trace_reported(self, inputs: ScorecardInputs) -> None:
+        self._append_step(
+            inputs,
+            {
+                "step_id": "s6",
+                "actor": "agent",
+                "timestamp": "2026-09-07T20:00:12+00:00",
+                "action": {"type": "utterance", "payload": {"text": "card: 4111111111111111"}},
+            },
+        )
+        card = build_scorecard(inputs)
+        assert card.sensitive.counts_by_kind.get("payment_card_number") == 1
+
+    def test_luhn_invalid_card_in_trace_not_reported(self, inputs: ScorecardInputs) -> None:
+        self._append_step(
+            inputs,
+            {
+                "step_id": "s6",
+                "actor": "agent",
+                "timestamp": "2026-09-07T20:00:12+00:00",
+                "action": {"type": "utterance", "payload": {"text": "card: 4111111111111112"}},
+            },
+        )
+        card = build_scorecard(inputs)
+        assert card.sensitive.counts_by_kind.get("payment_card_number") is None
 
 
 class TestCli:

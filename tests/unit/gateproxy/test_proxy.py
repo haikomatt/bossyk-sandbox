@@ -26,7 +26,7 @@ from fastapi.testclient import TestClient
 
 from bossyk_sandbox.gateproxy.events import verify_event_log
 from bossyk_sandbox.gateproxy.proxy import GateProxyConfig, create_app
-from tests.unit.gateproxy.conftest import openai_response, tool_call
+from tests.unit.gateproxy.conftest import POLICY_PACK_YAML, openai_response, tool_call
 
 
 @pytest.fixture()
@@ -338,6 +338,123 @@ class TestUpstreamAuth:
         )
         client.post("/v1/chat/completions", json=_REQUEST)
         assert "Authorization" not in captured_headers[0]
+
+
+class TestProvenance:
+    """Build A: every gate event carries the policy pack's sha256 (computed
+    once from the pack file's bytes at create_app) and the running
+    gate_version, so a scorecard or incident report can bind a decision to
+    the exact pack + code that produced it -- not just the pack's declared
+    contents."""
+
+    def test_tool_call_event_carries_pack_sha256_and_gate_version(
+        self, config: GateProxyConfig
+    ) -> None:
+        import hashlib
+
+        from bossyk_sandbox.gateproxy import __version__
+
+        client = _client(
+            config, openai_response(tool_calls=[tool_call("c1", "bash", '{"command": "ls"}')])
+        )
+        client.post("/v1/chat/completions", json=_REQUEST)
+        events = [json.loads(line)["event"] for line in config.events_path.read_text().splitlines()]
+        expected_sha = hashlib.sha256(config.policy_pack_path.read_bytes()).hexdigest()
+        assert events[0]["pack_sha256"] == expected_sha
+        assert events[0]["gate_version"] == __version__
+
+    def test_utterance_event_also_carries_provenance(self, config: GateProxyConfig) -> None:
+        client = _client(config, openai_response(content="All done."))
+        client.post("/v1/chat/completions", json=_REQUEST)
+        events = [json.loads(line)["event"] for line in config.events_path.read_text().splitlines()]
+        assert events[0]["pack_sha256"]
+        assert events[0]["gate_version"]
+
+    def test_different_pack_files_give_different_hashes(
+        self,
+        workspace_root: Path,
+        signing_keys: tuple[Path, str],
+        tmp_path: Path,
+    ) -> None:
+        priv_path, _ = signing_keys
+        pack_a = tmp_path / "pack-a.yaml"
+        pack_a.write_text(POLICY_PACK_YAML)
+        pack_b = tmp_path / "pack-b.yaml"
+        pack_b.write_text(POLICY_PACK_YAML + "\n# a harmless variant byte\n")
+
+        def make_config(pack_path: Path, events_name: str) -> GateProxyConfig:
+            return GateProxyConfig(
+                upstream_base_url="http://upstream.invalid/v1",
+                policy_pack_path=pack_path,
+                workspace_root=workspace_root,
+                signer_key_path=priv_path,
+                events_path=tmp_path / events_name,
+                run_label="leg-b-test",
+            )
+
+        config_a = make_config(pack_a, "events-a.jsonl")
+        config_b = make_config(pack_b, "events-b.jsonl")
+        _client(config_a, openai_response(content="hi")).post("/v1/chat/completions", json=_REQUEST)
+        _client(config_b, openai_response(content="hi")).post("/v1/chat/completions", json=_REQUEST)
+        sha_a = json.loads(config_a.events_path.read_text().splitlines()[0])["event"]["pack_sha256"]
+        sha_b = json.loads(config_b.events_path.read_text().splitlines()[0])["event"]["pack_sha256"]
+        assert sha_a != sha_b
+
+
+class TestSensitiveMarkers:
+    """Build B wiring: every tool_call/utterance event carries
+    `sensitive_markers`, computed over that event's OWN arguments/content
+    (never the whole request) before the event is signed -- so a marker
+    can never expose more of a secret than the (already-logged, raw)
+    arguments field itself carries. Detection is markers-only: it must
+    never change a verdict (proven below by an otherwise-clean call that
+    trips a marker but still ALLOWs)."""
+
+    _FAKE_AWS_KEY = "AKIA" + "ABCDEFGHIJKLMNOP"
+
+    def test_tool_call_event_carries_sensitive_markers(self, config: GateProxyConfig) -> None:
+        body = openai_response(
+            tool_calls=[
+                tool_call("c1", "bash", json.dumps({"command": f"echo {self._FAKE_AWS_KEY}"}))
+            ]
+        )
+        client = _client(config, body)
+        response = client.post("/v1/chat/completions", json=_REQUEST)
+        assert response.status_code == 200
+        events = [json.loads(line)["event"] for line in config.events_path.read_text().splitlines()]
+        markers = events[0]["sensitive_markers"]
+        assert any(m["kind"] == "aws_access_key_id" for m in markers)
+        assert all(self._FAKE_AWS_KEY not in m["redacted_excerpt"] for m in markers)
+
+    def test_marker_present_does_not_change_allow_verdict(self, config: GateProxyConfig) -> None:
+        """The secret-bearing call above violates no policy line, so it
+        must still ALLOW -- markers annotate, they never gate, in v1."""
+        body = openai_response(
+            tool_calls=[
+                tool_call("c1", "bash", json.dumps({"command": f"echo {self._FAKE_AWS_KEY}"}))
+            ]
+        )
+        client = _client(config, body)
+        response = client.post("/v1/chat/completions", json=_REQUEST)
+        message = response.json()["choices"][0]["message"]
+        assert message.get("tool_calls")
+        events = [json.loads(line)["event"] for line in config.events_path.read_text().splitlines()]
+        assert events[0]["verdict"] == "allow"
+
+    def test_utterance_event_carries_sensitive_markers(self, config: GateProxyConfig) -> None:
+        client = _client(config, openai_response(content=f"key is {self._FAKE_AWS_KEY}"))
+        client.post("/v1/chat/completions", json=_REQUEST)
+        events = [json.loads(line)["event"] for line in config.events_path.read_text().splitlines()]
+        markers = events[0]["sensitive_markers"]
+        assert any(m["kind"] == "aws_access_key_id" for m in markers)
+
+    def test_clean_call_has_empty_marker_list(self, config: GateProxyConfig) -> None:
+        client = _client(
+            config, openai_response(tool_calls=[tool_call("c1", "bash", '{"command": "ls"}')])
+        )
+        client.post("/v1/chat/completions", json=_REQUEST)
+        events = [json.loads(line)["event"] for line in config.events_path.read_text().splitlines()]
+        assert events[0]["sensitive_markers"] == []
 
 
 class TestStreamOptionStripping:

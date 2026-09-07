@@ -42,6 +42,28 @@ class EventLog:
             handle.write(line + "\n")
 
 
+def load_events(path: Path) -> list[dict[str, Any]]:
+    """Parse a gate-events JSONL file back into its `event` dicts, in file
+    (append) order. Malformed lines are skipped, not raised on -- the same
+    tolerant-read policy `verify_event_log` uses for signature checking,
+    since a log's own well-formedness is exactly what verification is
+    for. Shared by the scorecard and incident builders (both need the
+    raw per-event fields; only `verify_event_log` above needs to also
+    check signatures)."""
+    events: list[dict[str, Any]] = []
+    for line in Path(path).read_text().splitlines():
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        event = entry.get("event")
+        if isinstance(event, dict):
+            events.append(event)
+    return events
+
+
 @dataclass(frozen=True)
 class EventLogVerification:
     verified_count: int
