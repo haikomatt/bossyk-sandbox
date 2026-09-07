@@ -325,3 +325,43 @@ class TestCli:
             ]
         )
         assert "BLOCK" in out.read_text()
+
+
+class TestModuleExecution:
+    """Regression (found by the Phase 3 field check, per the ratchet): the
+    documented invocation is `python -m bossyk_sandbox.gateproxy.scorecard`;
+    without a __main__ guard the module imports and exits 0 silently."""
+
+    def test_runpy_invocation_writes_html(
+        self, inputs: ScorecardInputs, tmp_path: Path, signing_keys: tuple[Path, str]
+    ) -> None:
+        import runpy
+        import sys
+        from unittest import mock
+
+        _priv, pub_pem = signing_keys
+        pub_file = tmp_path / "pub.pem"
+        pub_file.write_text(pub_pem)
+        out = tmp_path / "runpy-scorecard.html"
+        argv = [
+            "scorecard",
+            "--run-label",
+            "leg-b-test",
+            "--task-name",
+            "logsum",
+            "--trace",
+            str(inputs.trace_path),
+            "--evidence-pack",
+            str(inputs.evidence_pack_path),
+            "--gate-events",
+            str(inputs.gate_events_path),
+            "--pack-public-key",
+            str(pub_file),
+            "--gate-public-key",
+            str(pub_file),
+            "--out",
+            str(out),
+        ]
+        with mock.patch.object(sys, "argv", argv):
+            runpy.run_module("bossyk_sandbox.gateproxy.scorecard", run_name="__main__")
+        assert out.exists()
