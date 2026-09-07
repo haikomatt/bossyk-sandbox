@@ -47,17 +47,20 @@ def config(
     )
 
 
-def _client(config: GateProxyConfig, upstream_body: dict[str, Any]) -> TestClient:
+def _client_with_capture(
+    config: GateProxyConfig, upstream_body: dict[str, Any]
+) -> tuple[TestClient, list[dict[str, Any]]]:
     captured: list[dict[str, Any]] = []
 
     def upstream(request_body: dict[str, Any]) -> dict[str, Any]:
         captured.append(request_body)
         return upstream_body
 
-    app = create_app(config, upstream=upstream)
-    client = TestClient(app)
-    client.captured_upstream_requests = captured  # type: ignore[attr-defined]
-    return client
+    return TestClient(create_app(config, upstream=upstream)), captured
+
+
+def _client(config: GateProxyConfig, upstream_body: dict[str, Any]) -> TestClient:
+    return _client_with_capture(config, upstream_body)[0]
 
 
 _REQUEST = {
@@ -174,9 +177,9 @@ class TestStreaming:
         assert content == "All done."
 
     def test_upstream_always_asked_non_streamed(self, config: GateProxyConfig) -> None:
-        client = _client(config, openai_response(content="hi"))
+        client, captured = _client_with_capture(config, openai_response(content="hi"))
         client.post("/v1/chat/completions", json={**_REQUEST, "stream": True})
-        (upstream_request,) = client.captured_upstream_requests  # type: ignore[attr-defined]
+        (upstream_request,) = captured
         assert upstream_request.get("stream") is not True
 
     def test_streamed_block_carries_refusal_and_tool_call_free_chunks(
