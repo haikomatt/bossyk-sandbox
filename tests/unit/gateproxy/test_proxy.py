@@ -338,3 +338,20 @@ class TestUpstreamAuth:
         )
         client.post("/v1/chat/completions", json=_REQUEST)
         assert "Authorization" not in captured_headers[0]
+
+
+class TestStreamOptionStripping:
+    """Live-validation regression (Fireworks 400): a client that streams
+    sends stream_options alongside stream:true; the gate forces the
+    upstream call non-streamed, so stream_options must be stripped too --
+    stream_options without stream:true is a 400 on OpenAI-compatible
+    servers."""
+
+    def test_stream_options_stripped_from_upstream_body(self, config: GateProxyConfig) -> None:
+        client, captured = _client_with_capture(config, openai_response(content="hi"))
+        client.post(
+            "/v1/chat/completions",
+            json={**_REQUEST, "stream": True, "stream_options": {"include_usage": True}},
+        )
+        assert "stream_options" not in captured[0]
+        assert captured[0].get("stream") is False
