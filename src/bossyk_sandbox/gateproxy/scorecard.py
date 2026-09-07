@@ -394,3 +394,7 @@ def main(argv: list[str] | None = None) -> None:
     card = build_scorecard(config.inputs)
     config.out_path.write_text(render_scorecard_html(card))
     print(f"Scorecard written to {config.out_path}")
+
+
+if __name__ == "__main__":
+    main()
