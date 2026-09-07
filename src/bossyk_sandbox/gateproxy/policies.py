@@ -113,20 +113,6 @@ def _command_tokens(command: str) -> list[str]:
         return command.split()
 
 
-def _command_position_tokens(tokens: list[str]) -> list[str]:
-    """The tokens in command position: the first of the whole line and the
-    first after every shell connector."""
-    heads: list[str] = []
-    expect_head = True
-    for token in tokens:
-        if token in _SHELL_CONNECTORS:
-            expect_head = True
-        elif expect_head:
-            heads.append(token)
-            expect_head = False
-    return heads
-
-
 def _applies(policy: GatePolicy, proposed: ProposedAction) -> bool:
     tools = policy.config.get("tools") or []
     return proposed.tool_name in tools
