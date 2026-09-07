@@ -401,6 +401,62 @@ class TestProvenance:
         assert sha_a != sha_b
 
 
+class TestSensitiveMarkers:
+    """Build B wiring: every tool_call/utterance event carries
+    `sensitive_markers`, computed over that event's OWN arguments/content
+    (never the whole request) before the event is signed -- so a marker
+    can never expose more of a secret than the (already-logged, raw)
+    arguments field itself carries. Detection is markers-only: it must
+    never change a verdict (proven below by an otherwise-clean call that
+    trips a marker but still ALLOWs)."""
+
+    _FAKE_AWS_KEY = "AKIA" + "ABCDEFGHIJKLMNOP"
+
+    def test_tool_call_event_carries_sensitive_markers(self, config: GateProxyConfig) -> None:
+        body = openai_response(
+            tool_calls=[
+                tool_call("c1", "bash", json.dumps({"command": f"echo {self._FAKE_AWS_KEY}"}))
+            ]
+        )
+        client = _client(config, body)
+        response = client.post("/v1/chat/completions", json=_REQUEST)
+        assert response.status_code == 200
+        events = [json.loads(line)["event"] for line in config.events_path.read_text().splitlines()]
+        markers = events[0]["sensitive_markers"]
+        assert any(m["kind"] == "aws_access_key_id" for m in markers)
+        assert all(self._FAKE_AWS_KEY not in m["redacted_excerpt"] for m in markers)
+
+    def test_marker_present_does_not_change_allow_verdict(self, config: GateProxyConfig) -> None:
+        """The secret-bearing call above violates no policy line, so it
+        must still ALLOW -- markers annotate, they never gate, in v1."""
+        body = openai_response(
+            tool_calls=[
+                tool_call("c1", "bash", json.dumps({"command": f"echo {self._FAKE_AWS_KEY}"}))
+            ]
+        )
+        client = _client(config, body)
+        response = client.post("/v1/chat/completions", json=_REQUEST)
+        message = response.json()["choices"][0]["message"]
+        assert message.get("tool_calls")
+        events = [json.loads(line)["event"] for line in config.events_path.read_text().splitlines()]
+        assert events[0]["verdict"] == "allow"
+
+    def test_utterance_event_carries_sensitive_markers(self, config: GateProxyConfig) -> None:
+        client = _client(config, openai_response(content=f"key is {self._FAKE_AWS_KEY}"))
+        client.post("/v1/chat/completions", json=_REQUEST)
+        events = [json.loads(line)["event"] for line in config.events_path.read_text().splitlines()]
+        markers = events[0]["sensitive_markers"]
+        assert any(m["kind"] == "aws_access_key_id" for m in markers)
+
+    def test_clean_call_has_empty_marker_list(self, config: GateProxyConfig) -> None:
+        client = _client(
+            config, openai_response(tool_calls=[tool_call("c1", "bash", '{"command": "ls"}')])
+        )
+        client.post("/v1/chat/completions", json=_REQUEST)
+        events = [json.loads(line)["event"] for line in config.events_path.read_text().splitlines()]
+        assert events[0]["sensitive_markers"] == []
+
+
 class TestStreamOptionStripping:
     """Live-validation regression (Fireworks 400): a client that streams
     sends stream_options alongside stream:true; the gate forces the

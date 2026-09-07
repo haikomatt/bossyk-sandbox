@@ -31,6 +31,11 @@ from bossyk_sandbox.gateproxy.scorecard import (
 
 _GENERATED_AT = datetime(2026, 9, 7, 22, 0, 0, tzinfo=UTC)
 
+# A syntactically valid but never-real OpenAI-shaped key, used only to
+# prove the scorecard's "Sensitive data observed" section never leaks
+# the underlying literal into rendered HTML.
+_FAKE_OPENAI_KEY = "sk-" + "a" * 20 + "T3BlbkFJ" + "b" * 20
+
 _REFUSAL_TEXT = (
     "[bossyk gate] BLOCKED: this response proposed actions that violate policy.\n"
     "- no-network-egress: network egress via 'curl' is not permitted"
@@ -297,6 +302,103 @@ class TestRender:
         first = render_scorecard_html(build_scorecard(inputs))
         second = render_scorecard_html(build_scorecard(inputs))
         assert first == second
+
+
+class TestSensitiveDataSection:
+    """Build B: the scorecard scans every trace step's own payload text
+    (deterministic markers only, see gateproxy.sensitive) and gains a
+    'Sensitive data observed' section -- counts by kind with step ids and
+    redacted excerpts, or an explicit 'none observed' when nothing hit."""
+
+    def _append_step(self, inputs: ScorecardInputs, step: dict[str, Any]) -> None:
+        trace = json.loads(inputs.trace_path.read_text())
+        trace["steps"].append(step)
+        inputs.trace_path.write_text(json.dumps(trace))
+
+    def test_none_observed_by_default(self, inputs: ScorecardInputs) -> None:
+        card = build_scorecard(inputs)
+        assert card.sensitive.any_observed is False
+        html = render_scorecard_html(card)
+        assert "sensitive data observed" in html.lower()
+        assert "none observed" in html.lower()
+
+    def test_secret_in_trace_step_reported_by_kind_and_step_id(
+        self, inputs: ScorecardInputs
+    ) -> None:
+        self._append_step(
+            inputs,
+            {
+                "step_id": "s5",
+                "actor": "agent",
+                "timestamp": "2026-09-07T20:00:11+00:00",
+                "action": {
+                    "type": "tool_call",
+                    "payload": {
+                        "name": "bash",
+                        "input": {"command": f"echo {_FAKE_OPENAI_KEY}"},
+                    },
+                },
+            },
+        )
+        card = build_scorecard(inputs)
+        assert card.sensitive.any_observed is True
+        assert card.sensitive.counts_by_kind == {"openai_api_key": 1}
+        (row,) = card.sensitive.rows
+        assert row.step_id == "s5"
+        assert row.kind == "openai_api_key"
+        assert _FAKE_OPENAI_KEY not in row.redacted_excerpt
+
+    def test_full_secret_literal_never_appears_in_rendered_html(
+        self, inputs: ScorecardInputs
+    ) -> None:
+        """The property test: however the fake key travels through the
+        pipeline, the rendered scorecard shows only a redacted excerpt --
+        never the literal secret, anywhere in the document."""
+        self._append_step(
+            inputs,
+            {
+                "step_id": "s5",
+                "actor": "agent",
+                "timestamp": "2026-09-07T20:00:11+00:00",
+                "action": {
+                    "type": "tool_call",
+                    "payload": {
+                        "name": "bash",
+                        "input": {"command": f"echo {_FAKE_OPENAI_KEY}"},
+                    },
+                },
+            },
+        )
+        html = render_scorecard_html(build_scorecard(inputs))
+        assert _FAKE_OPENAI_KEY not in html
+        assert "openai_api_key" in html
+        assert _FAKE_OPENAI_KEY[:4] in html
+
+    def test_luhn_valid_card_in_trace_reported(self, inputs: ScorecardInputs) -> None:
+        self._append_step(
+            inputs,
+            {
+                "step_id": "s6",
+                "actor": "agent",
+                "timestamp": "2026-09-07T20:00:12+00:00",
+                "action": {"type": "utterance", "payload": {"text": "card: 4111111111111111"}},
+            },
+        )
+        card = build_scorecard(inputs)
+        assert card.sensitive.counts_by_kind.get("payment_card_number") == 1
+
+    def test_luhn_invalid_card_in_trace_not_reported(self, inputs: ScorecardInputs) -> None:
+        self._append_step(
+            inputs,
+            {
+                "step_id": "s6",
+                "actor": "agent",
+                "timestamp": "2026-09-07T20:00:12+00:00",
+                "action": {"type": "utterance", "payload": {"text": "card: 4111111111111112"}},
+            },
+        )
+        card = build_scorecard(inputs)
+        assert card.sensitive.counts_by_kind.get("payment_card_number") is None
 
 
 class TestCli:
