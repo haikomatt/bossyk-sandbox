@@ -26,7 +26,7 @@ from typing import Any
 from auditk.attestation.canonical import canonicalize
 from auditk.attestation.signer import LocalEd25519Verifier
 
-from bossyk_sandbox.gateproxy.events import verify_event_log
+from bossyk_sandbox.gateproxy.events import load_events, verify_event_log
 from bossyk_sandbox.gateproxy.sensitive import detect
 
 _REFUSAL_MARKER = "[bossyk gate] BLOCKED"
@@ -148,21 +148,6 @@ def _verify_pack(raw_pack: dict[str, Any], public_key_pem: str) -> tuple[bool, s
     return True, f"{len(signatures)} signature(s) verified against the trusted public key"
 
 
-def _load_events(path: Path) -> list[dict[str, Any]]:
-    events: list[dict[str, Any]] = []
-    for line in path.read_text().splitlines():
-        if not line.strip():
-            continue
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        event = entry.get("event")
-        if isinstance(event, dict):
-            events.append(event)
-    return events
-
-
 def _scan_steps_for_sensitive_data(steps: list[dict[str, Any]]) -> SensitiveSummary:
     """Build B: scan every trace step's own action payload (the whole
     payload dict, JSON-dumped -- covers both an utterance's `text` and a
@@ -192,7 +177,7 @@ def _scan_steps_for_sensitive_data(steps: list[dict[str, Any]]) -> SensitiveSumm
 def build_scorecard(inputs: ScorecardInputs) -> Scorecard:
     trace = json.loads(inputs.trace_path.read_text())
     raw_pack = json.loads(inputs.evidence_pack_path.read_text())
-    events = _load_events(inputs.gate_events_path)
+    events = load_events(inputs.gate_events_path)
 
     decisions = [
         GateDecisionRow(
