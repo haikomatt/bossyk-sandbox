@@ -1,0 +1,11 @@
+bossyk-sandbox
+Copyright (c) 2026 Matt Dawson
+
+Licensed under the Business Source License 1.1 (see LICENSE).
+On 2030-01-01 this code becomes available under the Apache License,
+Version 2.0.
+
+This repository consumes, but does not include, the following separate
+works, each under its own licence:
+- auditk and auditk-spec (Apache-2.0), github.com/auditk
+- tau2-bench (MIT), github.com/sierra-research/tau2-bench

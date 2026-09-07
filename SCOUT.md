@@ -10,7 +10,7 @@ Source task: `coding-tasks/bossyk-sandbox/phase0-walking-skeleton.md` (Obsidian 
 
 1. **Repo location**: new repo at `~/Projects/bossyk-sandbox` (this repo). Clean
    separation from `bossyk`; grows into the product demo.
-2. **LangGraph version**: `langgraph>=1.0` (matches `a-prior-project`'s pin). No repo
+2. **LangGraph version**: `langgraph>=1.0` (matches a prior project's pin). No repo
    in `~/Projects` currently uses the `interrupt()`/HITL pattern — built fresh
    here. API: `langgraph.types.interrupt(value)` inside a node pauses execution
    and surfaces `value` to the caller; resumed via `Command(resume=...)`.
