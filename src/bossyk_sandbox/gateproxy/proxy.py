@@ -165,12 +165,20 @@ def create_app(config: GateProxyConfig, upstream: Upstream | None = None) -> Fas
                     logged_arguments = arguments
                 if decision.verdict is Verdict.BLOCK:
                     block_reasons.append(decision.reason)
+                # Every rule prefixes its reason with its own policy id;
+                # matching against the loaded pack recovers it as a
+                # structured field for the scorecard.
+                policy_id = next(
+                    (p.id for p in pack.policies if decision.reason.startswith(f"{p.id}:")),
+                    None,
+                )
                 events.append(
                     {
                         "kind": "tool_call",
                         "tool_name": name,
                         "arguments": logged_arguments,
                         "verdict": decision.verdict.value,
+                        "policy_id": policy_id,
                         "reason": decision.reason,
                         "model": upstream_response.get("model"),
                     }
