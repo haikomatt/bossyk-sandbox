@@ -139,8 +139,10 @@ def create_app(config: GateProxyConfig, upstream: Upstream | None = None) -> Fas
         body = await request.json()
         wants_stream = bool(body.get("stream"))
         upstream_body = {**body, "stream": False}
-        auth = request.headers.get("authorization") or (
-            f"Bearer {config.upstream_api_key}" if config.upstream_api_key else None
+        auth = (
+            f"Bearer {config.upstream_api_key}"
+            if config.upstream_api_key
+            else request.headers.get("authorization")
         )
         upstream_headers = {"Authorization": auth} if auth else {}
 
