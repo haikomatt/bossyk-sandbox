@@ -19,7 +19,7 @@ import html
 import json
 from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -370,8 +370,6 @@ def build_scorecard_config(argv: list[str]) -> ScorecardCliConfig:
         help="ISO timestamp override (default: now, UTC); fixed input -> identical output.",
     )
     args = parser.parse_args(argv)
-    from datetime import UTC
-
     generated_at = (
         datetime.fromisoformat(args.generated_at) if args.generated_at else datetime.now(UTC)
     )
