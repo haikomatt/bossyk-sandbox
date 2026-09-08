@@ -61,7 +61,7 @@ class GateProxyConfig:
     # Set from --upstream-key-env at startup; fills the upstream
     # Authorization header when the client itself sent none.
     upstream_api_key: str | None = None
-    # Per-identity packs (round-2 item 3). With identity_packs_path unset
+    # Per-identity packs (round 2). With identity_packs_path unset
     # the gate is the single-pack gate it always was.
     identity_packs_path: Path | None = None
     trust_identity_header: bool = False

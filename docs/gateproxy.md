@@ -118,9 +118,9 @@ unpoliced.
 
 Every signed event carries `caller_identity`, `identity_source` (`svid`
 or `header`) and `pack_matched`, plus the `pack_sha256` of the pack that
-actually ruled. That is the cross-tenant scoping the audience-evidence
-note calls the one unrecoverable failure, enforced in the record and in
-the telemetry projection rather than by convention. All packs are loaded,
+actually ruled. Cross-tenant scoping is the one unrecoverable failure for
+per-reader evidence, so it is enforced in the record and in the telemetry
+projection rather than by convention. All packs are loaded,
 compiled and hashed at startup, so a missing or broken pack fails the gate
 at start, not at a caller's first request.
 
