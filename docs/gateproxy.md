@@ -78,6 +78,60 @@ execution (the enforceable class); everything needing judgement stays
 audit-side. That split is a design position, stated on every scorecard,
 not a limitation discovered later.
 
+## Per-identity packs: different callers, different rules, one gate
+
+By default one gate loads one pack for everyone. With `--identity-packs`
+it instead reads a **verified caller identity** on every request and picks
+that caller's pack:
+
+```yaml
+# identity-packs.yaml (paths relative to this file)
+version: 1
+default: deny-pack.yaml            # required: unknown or absent identity runs under this
+packs:
+  spiffe://example.org/coding-agent: coding-pack.yaml
+  spiffe://example.org/research-agent: research-pack.yaml
+```
+
+Where the identity comes from, in fixed precedence:
+
+1. **The SPIFFE X509-SVID on the connection.** Start the gate with
+   `--client-ca <trust-bundle.pem> --ssl-certfile <gate.pem> --ssl-keyfile <gate-key.pem>`
+   and the listener requires a client certificate chained to the bundle on
+   every connection; the certificate's single `spiffe://` URI SAN is the
+   identity. This is the source to use: the TLS layer verified it, and the
+   caller cannot forge it.
+2. **A header**, `X-Forwarded-Client-Cert` (Envoy XFCC `URI=` element) or
+   `X-SPIFFE-ID`, read only with `--trust-identity-header`. A header is
+   whatever the caller wrote in it. It is only meaningful when a proxy you
+   control terminated mTLS and set it, and nothing else can reach the gate;
+   that boundary is yours to keep, and the flag exists so the trust is
+   explicit rather than assumed.
+
+An identity the gate cannot read (not a SPIFFE ID, two SPIFFE SANs, junk
+where a certificate should be) is **refused**: HTTP 403, nothing forwarded
+upstream, and a signed `identity_refused` event. It is never coerced into
+"no identity" and waved through to the default pack. A caller with a valid
+but unmapped identity, or no identity at all, runs under `default`, which
+is why the mapping must declare one: an unknown caller is never silently
+unpoliced.
+
+Every signed event carries `caller_identity`, `identity_source` (`svid`
+or `header`) and `pack_matched`, plus the `pack_sha256` of the pack that
+actually ruled. That is the cross-tenant scoping the audience-evidence
+note calls the one unrecoverable failure, enforced in the record and in
+the telemetry projection rather than by convention. All packs are loaded,
+compiled and hashed at startup, so a missing or broken pack fails the gate
+at start, not at a caller's first request.
+
+Evidence: `tests/fixtures/spiffe/` holds SVIDs minted by a real SPIRE
+server (1.13.2), which the parsing tests read; `tests/e2e/test_gate_mtls_e2e.py`
+starts the real mTLS listener with a throwaway CA and shows two SVIDs on
+one gate getting different verdicts for the same proposed action, and a
+caller with no certificate refused at the handshake. Your SPIRE
+deployment's own trust bundle was not available, so this is coded to the
+SPIFFE X509-SVID and SPIFFE-ID specs and says so.
+
 ## Latency, honestly
 
 The gate adds single-digit milliseconds per response (JSON parse,
