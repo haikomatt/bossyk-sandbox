@@ -18,6 +18,7 @@ here is network-free; the real httpx client is only the default when
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,7 @@ from fastapi.testclient import TestClient
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from bossyk_sandbox.gateproxy.events import verify_event_log
+from bossyk_sandbox.gateproxy.hold import HoldRequest
 from bossyk_sandbox.gateproxy.proxy import GateProxyConfig, build_config, create_app
 from tests.unit.gateproxy.conftest import POLICY_PACK_YAML, openai_response, tool_call
 
@@ -685,6 +687,46 @@ class TestIdentityPacks:
 
 
 # The smallest argv build_config accepts; the identity tests add to it.
+_HOLD_PACK_YAML = """\
+version: 1
+policies:
+  - id: destructive-shell
+    trap: T8
+    class: A
+    type: network-egress
+    on_match: hold
+    tools: [bash]
+    commands: [rm]
+  - id: no-network-egress
+    trap: T3
+    class: A
+    type: network-egress
+    tools: [bash]
+    commands: [curl]
+"""
+
+_RM_CALL = tool_call("c1", "bash", '{"command": "rm -rf build"}')
+
+
+def _hold_config(config: GateProxyConfig, *, on_hold: str = "block") -> GateProxyConfig:
+    config.policy_pack_path.write_text(
+        _HOLD_PACK_YAML.replace("on_match: hold\n", f"on_match: hold\n    on_hold: {on_hold}\n")
+    )
+    return config
+
+
+def _events(config: GateProxyConfig) -> list[dict[str, Any]]:
+    return [json.loads(line)["event"] for line in config.events_path.read_text().splitlines()]
+
+
+def _fixed_approver(answer: bool | None) -> Callable[[HoldRequest], bool | None]:
+    def approve(request: HoldRequest) -> bool | None:
+        return answer
+
+    return approve
+
+
+# The smallest argv build_config accepts; the approver tests add to it.
 _MINIMAL_ARGV = [
     "--upstream", "http://u/v1",
     "--policy-pack", "p.yaml",
@@ -696,5 +738,175 @@ _MINIMAL_ARGV = [
 ]  # fmt: skip
 
 
-def _events(config: GateProxyConfig) -> list[dict[str, Any]]:
-    return [json.loads(line)["event"] for line in config.events_path.read_text().splitlines()]
+class TestHoldPath:
+    def test_hold_without_approver_falls_back_to_policy_default_block(
+        self, config: GateProxyConfig
+    ) -> None:
+        client = _client(_hold_config(config), openai_response(tool_calls=[_RM_CALL]))
+        message = client.post("/v1/chat/completions", json=_REQUEST).json()["choices"][0]["message"]
+        assert "[bossyk gate]" in message["content"]
+        assert "destructive-shell" in message["content"]
+        assert not message.get("tool_calls")
+        (event,) = _events(config)
+        assert event["verdict"] == "hold"
+        assert event["resolution"] == "held_then_blocked"
+        assert event["resolved_verdict"] == "block"
+        assert event["policy_id"] == "destructive-shell"
+
+    def test_hold_without_approver_falls_back_to_policy_default_allow(
+        self, config: GateProxyConfig
+    ) -> None:
+        body = openai_response(content="Cleaning.", tool_calls=[_RM_CALL])
+        client = _client(_hold_config(config, on_hold="allow"), body)
+        message = client.post("/v1/chat/completions", json=_REQUEST).json()["choices"][0]["message"]
+        assert message["tool_calls"] == body["choices"][0]["message"]["tool_calls"]
+        (event,) = _events(config)
+        assert event["verdict"] == "hold"
+        assert event["resolution"] == "held_then_allowed"
+        assert event["resolved_verdict"] == "allow"
+
+    def test_approver_approval_resumes_the_action(self, config: GateProxyConfig) -> None:
+        body = openai_response(tool_calls=[_RM_CALL])
+        app = create_app(
+            _hold_config(config), upstream=lambda b, h: body, approver=_fixed_approver(True)
+        )
+        message = (
+            TestClient(app)
+            .post("/v1/chat/completions", json=_REQUEST)
+            .json()["choices"][0]["message"]
+        )
+        assert message["tool_calls"] == body["choices"][0]["message"]["tool_calls"]
+        (event,) = _events(config)
+        assert (event["resolution"], event["resolved_verdict"]) == ("held_then_allowed", "allow")
+
+    def test_approver_denial_refuses_the_action(self, config: GateProxyConfig) -> None:
+        body = openai_response(tool_calls=[_RM_CALL])
+        app = create_app(
+            _hold_config(config, on_hold="allow"),
+            upstream=lambda b, h: body,
+            approver=_fixed_approver(False),
+        )
+        message = (
+            TestClient(app)
+            .post("/v1/chat/completions", json=_REQUEST)
+            .json()["choices"][0]["message"]
+        )
+        assert "[bossyk gate]" in message["content"]
+        (event,) = _events(config)
+        assert (event["resolution"], event["resolved_verdict"]) == ("held_then_blocked", "block")
+
+    @pytest.mark.parametrize("on_hold, resolved", [("block", "block"), ("allow", "allow")])
+    def test_approver_timeout_resolves_by_policy_default(
+        self, config: GateProxyConfig, on_hold: str, resolved: str
+    ) -> None:
+        body = openai_response(tool_calls=[_RM_CALL])
+        app = create_app(
+            _hold_config(config, on_hold=on_hold),
+            upstream=lambda b, h: body,
+            approver=_fixed_approver(None),
+        )
+        response = TestClient(app).post("/v1/chat/completions", json=_REQUEST).json()
+        (event,) = _events(config)
+        assert event["resolution"] == "hold_timed_out"
+        assert event["resolved_verdict"] == resolved
+        refused = "[bossyk gate]" in (response["choices"][0]["message"]["content"] or "")
+        assert refused == (resolved == "block")
+
+    def test_approver_receives_the_held_action(self, config: GateProxyConfig) -> None:
+        seen: list[HoldRequest] = []
+
+        def approve(request: HoldRequest) -> bool | None:
+            seen.append(request)
+            return True
+
+        body = openai_response(tool_calls=[_RM_CALL])
+        app = create_app(_hold_config(config), upstream=lambda b, h: body, approver=approve)
+        TestClient(app).post("/v1/chat/completions", json=_REQUEST)
+        (request,) = seen
+        assert request.tool_name == "bash"
+        assert request.arguments == {"command": "rm -rf build"}
+        assert request.policy_id == "destructive-shell"
+        assert request.run_label == "leg-b-test"
+
+    def test_approver_not_consulted_for_allow_or_block(self, config: GateProxyConfig) -> None:
+        calls: list[HoldRequest] = []
+
+        def approve(request: HoldRequest) -> bool | None:
+            calls.append(request)
+            return True
+
+        body = openai_response(
+            tool_calls=[
+                tool_call("c1", "bash", '{"command": "ls"}'),
+                tool_call("c2", "bash", '{"command": "curl http://x.example"}'),
+            ]
+        )
+        app = create_app(_hold_config(config), upstream=lambda b, h: body, approver=approve)
+        TestClient(app).post("/v1/chat/completions", json=_REQUEST)
+        assert calls == []
+        assert [e["verdict"] for e in _events(config)] == ["allow", "block"]
+
+    def test_approved_hold_beside_a_block_still_refuses_whole_response(
+        self, config: GateProxyConfig
+    ) -> None:
+        body = openai_response(
+            tool_calls=[_RM_CALL, tool_call("c2", "bash", '{"command": "curl http://x.example"}')]
+        )
+        app = create_app(
+            _hold_config(config), upstream=lambda b, h: body, approver=_fixed_approver(True)
+        )
+        message = (
+            TestClient(app)
+            .post("/v1/chat/completions", json=_REQUEST)
+            .json()["choices"][0]["message"]
+        )
+        assert "no-network-egress" in message["content"]
+        assert "destructive-shell" not in message["content"]
+        assert [e["verdict"] for e in _events(config)] == ["hold", "block"]
+
+    def test_held_event_signed_and_allow_block_events_carry_no_resolution(
+        self, config: GateProxyConfig, signing_keys: tuple[Path, str]
+    ) -> None:
+        _priv, pub_pem = signing_keys
+        client = _client(
+            _hold_config(config),
+            openai_response(tool_calls=[_RM_CALL, tool_call("c2", "bash", '{"command": "ls"}')]),
+        )
+        client.post("/v1/chat/completions", json=_REQUEST)
+        assert verify_event_log(config.events_path, pub_pem).ok
+        held, allowed = _events(config)
+        assert held["resolution"] == "held_then_blocked"
+        assert allowed["resolution"] is None
+        assert allowed["resolved_verdict"] is None
+
+    def test_build_config_parses_approver_flags(self, tmp_path: Path) -> None:
+        argv = [
+            *_MINIMAL_ARGV,
+            "--approver-cmd",
+            "approve --strict",
+            "--approver-timeout",
+            "12.5",
+        ]
+        built = build_config(argv)
+        assert built.approver_command == ["approve", "--strict"]
+        assert built.approver_url is None
+        assert built.approver_timeout_s == 12.5
+
+    def test_build_config_approver_cmd_and_url_are_mutually_exclusive(self) -> None:
+        argv = [
+            *_MINIMAL_ARGV,
+            "--approver-cmd",
+            "approve",
+            "--approver-url",
+            "http://a/h",
+        ]
+        with pytest.raises(SystemExit):
+            build_config(argv)
+
+    def test_build_config_defaults_to_no_approver(self) -> None:
+        argv = [
+            *_MINIMAL_ARGV,
+        ]
+        built = build_config(argv)
+        assert built.approver_command is None
+        assert built.approver_url is None

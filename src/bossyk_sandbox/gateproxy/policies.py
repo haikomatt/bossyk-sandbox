@@ -29,6 +29,13 @@ from bossyk_sandbox.instruments.base import (
 
 _SUPPORTED_PACK_VERSION = 1
 
+# `on_match` is what a matching policy line asks the gate for; `on_hold`
+# is how a HOLD resolves when no approver answers. Both default to block:
+# a pack must opt in to holding, and a hold nobody answers fails closed.
+_ON_MATCH_VALUES = frozenset({"block", "hold"})
+_ON_HOLD_VALUES = frozenset({"block", "allow"})
+_POLICY_META_KEYS = frozenset({"id", "type", "class", "trap", "on_match", "on_hold"})
+
 # Shell operators that glue compound commands together; splitting on these
 # after shlex tokenisation lets `echo done && curl x` expose `curl` as a
 # command-position token without a real parser.
@@ -57,6 +64,8 @@ class GatePolicy:
     policy_class: str
     trap: str | None = None
     config: dict[str, Any] = field(default_factory=dict)
+    on_match: str = "block"
+    on_hold: str = "block"
 
 
 @dataclass(frozen=True)
@@ -89,16 +98,51 @@ def load_policy_pack(path: Path) -> PolicyPack:
                 type=policy_type,
                 policy_class=str(entry.get("class", "A")),
                 trap=str(entry["trap"]) if entry.get("trap") is not None else None,
-                config={k: v for k, v in entry.items() if k not in ("id", "type", "class", "trap")},
+                config={k: v for k, v in entry.items() if k not in _POLICY_META_KEYS},
+                on_match=_choice(entry, "on_match", _ON_MATCH_VALUES),
+                on_hold=_choice(entry, "on_hold", _ON_HOLD_VALUES),
             )
         )
     return PolicyPack(policies=policies)
 
 
+def _choice(entry: dict[str, Any], key: str, allowed: frozenset[str]) -> str:
+    value = str(entry.get(key, "block"))
+    if value not in allowed:
+        raise ValueError(
+            f"policy {entry.get('id')!r}: {key} {value!r} not one of {', '.join(sorted(allowed))}"
+        )
+    return value
+
+
 def compile_instruments(pack: PolicyPack, *, workspace_root: Path) -> list[Instrument]:
     """One instrument per policy line, in pack order (first block wins in
     `Gate.score`, so pack order is precedence order)."""
-    return [_COMPILERS[policy.type](policy, workspace_root.resolve()) for policy in pack.policies]
+    root = workspace_root.resolve()
+    return [
+        _with_on_match(policy, _COMPILERS[policy.type](policy, root)) for policy in pack.policies
+    ]
+
+
+def _with_on_match(policy: GatePolicy, rule: Instrument) -> Instrument:
+    return HoldOnMatch(rule) if policy.on_match == "hold" else rule
+
+
+@dataclass(frozen=True)
+class HoldOnMatch:
+    """Wraps any predicate so its BLOCK becomes a HOLD (same reason, so the
+    policy id prefix survives for the event log). The predicate itself
+    stays unchanged; only what a match asks the gate for differs."""
+
+    inner: Instrument
+
+    def score(
+        self, proposed: ProposedAction, history: Sequence[ProposedAction | ObservedAction]
+    ) -> Decision:
+        decision = self.inner.score(proposed, history)
+        if decision.verdict is Verdict.BLOCK:
+            return Decision(Verdict.HOLD, decision.reason)
+        return decision
 
 
 # --- shared helpers --------------------------------------------------------
