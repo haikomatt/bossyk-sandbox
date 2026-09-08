@@ -5,12 +5,13 @@ name: CI
 # network model call, or GPU — the billable benchmark scripts
 # (h1_bench real mode, benchmark_run) are explicitly out of scope.
 #
-# Layout: this repo resolves auditk + tau2 as editable path dependencies
-# from sibling checkouts (../auditk, ../tau2-bench), and the trace tests
-# validate against ../auditk-spec schemas — so the job recreates the
-# documented four-sibling layout. All three are public; bossyk (the
-# fourth sibling) is private and NOT required for the deterministic
-# suite (its judge import is env-gated), so it is not checked out.
+# Layout: this repo resolves auditk as an editable path dependency from a
+# sibling checkout (../auditk), tau2 is a pinned git source whose data tree
+# comes from a ../tau2-bench checkout at the same rev (TAU2_DATA_DIR, set by
+# tests/conftest.py), and the trace tests validate against ../auditk-spec
+# schemas — so the job recreates the documented sibling layout. All public;
+# bossyk (the optional fourth sibling) is private and NOT required for the
+# deterministic suite (its judge import is env-gated), so it is not checked out.
 
 on:
   push:
@@ -32,10 +33,11 @@ jobs:
           repository: auditk/auditk
           path: auditk
 
-      - name: Check out tau2-bench (sibling)
+      - name: Check out tau2-bench data (sibling, same rev as pyproject pins)
         uses: actions/checkout@v4
         with:
           repository: sierra-research/tau2-bench
+          ref: 5ebebbe827b455b3ed04fcb9294235c6ef4e5fd6
           path: tau2-bench
 
       - name: Check out auditk-spec (sibling)
@@ -49,7 +51,7 @@ jobs:
 
       - name: Sync dependencies
         working-directory: bossyk-sandbox
-        run: uv sync --dev
+        run: uv sync --dev --extra experiments
 
       - name: Ruff format
         working-directory: bossyk-sandbox

@@ -223,19 +223,21 @@ round-2 scope.
 
 ## Install
 
-The repo resolves `auditk` and `tau2` as editable path dependencies from
-sibling checkouts (the same layout CI uses), so clone the three side by
-side, then sync inside `bossyk-sandbox`:
+The gate needs `auditk`, resolved as an editable path dependency from a
+sibling checkout, so clone the two side by side and sync inside
+`bossyk-sandbox`:
 
 ```bash
 git clone https://github.com/auditk/auditk
-git clone https://github.com/sierra-research/tau2-bench
 git clone https://github.com/haikomatt/bossyk-sandbox
 cd bossyk-sandbox && uv sync
 ```
 
 Bare metal, no Docker. Python 3.12+ and [uv](https://docs.astral.sh/uv/).
-bossyk-sandbox is BSL 1.1; auditk is Apache-2.0; tau2-bench is MIT.
+bossyk-sandbox is BSL 1.1; auditk is Apache-2.0. The repo's experiment
+half (the sandbox agents and their tests) additionally needs
+`uv sync --extra experiments` plus a `../tau2-bench` checkout for its data
+(see the README); the gate does not import it.
 
 ## Run it
 

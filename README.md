@@ -241,16 +241,17 @@ RUN_LIVE_CONSOLE=1 FIREWORKS_API_KEY=... \
 ## Setup
 
 ```bash
-uv sync
+uv sync                       # the gate proxy only (needs ../auditk)
+uv sync --extra experiments   # plus the sandbox agents and their tests (tau2 from git; data from ../tau2-bench, see table)
 cp .env.example .env
 ```
 
-This repo expects **four sibling checkouts** next to it:
+This repo expects up to **four sibling checkouts** next to it:
 
 | Repo | Path | How it's consumed |
 |---|---|---|
 | `auditk` | `../auditk` | editable path dependency (public: github.com/auditk/auditk) |
-| `tau2-bench` | `../tau2-bench` | editable path dependency, package `tau2` (public: github.com/sierra-research/tau2-bench) |
+| `tau2-bench` | `../tau2-bench` | **experiments only**: the `tau2` package comes from the git source pinned in `pyproject.toml`; this checkout (same rev) supplies its `data/` tree via `TAU2_DATA_DIR` (set in `.env`, and by `tests/conftest.py` when the sibling exists). The gate proxy never imports it (public: github.com/sierra-research/tau2-bench) |
 | `auditk-spec` | `../auditk-spec` | not a package — trace tests validate against its JSON schemas by relative path (public: github.com/auditk/auditk-spec) |
 | `bossyk` | `~/Projects/bossyk` (or `$BOSSYK_ROOT`) | private companion repo, **optional** — resolved via `env.bossyk_root()` (a `sys.path` insert at judge-build time plus its policy YAMLs under `data/policies/`); only the real policy judge imports it, nothing else needs it |
 
