@@ -33,7 +33,8 @@ from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from bossyk_sandbox.gate import Gate
 from bossyk_sandbox.gateproxy import __version__ as _GATE_VERSION
 from bossyk_sandbox.gateproxy.events import EventLog
-from bossyk_sandbox.gateproxy.policies import compile_instruments, load_policy_pack
+from bossyk_sandbox.gateproxy.hold import Approver, HoldRequest, command_approver, url_approver
+from bossyk_sandbox.gateproxy.policies import GatePolicy, compile_instruments, load_policy_pack
 from bossyk_sandbox.gateproxy.sensitive import Marker, detect
 from bossyk_sandbox.gateproxy.telemetry import Telemetry, TelemetryConfig
 from bossyk_sandbox.instruments.base import Decision, ProposedAction, Verdict
@@ -60,6 +61,9 @@ class GateProxyConfig:
     # is the system of record whether or not these are set.
     otlp_endpoint: str | None = None
     pushgateway_url: str | None = None
+    approver_command: list[str] | None = None
+    approver_url: str | None = None
+    approver_timeout_s: float = 30.0
 
 
 def _default_upstream(base_url: str) -> Upstream:
@@ -101,6 +105,29 @@ def _marker_dicts(markers: list[Marker]) -> list[dict[str, str]]:
     return [{"kind": m.kind, "redacted_excerpt": m.redacted_excerpt} for m in markers]
 
 
+def _configured_approver(config: GateProxyConfig) -> Approver | None:
+    if config.approver_command:
+        return command_approver(config.approver_command, timeout_s=config.approver_timeout_s)
+    if config.approver_url:
+        return url_approver(config.approver_url, timeout_s=config.approver_timeout_s)
+    return None
+
+
+def _resolve_hold(
+    policy: GatePolicy | None, request: HoldRequest, approver: Approver | None
+) -> tuple[str, Verdict]:
+    """(resolution, verdict) for a held action. With no approver configured
+    the policy's `on_hold` default decides outright; with one, its answer
+    decides, and no answer (timeout/failure) falls back to that default.
+    A hold on a policy the pack cannot name fails closed."""
+    default = Verdict(policy.on_hold) if policy is not None else Verdict.BLOCK
+    answer = approver(request) if approver is not None else None
+    if approver is not None and answer is None:
+        return "hold_timed_out", default
+    resolved = default if answer is None else (Verdict.ALLOW if answer else Verdict.BLOCK)
+    return ("held_then_allowed" if resolved is Verdict.ALLOW else "held_then_blocked"), resolved
+
+
 def _sse_chunks(response_body: dict[str, Any]) -> Iterator[str]:
     """Synthesize a chat.completion.chunk stream equivalent to one buffered
     completion: role chunk, content/tool_calls delta, terminal chunk, DONE."""
@@ -131,7 +158,10 @@ def _sse_chunks(response_body: dict[str, Any]) -> Iterator[str]:
 
 
 def create_app(
-    config: GateProxyConfig, upstream: Upstream | None = None, telemetry: Telemetry | None = None
+    config: GateProxyConfig,
+    upstream: Upstream | None = None,
+    approver: Approver | None = None,
+    telemetry: Telemetry | None = None,
 ) -> FastAPI:
     pack = load_policy_pack(config.policy_pack_path)
     instruments = compile_instruments(pack, workspace_root=config.workspace_root)
@@ -143,6 +173,8 @@ def create_app(
     # provenance rather than "some pack this gate loaded at some point."
     pack_sha256 = hashlib.sha256(config.policy_pack_path.read_bytes()).hexdigest()
     call_upstream = upstream or _default_upstream(config.upstream_base_url)
+    resolve_hold_with = approver or _configured_approver(config)
+    policies_by_id = {p.id: p for p in pack.policies}
     events = EventLog(
         path=config.events_path,
         signer_key_path=config.signer_key_path,
@@ -213,8 +245,6 @@ def create_app(
                     decision = gate.score(proposed)
                     gate.record(proposed)
                     logged_arguments = arguments
-                if decision.verdict is Verdict.BLOCK:
-                    block_reasons.append(decision.reason)
                 # Every rule prefixes its reason with its own policy id;
                 # matching against the loaded pack recovers it as a
                 # structured field for the scorecard.
@@ -222,6 +252,22 @@ def create_app(
                     (p.id for p in pack.policies if decision.reason.startswith(f"{p.id}:")),
                     None,
                 )
+                resolution: str | None = None
+                resolved: Verdict | None = None
+                if decision.verdict is Verdict.HOLD:
+                    resolution, resolved = _resolve_hold(
+                        policies_by_id.get(policy_id or ""),
+                        HoldRequest(
+                            tool_name=name,
+                            arguments=logged_arguments,
+                            policy_id=policy_id,
+                            reason=decision.reason,
+                            run_label=config.run_label,
+                        ),
+                        resolve_hold_with,
+                    )
+                if (resolved or decision.verdict) is Verdict.BLOCK:
+                    block_reasons.append(decision.reason)
                 # Scanned over this call's OWN arguments only (never the
                 # whole request/response), before the event is signed --
                 # markers can never expose more of a secret than the
@@ -233,6 +279,8 @@ def create_app(
                         "tool_name": name,
                         "arguments": logged_arguments,
                         "verdict": decision.verdict.value,
+                        "resolution": resolution,
+                        "resolved_verdict": resolved.value if resolved else None,
                         "policy_id": policy_id,
                         "reason": decision.reason,
                         "model": upstream_response.get("model"),
@@ -253,6 +301,8 @@ def create_app(
                 {
                     "kind": "utterance",
                     "verdict": "allow",
+                    "resolution": None,
+                    "resolved_verdict": None,
                     "reason": "no tool calls proposed",
                     "model": upstream_response.get("model"),
                     "pack_sha256": pack_sha256,
@@ -311,7 +361,23 @@ def build_config(argv: list[str]) -> GateProxyConfig:
     listener = parser.add_mutually_exclusive_group(required=True)
     listener.add_argument("--listen", help="TCP listen address, host:port.")
     listener.add_argument("--uds", help="Unix domain socket path to listen on.")
+    approver = parser.add_mutually_exclusive_group()
+    approver.add_argument(
+        "--approver-cmd",
+        help="HOLD approver command (held action as JSON on stdin; exit 0 approves).",
+    )
+    approver.add_argument(
+        "--approver-url",
+        help='HOLD approver URL (JSON POST; reply {"decision": "allow"|"block"}).',
+    )
+    parser.add_argument(
+        "--approver-timeout",
+        type=float,
+        default=30.0,
+        help="Seconds to wait for the approver before the policy's on_hold default applies.",
+    )
     import os
+    import shlex
 
     args = parser.parse_args(argv)
     return GateProxyConfig(
@@ -326,6 +392,9 @@ def build_config(argv: list[str]) -> GateProxyConfig:
         upstream_api_key=os.environ.get(args.upstream_key_env),
         otlp_endpoint=args.otlp_endpoint,
         pushgateway_url=args.pushgateway_url,
+        approver_command=shlex.split(args.approver_cmd) if args.approver_cmd else None,
+        approver_url=args.approver_url,
+        approver_timeout_s=args.approver_timeout,
     )
 
 

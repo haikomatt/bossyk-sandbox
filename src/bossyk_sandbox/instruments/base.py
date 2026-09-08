@@ -9,6 +9,7 @@ from typing import Any, Protocol
 class Verdict(StrEnum):
     ALLOW = "allow"
     BLOCK = "block"
+    HOLD = "hold"
 
 
 @dataclass(frozen=True)

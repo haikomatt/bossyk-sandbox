@@ -46,6 +46,16 @@ class EventLog:
         return full_event
 
 
+def effective_verdict(event: dict[str, Any]) -> str:
+    """The verdict an event finally took effect with: a held decision
+    counts as whatever it resolved to. Shared by the scorecard and the
+    incident report so "was this blocked?" has one answer everywhere."""
+    verdict = str(event.get("verdict", ""))
+    if verdict != "hold":
+        return verdict
+    return str(event.get("resolved_verdict", "block"))
+
+
 def load_events(path: Path) -> list[dict[str, Any]]:
     """Parse a gate-events JSONL file back into its `event` dicts, in file
     (append) order. Malformed lines are skipped, not raised on -- the same

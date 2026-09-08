@@ -26,7 +26,7 @@ from typing import Any
 from auditk.attestation.canonical import canonicalize
 from auditk.attestation.signer import LocalEd25519Verifier
 
-from bossyk_sandbox.gateproxy.events import load_events, verify_event_log
+from bossyk_sandbox.gateproxy.events import effective_verdict, load_events, verify_event_log
 from bossyk_sandbox.gateproxy.sensitive import detect
 
 _REFUSAL_MARKER = "[bossyk gate] BLOCKED"
@@ -61,6 +61,7 @@ class GateDecisionRow:
     policy_id: str | None
     reason: str
     arguments: Any
+    resolution: str | None = None
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,7 @@ class GateSummary:
     allowed_count: int
     blocked_count: int
     policies_triggered: list[str]
+    held_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -187,18 +189,24 @@ def build_scorecard(inputs: ScorecardInputs) -> Scorecard:
             policy_id=event.get("policy_id"),
             reason=str(event.get("reason", "")),
             arguments=event.get("arguments"),
+            resolution=_optional_str(event.get("resolution")),
         )
         for event in events
     ]
+    effective = [effective_verdict(event) for event in events]
     policies_triggered: list[str] = []
     for row in decisions:
         if row.policy_id and row.policy_id not in policies_triggered:
             policies_triggered.append(row.policy_id)
     gate = GateSummary(
         decisions=decisions,
-        allowed_count=sum(1 for d in decisions if d.verdict == "allow"),
-        blocked_count=sum(1 for d in decisions if d.verdict == "block"),
+        # A held decision counts under the verdict it resolved to, so
+        # allowed + blocked always covers every decision; held_count says
+        # how many of them went through a hold on the way.
+        allowed_count=sum(1 for v in effective if v == "allow"),
+        blocked_count=sum(1 for v in effective if v == "block"),
         policies_triggered=policies_triggered,
+        held_count=sum(1 for d in decisions if d.verdict == "hold"),
     )
 
     drift = raw_pack.get("drift_metrics") or {}
@@ -282,6 +290,7 @@ th, td { border: 1px solid #ccc; padding: 0.4rem 0.6rem; text-align: left;
          font-size: 0.8rem; }
 .allow { background: #e2f4e2; color: #14601a; }
 .block { background: #fbe0e0; color: #8f1414; }
+.hold { background: #fdf1d6; color: #7a4b00; }
 .ok { color: #14601a; font-weight: 600; }
 .bad { color: #8f1414; font-weight: 600; }
 .meta { color: #555; font-size: 0.85rem; }
@@ -295,9 +304,14 @@ def _esc(value: Any) -> str:
     return html.escape(str(value), quote=True)
 
 
-def _badge(verdict: str) -> str:
-    css = "block" if verdict == "block" else "allow"
-    return f'<span class="badge {css}">{_esc(verdict.upper())}</span>'
+def _optional_str(value: Any) -> str | None:
+    return str(value) if value is not None else None
+
+
+def _badge(verdict: str, resolution: str | None = None) -> str:
+    css = verdict if verdict in ("block", "hold") else "allow"
+    label = verdict.upper() if resolution is None else f"{verdict.upper()} · {resolution}"
+    return f'<span class="badge {css}">{_esc(label)}</span>'
 
 
 def _mark(ok: bool, good: str, bad: str) -> str:
@@ -343,7 +357,7 @@ def render_scorecard_html(card: Scorecard) -> str:
         "<tr>"
         f"<td>{_esc(d.kind)}</td>"
         f"<td>{_esc(d.tool_name or '—')}</td>"
-        f"<td>{_badge(d.verdict)}</td>"
+        f"<td>{_badge(d.verdict, d.resolution)}</td>"
         f"<td>{_esc(d.policy_id or '—')}</td>"
         f"<td>{_esc(d.reason)}</td>"
         "</tr>"
@@ -396,6 +410,7 @@ Gate event log: {_mark(card.verification.gate_log_ok, "verified", "FAILED")}
 
 <h2>Gate decisions</h2>
 <p>{card.gate.allowed_count} allowed · {card.gate.blocked_count} blocked
+ · {card.gate.held_count} held
  · policies triggered: {_esc(", ".join(card.gate.policies_triggered) or "none")}</p>
 <table>
 <tr><th>kind</th><th>tool</th><th>verdict</th><th>policy</th><th>reason</th></tr>
