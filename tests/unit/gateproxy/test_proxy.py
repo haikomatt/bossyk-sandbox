@@ -23,9 +23,10 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from bossyk_sandbox.gateproxy.events import verify_event_log
-from bossyk_sandbox.gateproxy.proxy import GateProxyConfig, create_app
+from bossyk_sandbox.gateproxy.proxy import GateProxyConfig, build_config, create_app
 from tests.unit.gateproxy.conftest import POLICY_PACK_YAML, openai_response, tool_call
 
 
@@ -472,3 +473,228 @@ class TestStreamOptionStripping:
         )
         assert "stream_options" not in captured[0]
         assert captured[0].get("stream") is False
+
+
+# --- per-identity packs (round-2 Phase 3) -----------------------------------
+
+from tests.unit.gateproxy.test_identity_packs import (  # noqa: E402
+    CODING_PACK_YAML,
+    DENY_PACK_YAML,
+    RESEARCH_PACK_YAML,
+)
+
+_CODING = "spiffe://example.org/coding-agent"
+_RESEARCH = "spiffe://example.org/research-agent"
+_SPIFFE_FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "spiffe"
+
+
+def _identity_config(config: GateProxyConfig, *, trust_header: bool = False) -> GateProxyConfig:
+    packs = config.policy_pack_path.parent / "packs"
+    packs.mkdir()
+    (packs / "coding-pack.yaml").write_text(CODING_PACK_YAML)
+    (packs / "research-pack.yaml").write_text(RESEARCH_PACK_YAML)
+    (packs / "deny-pack.yaml").write_text(DENY_PACK_YAML)
+    mapping = packs / "identity-packs.yaml"
+    mapping.write_text(
+        "version: 1\ndefault: deny-pack.yaml\npacks:\n"
+        f"  {_CODING}: coding-pack.yaml\n  {_RESEARCH}: research-pack.yaml\n"
+    )
+    config.identity_packs_path = mapping
+    config.trust_identity_header = trust_header
+    return config
+
+
+class _PeerCert:
+    """ASGI middleware standing in for the mTLS listener: puts a peer
+    certificate (DER) where the real listener puts it, `scope["state"]`."""
+
+    def __init__(self, app: ASGIApp, der: bytes | None) -> None:
+        self.app, self.der = app, der
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and self.der is not None:
+            scope.setdefault("state", {})["peer_cert_der"] = self.der
+        await self.app(scope, receive, send)
+
+
+def _svid_der(name: str) -> bytes:
+    from cryptography import x509
+    from cryptography.hazmat.primitives.serialization import Encoding
+
+    pem = (_SPIFFE_FIXTURES / f"spire-1.13.2-{name}-svid.pem").read_bytes()
+    return x509.load_pem_x509_certificate(pem).public_bytes(Encoding.DER)
+
+
+def _identity_client(
+    config: GateProxyConfig, upstream_body: dict[str, Any], *, peer_cert: bytes | None = None
+) -> TestClient:
+    app = create_app(config, upstream=lambda b, h: upstream_body)
+    return TestClient(_PeerCert(app, peer_cert))
+
+
+_PIP_CALL = tool_call("c1", "bash", '{"command": "pip install requests"}')
+_CURL_CALL = tool_call("c1", "bash", '{"command": "curl http://x.example"}')
+
+
+def _verdict_and_event(
+    config: GateProxyConfig,
+    body: dict[str, Any],
+    *,
+    peer_cert: bytes | None = None,
+    headers: dict[str, str] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    client = _identity_client(config, body, peer_cert=peer_cert)
+    response = client.post("/v1/chat/completions", json=_REQUEST, headers=headers or {})
+    assert response.status_code == 200
+    return response.json()["choices"][0]["message"], _events(config)[-1]
+
+
+class TestIdentityPacks:
+    def test_two_identities_one_gate_different_verdicts_same_action(
+        self, config: GateProxyConfig
+    ) -> None:
+        cfg = _identity_config(config)
+        body = openai_response(tool_calls=[_PIP_CALL])
+        coding_msg, coding_event = _verdict_and_event(
+            cfg, body, peer_cert=_svid_der("coding-agent")
+        )
+        research_msg, research_event = _verdict_and_event(
+            cfg, body, peer_cert=_svid_der("research-agent")
+        )
+        assert coding_msg["tool_calls"]  # coding pack has no install rule
+        assert "no-package-installs" in research_msg["content"]
+        assert (coding_event["verdict"], research_event["verdict"]) == ("allow", "block")
+        assert coding_event["caller_identity"] == _CODING
+        assert research_event["caller_identity"] == _RESEARCH
+        assert coding_event["identity_source"] == research_event["identity_source"] == "svid"
+        assert coding_event["pack_sha256"] != research_event["pack_sha256"]
+
+    def test_unknown_identity_runs_under_the_default_pack(self, config: GateProxyConfig) -> None:
+        cfg = _identity_config(config, trust_header=True)
+        message, event = _verdict_and_event(
+            cfg,
+            openai_response(tool_calls=[tool_call("c1", "bash", '{"command": "python x.py"}')]),
+            headers={"x-spiffe-id": "spiffe://example.org/stranger"},
+        )
+        assert "unknown-caller-no-shell" in message["content"]
+        assert event["caller_identity"] == "spiffe://example.org/stranger"
+        assert event["identity_source"] == "header"
+        assert event["pack_matched"] is False
+
+    def test_no_identity_runs_under_the_default_pack(self, config: GateProxyConfig) -> None:
+        cfg = _identity_config(config)
+        message, event = _verdict_and_event(
+            cfg, openai_response(tool_calls=[tool_call("c1", "bash", '{"command": "sh -c ls"}')])
+        )
+        assert "unknown-caller-no-shell" in message["content"]
+        assert event["caller_identity"] is None
+        assert event["identity_source"] is None
+
+    def test_header_is_ignored_unless_trusted(self, config: GateProxyConfig) -> None:
+        cfg = _identity_config(config, trust_header=False)
+        _message, event = _verdict_and_event(
+            cfg, openai_response(tool_calls=[_PIP_CALL]), headers={"x-spiffe-id": _CODING}
+        )
+        assert event["caller_identity"] is None
+        assert event["pack_matched"] is False
+
+    def test_svid_wins_over_trusted_header(self, config: GateProxyConfig) -> None:
+        cfg = _identity_config(config, trust_header=True)
+        _message, event = _verdict_and_event(
+            cfg,
+            openai_response(tool_calls=[_PIP_CALL]),
+            peer_cert=_svid_der("coding-agent"),
+            headers={"x-spiffe-id": _RESEARCH},
+        )
+        assert event["caller_identity"] == _CODING
+        assert event["identity_source"] == "svid"
+
+    def test_malformed_identity_is_refused_with_a_signed_event(
+        self, config: GateProxyConfig, signing_keys: tuple[Path, str]
+    ) -> None:
+        _priv, pub_pem = signing_keys
+        cfg = _identity_config(config, trust_header=True)
+        client = _identity_client(cfg, openai_response(tool_calls=[_PIP_CALL]))
+        response = client.post(
+            "/v1/chat/completions",
+            json=_REQUEST,
+            headers={"x-spiffe-id": "spiffe://Example.org/agent"},
+        )
+        assert response.status_code == 403
+        assert "identity" in response.json()["error"]["message"]
+        (event,) = _events(cfg)
+        assert event["kind"] == "identity_refused"
+        assert event["verdict"] == "block"
+        assert event["caller_identity"] is None
+        assert verify_event_log(cfg.events_path, pub_pem).ok
+
+    def test_utterance_events_carry_identity_too(self, config: GateProxyConfig) -> None:
+        cfg = _identity_config(config)
+        _message, event = _verdict_and_event(
+            cfg, openai_response(content="done"), peer_cert=_svid_der("research-agent")
+        )
+        assert event["kind"] == "utterance"
+        assert event["caller_identity"] == _RESEARCH
+
+    def test_single_pack_gate_events_are_identity_null_not_missing(
+        self, config: GateProxyConfig
+    ) -> None:
+        client = _client(config, openai_response(tool_calls=[_CURL_CALL]))
+        client.post("/v1/chat/completions", json=_REQUEST)
+        (event,) = _events(config)
+        assert event["caller_identity"] is None
+        assert event["identity_source"] is None
+        assert event["pack_matched"] is True
+
+    def test_health_reports_identity_mode_and_pack_count(self, config: GateProxyConfig) -> None:
+        cfg = _identity_config(config)
+        health = _identity_client(cfg, openai_response(content="x")).get("/gate/health").json()
+        assert health["identity_packs"] == 2
+        assert health["identity_aware"] is True
+
+    def test_build_config_parses_identity_and_tls_flags(self) -> None:
+        built = build_config(
+            [
+                *_MINIMAL_ARGV,
+                "--identity-packs",
+                "packs/identity-packs.yaml",
+                "--trust-identity-header",
+                "--client-ca",
+                "bundle.pem",
+                "--ssl-certfile",
+                "gate.pem",
+                "--ssl-keyfile",
+                "gate-key.pem",
+            ]  # fmt: skip
+        )
+        assert built.identity_packs_path == Path("packs/identity-packs.yaml")
+        assert built.trust_identity_header is True
+        assert built.client_ca_path == Path("bundle.pem")
+        assert built.ssl_certfile == Path("gate.pem")
+        assert built.ssl_keyfile == Path("gate-key.pem")
+
+    def test_build_config_identity_defaults_off(self) -> None:
+        built = build_config(_MINIMAL_ARGV)
+        assert built.identity_packs_path is None
+        assert built.trust_identity_header is False
+        assert built.client_ca_path is None
+
+    def test_client_ca_requires_a_server_certificate(self) -> None:
+        with pytest.raises(SystemExit):
+            build_config([*_MINIMAL_ARGV, "--client-ca", "bundle.pem"])
+
+
+# The smallest argv build_config accepts; the identity tests add to it.
+_MINIMAL_ARGV = [
+    "--upstream", "http://u/v1",
+    "--policy-pack", "p.yaml",
+    "--workspace", ".",
+    "--key", "k.pem",
+    "--events", "e.jsonl",
+    "--run-label", "x",
+    "--listen", "127.0.0.1:8200",
+]  # fmt: skip
+
+
+def _events(config: GateProxyConfig) -> list[dict[str, Any]]:
+    return [json.loads(line)["event"] for line in config.events_path.read_text().splitlines()]
