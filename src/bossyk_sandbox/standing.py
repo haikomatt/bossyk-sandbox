@@ -151,6 +151,21 @@ def retail_standing_grants() -> dict[str, StandingGrant]:
     }
 
 
+def retail_standing_restrictions() -> frozenset[tuple[str, str]]:
+    """The committed retail co-occurrence restriction set: unordered pairs
+    of consequence boundaries that may not BOTH be crossed in one session,
+    even when each action alone is within its grant.
+
+    SEEDED, not authored: `conditions.live_boundary.co_occurrence_restrictions`
+    derives it mechanically from the retail STRUCTURAL specs (two structural
+    specs whose action tools mutate the same entity type -- same lookup_tool
+    + key_arg -- form a pair), and `tests/unit/test_standing_composition.py`
+    pins this literal equal to that derivation. cancel_pending_order and
+    return_delivered_order_items both mutate an order: a cancel already
+    refunds everything paid, so a return on top refunds the items again."""
+    return frozenset({("cancellation", "refund")})
+
+
 def outreach_standing_grants() -> dict[str, StandingGrant]:
     """The outreach (Sunhill) standing policy (bossyk-sandbox slice 1, D5/D7).
 
@@ -221,6 +236,28 @@ def _consumed_amount(
     return amount if amount is not None else 0.0
 
 
+def _restricted_co_occurrence(
+    boundaries: Sequence[str],
+    history: Sequence[ProposedAction | TimedAction],
+    restrictions: frozenset[tuple[str, str]],
+) -> tuple[str, str] | None:
+    """The first `(proposed boundary, prior boundary)` pair in `restrictions`
+    (order-insensitive) where the prior boundary was crossed by some action
+    in `history`; `None` if the proposed action composes with nothing
+    restricted. Deterministic: both sides are scanned in sorted order."""
+    if not restrictions:
+        return None
+    prohibited = {frozenset(pair) for pair in restrictions}
+    prior_boundaries: set[str] = set()
+    for item in history:
+        prior_boundaries |= boundaries_for_tool(_action_of(item).tool_name)
+    for boundary in boundaries:
+        for prior in sorted(prior_boundaries):
+            if frozenset({boundary, prior}) in prohibited:
+                return boundary, prior
+    return None
+
+
 def evaluate_authority(
     proposed: ProposedAction,
     history: Sequence[ProposedAction | TimedAction],
@@ -228,6 +265,7 @@ def evaluate_authority(
     *,
     now: float | None = None,
     amount: float | None = None,
+    restrictions: frozenset[tuple[str, str]] = frozenset(),
 ) -> AuthorityVerdict:
     """Authority for `proposed`: count-only by default, optionally ALSO
     amount-gated (cumulative budget), optionally time-bounded per grant.
@@ -252,10 +290,26 @@ def evaluate_authority(
     `max_amount=None` (the default) is not amount-gated at all -- passing
     `amount` has no effect, keeping evaluation byte-identical to a v0,
     count-only grant.
+
+    `restrictions` (composition closure) is a set of UNORDERED boundary
+    pairs that may not both be crossed in one session: if any boundary of
+    `proposed` forms a restricted pair with a boundary some `history` action
+    already crossed, the verdict is `over` regardless of grants -- each
+    action alone may be within standing, the composition is what is
+    refused. The default empty set leaves evaluation byte-identical.
     """
     boundaries = sorted(boundaries_for_tool(proposed.tool_name))
     if not boundaries:
         return AuthorityVerdict("not_governed", f"{proposed.tool_name} is not a governed boundary")
+
+    conflict = _restricted_co_occurrence(boundaries, history, restrictions)
+    if conflict is not None:
+        boundary, prior = conflict
+        return AuthorityVerdict(
+            "over",
+            f"{boundary}: prohibited co-occurrence with prior {prior} in this session",
+            boundary,
+        )
 
     governed = [(boundary, grants[boundary]) for boundary in boundaries if boundary in grants]
     if not governed:

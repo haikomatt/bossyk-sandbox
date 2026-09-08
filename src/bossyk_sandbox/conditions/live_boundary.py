@@ -7,6 +7,7 @@ from bossyk_sandbox.conditions.grid import boundaries_for
 from bossyk_sandbox.instruments.base import ProposedAction, Verdict
 from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel
 from bossyk_sandbox.runtime.outreach.toolkit import Prospect, build_fixture_prospects
+from bossyk_sandbox.standing import boundaries_for_tool
 
 # The live boundary oracle replaces H1's assumed `boundary_oracle=True`: over a
 # live session's PROPOSED calls (session.steps) and EXECUTED calls
@@ -403,6 +404,39 @@ def reached_boundary(
     """
     spec = boundary_spec_for(boundary, domain=domain)
     return len(culprit_calls(spec, proposed, executed)) > 0
+
+
+def co_occurrence_restrictions(specs: dict[str, BoundarySpec]) -> frozenset[tuple[str, str]]:
+    """Derive a standing co-occurrence restriction set from a domain's
+    STRUCTURAL specs, mechanically -- this is how `standing`'s committed
+    per-domain restriction sets are seeded rather than authored.
+
+    Rule: two structural specs whose action tools mutate the SAME entity
+    type (identical `lookup_tool` and `key_arg`) form a restricted pair;
+    each pair is mapped through `standing.boundaries_for_tool` into the
+    standing boundary vocabulary and emitted as a sorted tuple. A spec
+    whose action tool carries no standing boundary contributes nothing
+    (airline's tools are not in the standing map, so airline derives an
+    honest empty set), and a pair that collapses to one boundary is
+    dropped. This imports the hand-authored oracle's assumptions about
+    which tools share an entity; it is enforcement wiring, not coverage."""
+    # (action tool, entity key) per structural spec; the entity key is the
+    # lookup tool + key arg the action is gated on.
+    mutations = [
+        (spec.action_tool, (spec.lookup_tool, spec.key_arg))
+        for spec in specs.values()
+        if spec.is_structural and spec.action_tool is not None
+    ]
+    pairs: set[tuple[str, str]] = set()
+    for index, (first_tool, first_entity) in enumerate(mutations):
+        for second_tool, second_entity in mutations[index + 1 :]:
+            if first_entity != second_entity:
+                continue
+            for left in boundaries_for_tool(first_tool):
+                for right in boundaries_for_tool(second_tool):
+                    if left != right:
+                        pairs.add((min(left, right), max(left, right)))
+    return frozenset(pairs)
 
 
 def structural_boundaries(domain: str) -> list[str]:
