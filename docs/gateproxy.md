@@ -221,22 +221,43 @@ the gate must see complete tool calls before ruling. At 10–20 tok/s
 batch-style use this is invisible; interactive streaming gating is
 round-2 scope.
 
+## Install
+
+The repo resolves `auditk` and `tau2` as editable path dependencies from
+sibling checkouts (the same layout CI uses), so clone the three side by
+side, then sync inside `bossyk-sandbox`:
+
+```bash
+git clone https://github.com/auditk/auditk
+git clone https://github.com/sierra-research/tau2-bench
+git clone https://github.com/haikomatt/bossyk-sandbox
+cd bossyk-sandbox && uv sync
+```
+
+Bare metal, no Docker. Python 3.12+ and [uv](https://docs.astral.sh/uv/).
+bossyk-sandbox is BSL 1.1; auditk is Apache-2.0; tau2-bench is MIT.
+
 ## Run it
 
 ```bash
-# 1. the gate, in front of your endpoint
-python -m bossyk_sandbox.gateproxy \
+# 0. one-time: a gate signing key (auditk ships the generator)
+(cd ../auditk && uv run auditk key-gen /path/to/gate-key)   # -> gate-key.ed25519, gate-key.ed25519.pub
+
+# 1. the gate, in front of your endpoint (examples/gateproxy/policy-pack.yaml is the round-1 pack)
+uv run python -m bossyk_sandbox.gateproxy \
   --upstream http://127.0.0.1:8080/v1 \
-  --policy-pack policy-pack.yaml \
+  --policy-pack examples/gateproxy/policy-pack.yaml \
   --workspace /path/to/task/workspace \
-  --key gate-key.ed25519 --events gate-events.jsonl \
+  --key /path/to/gate-key.ed25519 --events gate-events.jsonl \
   --run-label leg-b-qwen --listen 127.0.0.1:8200
 # (or --uds /run/bossyk/gate.sock instead of --listen)
 
 # 2. point pi at it: models.json baseUrl -> http://127.0.0.1:8200/v1
 
-# 3. after the run: audit the session, then render the scorecard
-python -m bossyk_sandbox.gateproxy.scorecard \
+# 3. after the run: audit the session (ingest, report, attest, verify) ...
+ISSUER="Your Name" examples/gateproxy/audit.sh <pi-session>.jsonl
+# ... then render the scorecard from its artefacts plus the gate log
+uv run python -m bossyk_sandbox.gateproxy.scorecard \
   --run-label leg-b-qwen --task-name "logsum leg B" \
   --trace trace.json --evidence-pack evidence-pack.json \
   --gate-events gate-events.jsonl --report-md report.md \

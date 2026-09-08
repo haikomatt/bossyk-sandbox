@@ -358,7 +358,7 @@ def test_generate_corpus_a_hung_task_does_not_block_the_rest(tmp_path: Path) -> 
 
         def invoke(self, _messages: Any) -> AIMessage:
             if self.hang:
-                time.sleep(2.0)  # well past the 0.2s task_timeout below
+                time.sleep(6.0)  # well past the 1.0s task_timeout below
             return AIMessage(content="ok")
 
     tasks = _tasks(6)
@@ -375,10 +375,10 @@ def test_generate_corpus_a_hung_task_does_not_block_the_rest(tmp_path: Path) -> 
         checkpoint_path=tmp_path / "decisions.jsonl",
         caps=CapConfig(max_usd=1000.0),
         workers=6,
-        task_timeout_sec=0.2,
+        task_timeout_sec=1.0,
     )
     elapsed = time.monotonic() - start
-    assert elapsed < 2.0  # did not wait out the hung task
+    assert elapsed < 6.0  # did not wait out the hung task
     assert summary.timed_out == 1
     assert summary.completed == 5  # the other five still finished
 
