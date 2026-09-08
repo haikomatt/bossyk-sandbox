@@ -515,6 +515,18 @@ def _fixed_approver(answer: bool | None) -> Callable[[HoldRequest], bool | None]
     return approve
 
 
+# The smallest argv build_config accepts; the approver tests add to it.
+_MINIMAL_ARGV = [
+    "--upstream", "http://u/v1",
+    "--policy-pack", "p.yaml",
+    "--workspace", ".",
+    "--key", "k.pem",
+    "--events", "e.jsonl",
+    "--run-label", "x",
+    "--listen", "127.0.0.1:8200",
+]  # fmt: skip
+
+
 class TestHoldPath:
     def test_hold_without_approver_falls_back_to_policy_default_block(
         self, config: GateProxyConfig
@@ -658,20 +670,7 @@ class TestHoldPath:
 
     def test_build_config_parses_approver_flags(self, tmp_path: Path) -> None:
         argv = [
-            "--upstream",
-            "http://u/v1",
-            "--policy-pack",
-            "p.yaml",
-            "--workspace",
-            ".",
-            "--key",
-            "k.pem",
-            "--events",
-            "e.jsonl",
-            "--run-label",
-            "x",
-            "--listen",
-            "127.0.0.1:8200",
+            *_MINIMAL_ARGV,
             "--approver-cmd",
             "approve --strict",
             "--approver-timeout",
@@ -684,20 +683,7 @@ class TestHoldPath:
 
     def test_build_config_approver_cmd_and_url_are_mutually_exclusive(self) -> None:
         argv = [
-            "--upstream",
-            "http://u/v1",
-            "--policy-pack",
-            "p.yaml",
-            "--workspace",
-            ".",
-            "--key",
-            "k.pem",
-            "--events",
-            "e.jsonl",
-            "--run-label",
-            "x",
-            "--listen",
-            "127.0.0.1:8200",
+            *_MINIMAL_ARGV,
             "--approver-cmd",
             "approve",
             "--approver-url",
@@ -708,20 +694,7 @@ class TestHoldPath:
 
     def test_build_config_defaults_to_no_approver(self) -> None:
         argv = [
-            "--upstream",
-            "http://u/v1",
-            "--policy-pack",
-            "p.yaml",
-            "--workspace",
-            ".",
-            "--key",
-            "k.pem",
-            "--events",
-            "e.jsonl",
-            "--run-label",
-            "x",
-            "--listen",
-            "127.0.0.1:8200",
+            *_MINIMAL_ARGV,
         ]
         built = build_config(argv)
         assert built.approver_command is None
