@@ -28,7 +28,10 @@ class EventLog:
     run_label: str
     _signer: LocalEd25519Signer | None = field(default=None, repr=False)
 
-    def append(self, event: dict[str, Any]) -> None:
+    def append(self, event: dict[str, Any]) -> dict[str, Any]:
+        """Sign and append; returns the exact event that was signed (with
+        `run_label` and `timestamp` stamped) so a caller can project it
+        elsewhere without re-deriving it."""
         if self._signer is None:
             self._signer = LocalEd25519Signer(self.signer_key_path)
         full_event = {
@@ -40,6 +43,7 @@ class EventLog:
         line = json.dumps({"event": full_event, "signature": signature.model_dump(mode="json")})
         with self.path.open("a") as handle:
             handle.write(line + "\n")
+        return full_event
 
 
 def load_events(path: Path) -> list[dict[str, Any]]:
