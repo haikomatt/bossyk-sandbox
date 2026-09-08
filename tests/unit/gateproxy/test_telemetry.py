@@ -25,6 +25,7 @@ from typing import Any
 
 import httpx
 
+from bossyk_sandbox.gateproxy import __version__
 from bossyk_sandbox.gateproxy.telemetry import (
     DecisionCounters,
     Telemetry,
@@ -81,7 +82,12 @@ class TestOtlpTraceRequest:
         resource = built["resourceSpans"][0]
         accepted_resource = accepted["resourceSpans"][0]
         assert _attrs(resource["resource"]["attributes"])["service.name"] == "bossyk-gate"
-        assert resource["scopeSpans"][0]["scope"] == accepted_resource["scopeSpans"][0]["scope"]
+        scope, accepted_scope = (
+            resource["scopeSpans"][0]["scope"],
+            accepted_resource["scopeSpans"][0]["scope"],
+        )
+        assert scope["name"] == accepted_scope["name"]
+        assert scope["version"] == __version__  # the fixture pins the version it was captured at
         span = resource["scopeSpans"][0]["spans"][0]
         accepted_span = accepted_resource["scopeSpans"][0]["spans"][0]
         assert set(span) == set(accepted_span)
