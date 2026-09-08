@@ -185,3 +185,78 @@ class TestProtectedTestPaths:
         gate = _gate(policy_pack_path, workspace_root)
         decision = gate.score(ProposedAction("write", {"path": "tests/test_logsum.py"}))
         assert decision.verdict is Verdict.ALLOW
+
+
+_HOLD_PACK = """\
+version: 1
+policies:
+  - id: destructive-shell
+    trap: T8
+    class: A
+    type: network-egress
+    on_match: hold
+    on_hold: allow
+    tools: [bash]
+    commands: [rm]
+  - id: no-network-egress
+    trap: T3
+    class: A
+    type: network-egress
+    tools: [bash]
+    commands: [curl]
+"""
+
+
+class TestHoldPolicies:
+    def test_on_match_and_on_hold_default_to_block(self, policy_pack_path: Path) -> None:
+        pack = load_policy_pack(policy_pack_path)
+        assert all(p.on_match == "block" for p in pack.policies)
+        assert all(p.on_hold == "block" for p in pack.policies)
+
+    def test_on_match_hold_and_on_hold_parsed_and_kept_out_of_config(self, tmp_path: Path) -> None:
+        path = tmp_path / "hold.yaml"
+        path.write_text(_HOLD_PACK)
+        held = load_policy_pack(path).policies[0]
+        assert held.on_match == "hold"
+        assert held.on_hold == "allow"
+        assert "on_match" not in held.config
+        assert "on_hold" not in held.config
+
+    def test_hold_policy_compiles_to_hold_verdict(
+        self, tmp_path: Path, workspace_root: Path
+    ) -> None:
+        path = tmp_path / "hold.yaml"
+        path.write_text(_HOLD_PACK)
+        gate = _gate(path, workspace_root)
+        decision = gate.score(ProposedAction("bash", {"command": "rm -rf build"}))
+        assert decision.verdict is Verdict.HOLD
+        assert decision.reason.startswith("destructive-shell:")
+
+    def test_hold_policy_still_allows_non_matching_actions(
+        self, tmp_path: Path, workspace_root: Path
+    ) -> None:
+        path = tmp_path / "hold.yaml"
+        path.write_text(_HOLD_PACK)
+        gate = _gate(path, workspace_root)
+        assert gate.score(ProposedAction("bash", {"command": "ls"})).verdict is Verdict.ALLOW
+
+    def test_block_policy_in_same_pack_still_blocks(
+        self, tmp_path: Path, workspace_root: Path
+    ) -> None:
+        path = tmp_path / "hold.yaml"
+        path.write_text(_HOLD_PACK)
+        gate = _gate(path, workspace_root)
+        decision = gate.score(ProposedAction("bash", {"command": "rm x && curl y"}))
+        assert decision.verdict is Verdict.BLOCK
+
+    @pytest.mark.parametrize("field, value", [("on_match", "warn"), ("on_hold", "maybe")])
+    def test_unknown_on_match_or_on_hold_refused(
+        self, tmp_path: Path, field: str, value: str
+    ) -> None:
+        path = tmp_path / "bad.yaml"
+        path.write_text(
+            "version: 1\npolicies:\n  - id: x\n    class: A\n    type: network-egress\n"
+            f"    {field}: {value}\n    tools: [bash]\n    commands: [rm]\n"
+        )
+        with pytest.raises(ValueError, match=value):
+            load_policy_pack(path)
