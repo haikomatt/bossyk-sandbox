@@ -38,53 +38,44 @@ from dataclasses import dataclass
 
 from bossyk_sandbox.instruments.base import ProposedAction
 
-# Each governed write tool maps to a consequence boundary (mirrors the demo
-# taxonomy / compliance.attribution). Read tools are not governed here.
+# Each governed write tool maps to the SET of consequence boundaries it can
+# cross (mirrors the demo taxonomy / compliance.attribution). Read tools are
+# not governed here.
 #
 # D5 -- single global, domain-agnostic map, NOT a per-domain registry:
-# `boundary_for` is called without a domain everywhere it's used (this
-# module, standing_amount.py, live_boundary.py); promoting to a per-domain
-# registry would ripple a domain param through all three call sites for no
-# payoff, since outreach's tool names (lookup_prospect, check_suppression,
-# ..., book_survey, apply_discount, ...) don't collide with retail's or
-# airline's. Extend-Before-Create: this simply extends the existing map.
-# Revisit only if a real cross-domain name collision appears.
+# `boundaries_for_tool` is called without a domain at both call sites (this
+# module and standing_amount.py); promoting to a per-domain registry would
+# ripple a domain param through them for no payoff, since outreach's tool
+# names (lookup_prospect, check_suppression, ..., book_survey,
+# apply_discount, ...) don't collide with retail's or airline's.
+# Extend-Before-Create: this simply extends the existing map. Revisit only
+# if a real cross-domain name collision appears.
 #
-# KNOWN GAP for a slice-2 reader -- `out_of_hours_contact` is UNREACHABLE via
-# `boundary_for` today, on purpose, not by oversight:
-#   - The spec's tool-surface table has `place_call`/`send_sms`/`send_email`
-#     each crossing EITHER `contact_without_consent` OR `out_of_hours_contact`
-#     depending on context (which check failed) -- a genuine one-tool/
-#     two-boundary relationship.
-#   - This dict is 1:1 (tool -> single boundary), so each of those three
-#     tools is recorded under `contact_without_consent` only (the PECR/TPS
-#     consent check -- boundary 1, the outcome-aware rule slice 2 actually
-#     builds). `out_of_hours_contact` (boundary 2) has no tool mapped to it
-#     at all here.
-#   - This is harmless TODAY because neither boundary is enforced in slice 1
-#     (only `booking_without_eligibility` and `unauthorised_incentive` are
-#     live -- D6). It stops being harmless the moment slice 2 wires
-#     `out_of_hours_contact` to a real check (the `StandingGrant.window` +
-#     injected-`now` mechanism D6 already names): that will need either (a)
-#     `_TOOL_BOUNDARY` to become tool -> list[boundary] and every caller
-#     (`evaluate_authority`, `resolve_amount`, `live_boundary.py`) to check
-#     all of a tool's boundaries, or (b) a second, separate lookup outside
-#     this dict for the hours check. Whichever it is, this dict alone will
-#     no longer be sufficient to answer "which boundaries can `place_call`
-#     cross" -- do not assume it is.
+# Action-class shape (tool -> frozenset of boundaries): a tool may carry
+# more than one boundary. The spec's tool-surface table has `place_call` /
+# `send_sms` / `send_email` each crossing EITHER `contact_without_consent`
+# OR `out_of_hours_contact` depending on context (which check failed), so
+# the three share `_CONTACT_BOUNDARIES`. `evaluate_authority` checks every
+# granted boundary of a tool and is `over` if any trips; the history filter
+# matches on membership so a prior contact consumes authority on both.
+# (Before this shape the map was 1:1 and `out_of_hours_contact` was
+# unreachable -- Bounded Agents, arXiv 2608.15888, hit the identical
+# constraint with its one-class-per-tool `mu`.)
 #
 # `record_consent` is an audit write, not a boundary (spec), so it has no
 # entry.
-_TOOL_BOUNDARY: dict[str, str] = {
-    "cancel_pending_order": "cancellation",
-    "return_delivered_order_items": "refund",
-    "modify_pending_order_payment": "payment_change",
-    "modify_user_address": "account_change",
-    "place_call": "contact_without_consent",
-    "send_sms": "contact_without_consent",
-    "send_email": "contact_without_consent",
-    "book_survey": "booking_without_eligibility",
-    "apply_discount": "unauthorised_incentive",
+_CONTACT_BOUNDARIES = frozenset({"contact_without_consent", "out_of_hours_contact"})
+
+_TOOL_BOUNDARY: dict[str, frozenset[str]] = {
+    "cancel_pending_order": frozenset({"cancellation"}),
+    "return_delivered_order_items": frozenset({"refund"}),
+    "modify_pending_order_payment": frozenset({"payment_change"}),
+    "modify_user_address": frozenset({"account_change"}),
+    "place_call": _CONTACT_BOUNDARIES,
+    "send_sms": _CONTACT_BOUNDARIES,
+    "send_email": _CONTACT_BOUNDARIES,
+    "book_survey": frozenset({"booking_without_eligibility"}),
+    "apply_discount": frozenset({"unauthorised_incentive"}),
 }
 
 
@@ -178,10 +169,12 @@ def outreach_standing_grants() -> dict[str, StandingGrant]:
     }
 
 
-def boundary_for(tool_name: str) -> str | None:
-    """The consequence boundary a tool acts on, or None if it is not a governed
-    write (e.g. a read/lookup)."""
-    return _TOOL_BOUNDARY.get(tool_name)
+def boundaries_for_tool(tool_name: str) -> frozenset[str]:
+    """Every consequence boundary a tool can cross -- empty if it is not a
+    governed write (e.g. a read/lookup). A tool may carry more than one
+    boundary (`place_call` crosses consent OR out-of-hours depending on
+    context); the enforcement layer checks all of them."""
+    return _TOOL_BOUNDARY.get(tool_name, frozenset())
 
 
 def _action_of(item: ProposedAction | TimedAction) -> ProposedAction:
@@ -199,7 +192,7 @@ def _consumes_authority(
     only if it falls within `(now - window, now]`. When the window can't be applied
     -- no `now`, or an un-timed item -- the match still counts: missing time must
     never grant *more* authority, so we err toward escalation."""
-    if boundary_for(_action_of(item).tool_name) != boundary:
+    if boundary not in boundaries_for_tool(_action_of(item).tool_name):
         return False
     if window is None:
         return True
@@ -260,14 +253,40 @@ def evaluate_authority(
     `amount` has no effect, keeping evaluation byte-identical to a v0,
     count-only grant.
     """
-    boundary = boundary_for(proposed.tool_name)
-    if boundary is None:
+    boundaries = sorted(boundaries_for_tool(proposed.tool_name))
+    if not boundaries:
         return AuthorityVerdict("not_governed", f"{proposed.tool_name} is not a governed boundary")
 
-    grant = grants.get(boundary)
-    if grant is None:
-        return AuthorityVerdict("not_governed", f"no standing grant for {boundary}", boundary)
+    governed = [(boundary, grants[boundary]) for boundary in boundaries if boundary in grants]
+    if not governed:
+        return AuthorityVerdict(
+            "not_governed", f"no standing grant for {'/'.join(boundaries)}", boundaries[0]
+        )
 
+    verdicts = [
+        _evaluate_boundary(boundary, grant, history, now=now, amount=amount)
+        for boundary, grant in governed
+    ]
+    over = [verdict for verdict in verdicts if verdict.status == "over"]
+    if over:
+        return AuthorityVerdict("over", " and ".join(v.reason for v in over), over[0].boundary)
+    return AuthorityVerdict(
+        "within", " and ".join(v.reason for v in verdicts), verdicts[0].boundary
+    )
+
+
+def _evaluate_boundary(
+    boundary: str,
+    grant: StandingGrant,
+    history: Sequence[ProposedAction | TimedAction],
+    *,
+    now: float | None,
+    amount: float | None,
+) -> AuthorityVerdict:
+    """`within` / `over` for ONE granted boundary -- the count and amount
+    ceilings of `evaluate_authority`'s docstring, applied to a single grant.
+    `evaluate_authority` runs this per governed boundary of the tool and
+    combines the results."""
     window = parse_window(grant.window) if grant.window is not None else None
     nth = sum(1 for item in history if _consumes_authority(item, boundary, window, now)) + 1
     over_count = nth > grant.max_count

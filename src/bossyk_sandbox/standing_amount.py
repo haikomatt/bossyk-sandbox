@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from bossyk_sandbox.instruments.base import ProposedAction
-from bossyk_sandbox.standing import boundary_for
+from bossyk_sandbox.standing import boundaries_for_tool
 
 # The consequence boundaries that have a resolvable amount at all.
 # `account_change` (modify_user_address) moves no value -- it stays
@@ -118,9 +118,12 @@ def resolve_amount(proposed: ProposedAction, reader: OrderReader) -> float | Non
     amount-gated `evaluate_authority`) treats it as fail-safe -- escalate,
     never silently allow -- so this oracle can stay conservative rather than
     guessing."""
-    boundary = boundary_for(proposed.tool_name)
-    if boundary not in _PRICED_BOUNDARIES:
+    priced = boundaries_for_tool(proposed.tool_name) & _PRICED_BOUNDARIES
+    if len(priced) != 1:
+        # Not an amount-gated boundary, or (never today) a tool spanning two
+        # priced boundaries whose amount would be ambiguous -- unresolvable.
         return None
+    boundary = next(iter(priced))
 
     order_id = proposed.arguments.get("order_id")
     if not isinstance(order_id, str):
