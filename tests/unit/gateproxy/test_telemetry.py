@@ -123,6 +123,25 @@ class TestOtlpTraceRequest:
         assert attrs["bossyk.resolution"] == "held_then_blocked"
         assert attrs["bossyk.resolved_verdict"] == "block"
 
+    def test_caller_identity_is_exported_when_present(self) -> None:
+        """Cross-tenant scoping must hold in the projection too: an
+        identity-stamped event carries its identity into the span."""
+        event = {
+            **_BLOCK_EVENT,
+            "caller_identity": "spiffe://example.org/coding-agent",
+            "identity_source": "svid",
+        }
+        span = otlp_trace_request(event, trace_id=_TRACE_ID, span_id=_SPAN_ID)["resourceSpans"][0][
+            "scopeSpans"
+        ][0]["spans"][0]
+        attrs = _attrs(span["attributes"])
+        assert attrs["bossyk.caller_identity"] == "spiffe://example.org/coding-agent"
+        assert attrs["bossyk.identity_source"] == "svid"
+        unaware = otlp_trace_request(_BLOCK_EVENT, trace_id=_TRACE_ID, span_id=_SPAN_ID)
+        assert "bossyk.caller_identity" not in _attrs(
+            unaware["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["attributes"]
+        )
+
     def test_absent_policy_id_is_omitted_not_stringified(self) -> None:
         span = otlp_trace_request(_ALLOW_EVENT, trace_id=_TRACE_ID, span_id=_SPAN_ID)[
             "resourceSpans"

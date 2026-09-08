@@ -48,6 +48,11 @@ _EXPORTED_FIELDS = (
     "run_label",
     "gate_version",
     "model",
+    # Stamped by per-identity policy packs (round-2 item 3); exported here
+    # so cross-tenant scoping is enforced in the exporter, not by
+    # convention. Omitted when the gate is not identity-aware.
+    "caller_identity",
+    "identity_source",
 )
 
 
