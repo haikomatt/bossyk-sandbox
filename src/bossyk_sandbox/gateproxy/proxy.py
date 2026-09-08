@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
 from bossyk_sandbox.gate import Gate
 from bossyk_sandbox.gateproxy import __version__ as _GATE_VERSION
@@ -36,6 +36,7 @@ from bossyk_sandbox.gateproxy.events import EventLog
 from bossyk_sandbox.gateproxy.hold import Approver, HoldRequest, command_approver, url_approver
 from bossyk_sandbox.gateproxy.policies import GatePolicy, compile_instruments, load_policy_pack
 from bossyk_sandbox.gateproxy.sensitive import Marker, detect
+from bossyk_sandbox.gateproxy.telemetry import Telemetry, TelemetryConfig
 from bossyk_sandbox.instruments.base import Decision, ProposedAction, Verdict
 
 Upstream = Callable[[dict[str, Any], dict[str, str]], dict[str, Any]]
@@ -56,6 +57,10 @@ class GateProxyConfig:
     # Set from --upstream-key-env at startup; fills the upstream
     # Authorization header when the client itself sent none.
     upstream_api_key: str | None = None
+    # Telemetry is off by default (air-gap friendly); the signed event log
+    # is the system of record whether or not these are set.
+    otlp_endpoint: str | None = None
+    pushgateway_url: str | None = None
     approver_command: list[str] | None = None
     approver_url: str | None = None
     approver_timeout_s: float = 30.0
@@ -153,7 +158,10 @@ def _sse_chunks(response_body: dict[str, Any]) -> Iterator[str]:
 
 
 def create_app(
-    config: GateProxyConfig, upstream: Upstream | None = None, approver: Approver | None = None
+    config: GateProxyConfig,
+    upstream: Upstream | None = None,
+    approver: Approver | None = None,
+    telemetry: Telemetry | None = None,
 ) -> FastAPI:
     pack = load_policy_pack(config.policy_pack_path)
     instruments = compile_instruments(pack, workspace_root=config.workspace_root)
@@ -172,7 +180,16 @@ def create_app(
         signer_key_path=config.signer_key_path,
         run_label=config.run_label,
     )
+    # Telemetry is a projection of the signed log: `events.append` runs
+    # first and returns the exact signed event, which is what gets exported.
+    export = telemetry or Telemetry(
+        TelemetryConfig(otlp_endpoint=config.otlp_endpoint, pushgateway_url=config.pushgateway_url)
+    )
     app = FastAPI(title="bossyk gate proxy")
+
+    @app.get("/gate/metrics")
+    def metrics() -> PlainTextResponse:
+        return PlainTextResponse(export.prometheus_text(), media_type="text/plain; version=0.0.4")
 
     @app.get("/gate/health")
     def health() -> dict[str, Any]:
@@ -256,7 +273,7 @@ def create_app(
                 # markers can never expose more of a secret than the
                 # `arguments` field above already carries verbatim.
                 markers = detect(json.dumps(logged_arguments))
-                events.append(
+                signed = events.append(
                     {
                         "kind": "tool_call",
                         "tool_name": name,
@@ -272,6 +289,7 @@ def create_app(
                         "sensitive_markers": _marker_dicts(markers),
                     }
                 )
+                export.record(signed)
         else:
             # Scanned over this utterance's own content only. Unlike
             # tool_call arguments, the raw content is NOT itself stored
@@ -279,7 +297,7 @@ def create_app(
             # utterance event never carries more of the raw text than a
             # tool_call event carries of its raw arguments.
             utterance_markers = detect(message.get("content") or "")
-            events.append(
+            signed = events.append(
                 {
                     "kind": "utterance",
                     "verdict": "allow",
@@ -292,6 +310,7 @@ def create_app(
                     "sensitive_markers": _marker_dicts(utterance_markers),
                 }
             )
+            export.record(signed)
 
         if block_reasons:
             refusal = "\n".join([_REFUSAL_HEADER, *(f"- {r}" for r in block_reasons)])
@@ -331,6 +350,14 @@ def build_config(argv: list[str]) -> GateProxyConfig:
         default="FIREWORKS_API_KEY",
         help="Env var holding the upstream API key (used when the client sends no Authorization).",
     )
+    parser.add_argument(
+        "--otlp-endpoint",
+        help="OTLP/HTTP collector base URL (e.g. http://collector:4318); off when unset.",
+    )
+    parser.add_argument(
+        "--pushgateway-url",
+        help="Prometheus push gateway base URL (e.g. http://pgw:9091); off when unset.",
+    )
     listener = parser.add_mutually_exclusive_group(required=True)
     listener.add_argument("--listen", help="TCP listen address, host:port.")
     listener.add_argument("--uds", help="Unix domain socket path to listen on.")
@@ -363,6 +390,8 @@ def build_config(argv: list[str]) -> GateProxyConfig:
         listen=args.listen,
         uds=args.uds,
         upstream_api_key=os.environ.get(args.upstream_key_env),
+        otlp_endpoint=args.otlp_endpoint,
+        pushgateway_url=args.pushgateway_url,
         approver_command=shlex.split(args.approver_cmd) if args.approver_cmd else None,
         approver_url=args.approver_url,
         approver_timeout_s=args.approver_timeout,
