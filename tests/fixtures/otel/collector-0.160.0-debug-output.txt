@@ -1,0 +1,51 @@
+2026-09-08T11:04:12.874Z	info	ResourceSpans #0
+Resource SchemaURL: 
+Resource attributes:
+     -> service.name: Str(bossyk-gate)
+     -> service.version: Str(0.1.0)
+ScopeSpans #0
+ScopeSpans SchemaURL: 
+InstrumentationScope bossyk_sandbox.gateproxy 0.1.0
+Span #0
+    Trace ID       : 5b8efff798038103d269b633813fc60c
+    Parent ID      : 
+    ID             : eee19b7ec3c1b174
+    Name           : gate.decision
+    Kind           : Internal
+    Start time     : 2026-09-08 12:20:00 +0000 UTC
+    End time       : 2026-09-08 12:20:00.002 +0000 UTC
+    Status code    : Unset
+    Status message : 
+    DroppedAttributesCount: 0
+    DroppedEventsCount: 0
+    DroppedLinksCount: 0
+Attributes:
+     -> bossyk.verdict: Str(block)
+     -> bossyk.policy_id: Str(no-network-egress)
+     -> bossyk.tool_name: Str(bash)
+     -> bossyk.pack_sha256: Str(a1b2c3)
+     -> bossyk.run_label: Str(leg-b)
+     -> bossyk.gate_version: Str(0.1.0)
+	{"resource": {"service.instance.id": "6aa1d1bb-ec10-4737-b119-c0dd65983683", "service.name": "otelcol", "service.version": "0.160.0"}, "otelcol.component.id": "debug", "otelcol.component.kind": "exporter", "otelcol.signal": "traces"}
+2026-09-08T11:04:12.899Z	info	Logs	{"resource": {"service.instance.id": "6aa1d1bb-ec10-4737-b119-c0dd65983683", "service.name": "otelcol", "service.version": "0.160.0"}, "otelcol.component.id": "debug", "otelcol.component.kind": "exporter", "otelcol.signal": "logs", "resource logs": 1, "log records": 1}
+2026-09-08T11:04:12.899Z	info	ResourceLog #0
+Resource SchemaURL: 
+Resource attributes:
+     -> service.name: Str(bossyk-gate)
+ScopeLogs #0
+ScopeLogs SchemaURL: 
+InstrumentationScope bossyk_sandbox.gateproxy 0.1.0
+LogRecord #0
+ObservedTimestamp: 1970-01-01 00:00:00 +0000 UTC
+Timestamp: 2026-09-08 12:20:00 +0000 UTC
+SeverityText: WARN
+SeverityNumber: Warn(13)
+Body: Str(no-network-egress: network egress via 'curl' is not permitted)
+Attributes:
+     -> bossyk.verdict: Str(block)
+     -> bossyk.policy_id: Str(no-network-egress)
+     -> bossyk.kind: Str(tool_call)
+Trace ID: 5b8efff798038103d269b633813fc60c
+Span ID: eee19b7ec3c1b174
+Flags: 0
+	{"resource": {"service.instance.id": "6aa1d1bb-ec10-4737-b119-c0dd65983683", "service.name": "otelcol", "service.version": "0.160.0"}, "otelcol.component.id": "debug", "otelcol.component.kind": "exporter", "otelcol.signal": "logs"}

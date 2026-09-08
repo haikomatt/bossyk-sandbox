@@ -35,6 +35,7 @@ from bossyk_sandbox.gateproxy import __version__ as _GATE_VERSION
 from bossyk_sandbox.gateproxy.events import EventLog
 from bossyk_sandbox.gateproxy.policies import compile_instruments, load_policy_pack
 from bossyk_sandbox.gateproxy.sensitive import Marker, detect
+from bossyk_sandbox.gateproxy.telemetry import Telemetry
 from bossyk_sandbox.instruments.base import Decision, ProposedAction, Verdict
 
 Upstream = Callable[[dict[str, Any], dict[str, str]], dict[str, Any]]
@@ -55,6 +56,10 @@ class GateProxyConfig:
     # Set from --upstream-key-env at startup; fills the upstream
     # Authorization header when the client itself sent none.
     upstream_api_key: str | None = None
+    # Telemetry is off by default (air-gap friendly); the signed event log
+    # is the system of record whether or not these are set.
+    otlp_endpoint: str | None = None
+    pushgateway_url: str | None = None
 
 
 def _default_upstream(base_url: str) -> Upstream:
@@ -125,7 +130,9 @@ def _sse_chunks(response_body: dict[str, Any]) -> Iterator[str]:
     yield "data: [DONE]\n\n"
 
 
-def create_app(config: GateProxyConfig, upstream: Upstream | None = None) -> FastAPI:
+def create_app(
+    config: GateProxyConfig, upstream: Upstream | None = None, telemetry: Telemetry | None = None
+) -> FastAPI:
     pack = load_policy_pack(config.policy_pack_path)
     instruments = compile_instruments(pack, workspace_root=config.workspace_root)
     # Computed once from the pack file's own bytes -- not the parsed
