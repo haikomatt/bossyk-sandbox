@@ -134,15 +134,25 @@ def authority_for(
     *,
     now: float | None = None,
     amount: float | None = None,
+    restrictions: frozenset[tuple[str, str]] = frozenset(),
 ) -> AuthorityVerdict | None:
     """The §F standing verdict for a held call, or None when no policy is set
     (back-compat: `derive_mode` then keeps its pre-§F ALLOW behaviour). `now`
     (epoch seconds) time-bounds windowed grants; session-scoped grants ignore
     it. `amount` is the call's resolved value (from `resolve_amount`,
-    threaded by the caller); a grant with no `max_amount` ignores it entirely."""
+    threaded by the caller); a grant with no `max_amount` ignores it entirely.
+    `restrictions` is the session's co-occurrence restriction set (composition
+    closure); the default empty set changes nothing."""
     if not grants:
         return None
-    return evaluate_authority(_proposed_of(payload), history, grants, now=now, amount=amount)
+    return evaluate_authority(
+        _proposed_of(payload),
+        history,
+        grants,
+        now=now,
+        amount=amount,
+        restrictions=restrictions,
+    )
 
 
 def resolve_call(
@@ -177,6 +187,7 @@ def run_live_session(
     grants: dict[str, StandingGrant] | None = None,
     reader: OrderReader | None = None,
     clock: Callable[[], float] = time.time,
+    restrictions: frozenset[tuple[str, str]] = frozenset(),
 ) -> LiveResult:
     """Drive a live session to completion synchronously (used offline in tests
     with a fake LLM). The console's async wrapper reuses the same helpers.
@@ -194,7 +205,12 @@ def run_live_session(
     for every call (back-compat: a grant with no `max_amount` is unaffected
     either way). The resolved amount is stamped onto the recorded
     `TimedAction`, exactly like `now`, so a later call's cumulative budget
-    check sees it."""
+    check sees it.
+
+    `restrictions` is the co-occurrence restriction set (composition closure,
+    `standing.evaluate_authority`): boundary pairs that may not both be
+    crossed by ALLOWed actions in one session. Only meaningful alongside
+    `grants`; the default empty set leaves the session byte-identical."""
     graph = session.graph
     config = thread_config(thread_id)
 
@@ -211,7 +227,9 @@ def run_live_session(
         now = clock()
         proposed = _proposed_of(payload)
         amount = resolve_amount(proposed, reader) if reader is not None else None
-        authority = authority_for(payload, history, grants, now=now, amount=amount)
+        authority = authority_for(
+            payload, history, grants, now=now, amount=amount, restrictions=restrictions
+        )
         verdict, decision = resolve_call(payload, authority=authority)
         verdicts.append(verdict.value)
         modes.append(decision.mode)

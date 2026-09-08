@@ -44,7 +44,11 @@ from bossyk_sandbox.runtime.langgraph_agent import (
     build_weakened_retail_agent_session,
 )
 from bossyk_sandbox.runtime.stub_agent import SCRIPTED_TOOL_CALLS
-from bossyk_sandbox.standing import TimedAction, retail_standing_grants
+from bossyk_sandbox.standing import (
+    TimedAction,
+    retail_standing_grants,
+    retail_standing_restrictions,
+)
 from bossyk_sandbox.standing_amount import OrderReader, resolve_amount
 
 app = FastAPI(title="bossyk-sandbox console")
@@ -300,6 +304,7 @@ async def _run_live_session(
     config = thread_config(session.session_id)
     hitl_queue: list[dict[str, str]] = []
     grants = retail_standing_grants()  # §F: committed per-domain standing policy
+    restrictions = retail_standing_restrictions()  # composition closure (seeded pairs)
     history: list[TimedAction] = []  # allowed actions consume standing authority
 
     try:
@@ -313,7 +318,10 @@ async def _run_live_session(
             )
             amount = resolve_amount(proposed, reader) if reader is not None else None
             verdict, decision = resolve_call(
-                held, authority=authority_for(held, history, grants, now=now, amount=amount)
+                held,
+                authority=authority_for(
+                    held, history, grants, now=now, amount=amount, restrictions=restrictions
+                ),
             )
             if verdict is Verdict.ALLOW:
                 history.append(TimedAction(proposed, now, amount=amount))
