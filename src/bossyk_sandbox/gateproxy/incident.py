@@ -43,7 +43,7 @@ the session trace") rather than guessing a pairing.
 Handles legacy input gracefully: gate events that predate Build A carry
 neither `pack_sha256` nor `gate_version`; both render as "not recorded"
 rather than raising. This is proven both by a unit test and by the
-brief's own field check against the real (pre-Build-A) radek-smoke
+brief's own field check against the real (pre-Build-A) smoke-run
 gate-log artefacts.
 
 Untrusted content -- tool names, arguments, reasons, policy ids, step

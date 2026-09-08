@@ -118,7 +118,7 @@ it, and the incident report treats a held-then-blocked decision exactly
 like a block, corroboration check included. Interactive console approval
 is a later increment; nothing here claims a human always answers.
 
-This is the mechanism behind the crosswalk's AI Act Art. 14
+This is the mechanism behind an AI Act Art. 14
 (human oversight) line: the gate can stop and ask.
 
 ## Latency, honestly

@@ -10,7 +10,7 @@ unrecognised answer all yield ``None`` -- "no decision" -- and the proxy
 resolves the hold by the policy's own ``on_hold`` default. The approver is
 only ever shown what the signed event already records about the action.
 
-This is the mechanism behind the crosswalk's AI Act Art. 14 human-oversight
+This is the mechanism behind an AI Act Art. 14 human-oversight
 line: the gate can stop and ask; it does not claim a human always answers.
 """
 

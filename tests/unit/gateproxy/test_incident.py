@@ -351,7 +351,7 @@ class TestRenderIntegrity:
     ) -> None:
         """Events predating Build A (or from elsewhere) carry neither
         pack_sha256 nor gate_version; the incident builder must degrade
-        gracefully -- this is the exact scenario the radek-smoke
+        gracefully -- this is the exact scenario the smoke-run
         field-check artefacts hit (they predate Build A)."""
         from bossyk_sandbox.gateproxy.incident import build_incident
 
