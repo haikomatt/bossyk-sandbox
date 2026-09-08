@@ -18,7 +18,6 @@ and its latency cost is measured and stated, not hidden.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import time
 import uuid
@@ -27,13 +26,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from bossyk_sandbox.gate import Gate
 from bossyk_sandbox.gateproxy import __version__ as _GATE_VERSION
 from bossyk_sandbox.gateproxy.events import EventLog
-from bossyk_sandbox.gateproxy.policies import compile_instruments, load_policy_pack
+from bossyk_sandbox.gateproxy.identity import (
+    PEER_CERT_STATE_KEY,
+    InvalidSpiffeId,
+    PeerCertH11Protocol,
+    resolve_identity,
+)
+from bossyk_sandbox.gateproxy.identity_packs import IdentityPacks, load_identity_packs
 from bossyk_sandbox.gateproxy.sensitive import Marker, detect
 from bossyk_sandbox.instruments.base import Decision, ProposedAction, Verdict
 
@@ -133,15 +139,17 @@ def _sse_chunks(response_body: dict[str, Any]) -> Iterator[str]:
 
 
 def create_app(config: GateProxyConfig, upstream: Upstream | None = None) -> FastAPI:
-    pack = load_policy_pack(config.policy_pack_path)
-    instruments = compile_instruments(pack, workspace_root=config.workspace_root)
-    # Computed once from the pack file's own bytes -- not the parsed
-    # PolicyPack -- so it binds to exactly what was on disk (whitespace,
-    # comments, key order and all), not merely the pack's declared
-    # semantics. Stamped on every event alongside the running gate_version
+    # One pack for everyone, or one per verified caller identity with a
+    # declared default for everyone else. Every pack's sha256 is computed
+    # once from its file's own bytes (whitespace, comments, key order and
+    # all) and stamped on every event alongside the running gate_version,
     # so a scorecard/incident report can tie a decision to precise
     # provenance rather than "some pack this gate loaded at some point."
-    pack_sha256 = hashlib.sha256(config.policy_pack_path.read_bytes()).hexdigest()
+    packs = (
+        load_identity_packs(config.identity_packs_path, workspace_root=config.workspace_root)
+        if config.identity_packs_path is not None
+        else IdentityPacks.single(config.policy_pack_path, workspace_root=config.workspace_root)
+    )
     call_upstream = upstream or _default_upstream(config.upstream_base_url)
     events = EventLog(
         path=config.events_path,
@@ -155,11 +163,46 @@ def create_app(config: GateProxyConfig, upstream: Upstream | None = None) -> Fas
         return {
             "status": "ok",
             "run_label": config.run_label,
-            "policies": len(pack.policies),
+            "policies": len(packs.default.pack.policies),
+            "identity_aware": packs.identity_aware,
+            "identity_packs": len(packs.by_identity),
         }
 
     @app.post("/v1/chat/completions")
     async def chat_completions(request: Request) -> Any:
+        # Identity is resolved before anything is forwarded upstream: a
+        # caller the gate cannot identify gets no completion at all.
+        peer_cert = getattr(request.state, PEER_CERT_STATE_KEY, None)
+        try:
+            identity = resolve_identity(
+                peer_cert_der=peer_cert,
+                headers=request.headers,
+                trust_header=config.trust_identity_header,
+            )
+        except InvalidSpiffeId as exc:
+            events.append(
+                {
+                    "kind": "identity_refused",
+                    "verdict": "block",
+                    "reason": f"caller identity refused: {exc}",
+                    "caller_identity": None,
+                    "identity_source": None,
+                    "pack_matched": False,
+                    "gate_version": _GATE_VERSION,
+                }
+            )
+            return JSONResponse(
+                status_code=403,
+                content={"error": {"message": f"caller identity refused: {exc}"}},
+            )
+        resolved = packs.for_identity(identity.spiffe_id if identity else None)
+        pack, instruments, pack_sha256 = resolved.pack, resolved.instruments, resolved.pack_sha256
+        identity_fields = {
+            "caller_identity": identity.spiffe_id if identity else None,
+            "identity_source": identity.source if identity else None,
+            "pack_matched": resolved.matched,
+        }
+
         body = await request.json()
         wants_stream = bool(body.get("stream"))
         # stream_options is only valid alongside stream:true; the gate
@@ -229,6 +272,7 @@ def create_app(config: GateProxyConfig, upstream: Upstream | None = None) -> Fas
                         "model": upstream_response.get("model"),
                         "pack_sha256": pack_sha256,
                         "gate_version": _GATE_VERSION,
+                        **identity_fields,
                         "sensitive_markers": _marker_dicts(markers),
                     }
                 )
@@ -247,6 +291,7 @@ def create_app(config: GateProxyConfig, upstream: Upstream | None = None) -> Fas
                     "model": upstream_response.get("model"),
                     "pack_sha256": pack_sha256,
                     "gate_version": _GATE_VERSION,
+                    **identity_fields,
                     "sensitive_markers": _marker_dicts(utterance_markers),
                 }
             )
@@ -289,12 +334,32 @@ def build_config(argv: list[str]) -> GateProxyConfig:
         default="FIREWORKS_API_KEY",
         help="Env var holding the upstream API key (used when the client sends no Authorization).",
     )
+    parser.add_argument(
+        "--identity-packs",
+        help="Identity -> pack mapping YAML (per-caller packs; --policy-pack stays the "
+        "fallback when unset).",
+    )
+    parser.add_argument(
+        "--trust-identity-header",
+        action="store_true",
+        help="Trust X-Forwarded-Client-Cert / X-SPIFFE-ID when no client certificate is "
+        "presented. ONLY behind a proxy you control that sets them.",
+    )
+    parser.add_argument(
+        "--client-ca",
+        help="Trust bundle (PEM) for client certificates; requires them on every connection "
+        "(mTLS). Needs --ssl-certfile and --ssl-keyfile.",
+    )
+    parser.add_argument("--ssl-certfile", help="The gate's own TLS certificate (PEM).")
+    parser.add_argument("--ssl-keyfile", help="The gate's own TLS private key (PEM).")
     listener = parser.add_mutually_exclusive_group(required=True)
     listener.add_argument("--listen", help="TCP listen address, host:port.")
     listener.add_argument("--uds", help="Unix domain socket path to listen on.")
     import os
 
     args = parser.parse_args(argv)
+    if args.client_ca and not (args.ssl_certfile and args.ssl_keyfile):
+        parser.error("--client-ca requires --ssl-certfile and --ssl-keyfile")
     return GateProxyConfig(
         upstream_base_url=args.upstream,
         policy_pack_path=Path(args.policy_pack),
@@ -305,22 +370,38 @@ def build_config(argv: list[str]) -> GateProxyConfig:
         listen=args.listen,
         uds=args.uds,
         upstream_api_key=os.environ.get(args.upstream_key_env),
+        identity_packs_path=Path(args.identity_packs) if args.identity_packs else None,
+        trust_identity_header=args.trust_identity_header,
+        client_ca_path=Path(args.client_ca) if args.client_ca else None,
+        ssl_certfile=Path(args.ssl_certfile) if args.ssl_certfile else None,
+        ssl_keyfile=Path(args.ssl_keyfile) if args.ssl_keyfile else None,
     )
 
 
-def uvicorn_config(config: GateProxyConfig, app: FastAPI) -> Any:
-    raise NotImplementedError
+def uvicorn_config(config: GateProxyConfig, app: FastAPI) -> uvicorn.Config:
+    """The listener: TCP or UDS, plain or TLS, and with --client-ca an
+    mTLS listener that REQUIRES a client certificate chained to the bundle
+    and hands it to the app (`PeerCertH11Protocol`)."""
+    import ssl
+
+    kwargs: dict[str, Any] = {}
+    if config.uds:
+        kwargs["uds"] = config.uds
+    else:
+        host, _, port = (config.listen or "127.0.0.1:8200").rpartition(":")
+        kwargs["host"], kwargs["port"] = host or "127.0.0.1", int(port)
+    if config.ssl_certfile:
+        kwargs["ssl_certfile"] = str(config.ssl_certfile)
+        kwargs["ssl_keyfile"] = str(config.ssl_keyfile) if config.ssl_keyfile else None
+    if config.client_ca_path:
+        kwargs["ssl_ca_certs"] = str(config.client_ca_path)
+        kwargs["ssl_cert_reqs"] = ssl.CERT_REQUIRED
+        kwargs["http"] = PeerCertH11Protocol
+    return uvicorn.Config(app, **kwargs)
 
 
 def main(argv: list[str] | None = None) -> None:
     import sys
 
-    import uvicorn
-
     config = build_config(sys.argv[1:] if argv is None else argv)
-    app = create_app(config)
-    if config.uds:
-        uvicorn.run(app, uds=config.uds)
-    else:
-        host, _, port = (config.listen or "127.0.0.1:8200").rpartition(":")
-        uvicorn.run(app, host=host or "127.0.0.1", port=int(port))
+    uvicorn.Server(uvicorn_config(config, create_app(config))).run()

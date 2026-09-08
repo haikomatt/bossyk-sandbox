@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import socket
+import ssl
 import threading
 import time
 from datetime import UTC, datetime, timedelta
@@ -182,11 +183,11 @@ def test_two_svids_one_listener_different_verdicts(
         request = {"model": "m", "messages": []}
 
         def as_caller(name: str) -> dict[str, Any]:
-            with httpx.Client(
-                verify=str(pki["bundle"]),
-                cert=(str(pki[f"{name}_cert"]), str(pki[f"{name}_key"])),
-                timeout=10.0,
-            ) as client:
+            # An explicit context: httpx 0.28's deprecated `cert=` shortcut
+            # silently presents no client certificate under TLS 1.3.
+            context = ssl.create_default_context(cafile=str(pki["bundle"]))
+            context.load_cert_chain(str(pki[f"{name}_cert"]), str(pki[f"{name}_key"]))
+            with httpx.Client(verify=context, timeout=10.0) as client:
                 message: dict[str, Any] = client.post(url, json=request).json()["choices"][0][
                     "message"
                 ]
