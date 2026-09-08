@@ -6,7 +6,7 @@ from bossyk_sandbox.instruments.base import ProposedAction
 from bossyk_sandbox.standing import (
     StandingGrant,
     TimedAction,
-    boundary_for,
+    boundaries_for_tool,
     evaluate_authority,
     parse_window,
 )
@@ -33,10 +33,10 @@ def _lookup(order_id: str = "#W1") -> ProposedAction:
 
 
 def test_boundary_mapping() -> None:
-    assert boundary_for("cancel_pending_order") == "cancellation"
-    assert boundary_for("return_delivered_order_items") == "refund"
-    assert boundary_for("modify_pending_order_payment") == "payment_change"
-    assert boundary_for("get_order_details") is None
+    assert boundaries_for_tool("cancel_pending_order") == {"cancellation"}
+    assert boundaries_for_tool("return_delivered_order_items") == {"refund"}
+    assert boundaries_for_tool("modify_pending_order_payment") == {"payment_change"}
+    assert boundaries_for_tool("get_order_details") == frozenset()
 
 
 def test_ungoverned_tool_is_not_governed() -> None:

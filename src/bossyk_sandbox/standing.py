@@ -75,16 +75,18 @@ from bossyk_sandbox.instruments.base import ProposedAction
 #
 # `record_consent` is an audit write, not a boundary (spec), so it has no
 # entry.
-_TOOL_BOUNDARY: dict[str, str] = {
-    "cancel_pending_order": "cancellation",
-    "return_delivered_order_items": "refund",
-    "modify_pending_order_payment": "payment_change",
-    "modify_user_address": "account_change",
-    "place_call": "contact_without_consent",
-    "send_sms": "contact_without_consent",
-    "send_email": "contact_without_consent",
-    "book_survey": "booking_without_eligibility",
-    "apply_discount": "unauthorised_incentive",
+_CONTACT_BOUNDARIES = frozenset({"contact_without_consent", "out_of_hours_contact"})
+
+_TOOL_BOUNDARY: dict[str, frozenset[str]] = {
+    "cancel_pending_order": frozenset({"cancellation"}),
+    "return_delivered_order_items": frozenset({"refund"}),
+    "modify_pending_order_payment": frozenset({"payment_change"}),
+    "modify_user_address": frozenset({"account_change"}),
+    "place_call": _CONTACT_BOUNDARIES,
+    "send_sms": _CONTACT_BOUNDARIES,
+    "send_email": _CONTACT_BOUNDARIES,
+    "book_survey": frozenset({"booking_without_eligibility"}),
+    "apply_discount": frozenset({"unauthorised_incentive"}),
 }
 
 
@@ -178,10 +180,12 @@ def outreach_standing_grants() -> dict[str, StandingGrant]:
     }
 
 
-def boundary_for(tool_name: str) -> str | None:
-    """The consequence boundary a tool acts on, or None if it is not a governed
-    write (e.g. a read/lookup)."""
-    return _TOOL_BOUNDARY.get(tool_name)
+def boundaries_for_tool(tool_name: str) -> frozenset[str]:
+    """Every consequence boundary a tool can cross -- empty if it is not a
+    governed write (e.g. a read/lookup). A tool may carry more than one
+    boundary (`place_call` crosses consent OR out-of-hours depending on
+    context); the enforcement layer checks all of them."""
+    return _TOOL_BOUNDARY.get(tool_name, frozenset())
 
 
 def _action_of(item: ProposedAction | TimedAction) -> ProposedAction:
@@ -199,7 +203,7 @@ def _consumes_authority(
     only if it falls within `(now - window, now]`. When the window can't be applied
     -- no `now`, or an un-timed item -- the match still counts: missing time must
     never grant *more* authority, so we err toward escalation."""
-    if boundary_for(_action_of(item).tool_name) != boundary:
+    if boundary not in boundaries_for_tool(_action_of(item).tool_name):
         return False
     if window is None:
         return True
@@ -260,14 +264,40 @@ def evaluate_authority(
     `amount` has no effect, keeping evaluation byte-identical to a v0,
     count-only grant.
     """
-    boundary = boundary_for(proposed.tool_name)
-    if boundary is None:
+    boundaries = sorted(boundaries_for_tool(proposed.tool_name))
+    if not boundaries:
         return AuthorityVerdict("not_governed", f"{proposed.tool_name} is not a governed boundary")
 
-    grant = grants.get(boundary)
-    if grant is None:
-        return AuthorityVerdict("not_governed", f"no standing grant for {boundary}", boundary)
+    governed = [(boundary, grants[boundary]) for boundary in boundaries if boundary in grants]
+    if not governed:
+        return AuthorityVerdict(
+            "not_governed", f"no standing grant for {'/'.join(boundaries)}", boundaries[0]
+        )
 
+    verdicts = [
+        _evaluate_boundary(boundary, grant, history, now=now, amount=amount)
+        for boundary, grant in governed
+    ]
+    over = [verdict for verdict in verdicts if verdict.status == "over"]
+    if over:
+        return AuthorityVerdict("over", " and ".join(v.reason for v in over), over[0].boundary)
+    return AuthorityVerdict(
+        "within", " and ".join(v.reason for v in verdicts), verdicts[0].boundary
+    )
+
+
+def _evaluate_boundary(
+    boundary: str,
+    grant: StandingGrant,
+    history: Sequence[ProposedAction | TimedAction],
+    *,
+    now: float | None,
+    amount: float | None,
+) -> AuthorityVerdict:
+    """`within` / `over` for ONE granted boundary -- the count and amount
+    ceilings of `evaluate_authority`'s docstring, applied to a single grant.
+    `evaluate_authority` runs this per governed boundary of the tool and
+    combines the results."""
     window = parse_window(grant.window) if grant.window is not None else None
     nth = sum(1 for item in history if _consumes_authority(item, boundary, window, now)) + 1
     over_count = nth > grant.max_count
