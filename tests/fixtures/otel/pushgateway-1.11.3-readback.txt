@@ -1,0 +1,27 @@
+# HELP bossyk_gate_decisions_total Gate decisions by verdict and policy.
+# TYPE bossyk_gate_decisions_total counter
+bossyk_gate_decisions_total{instance="",job="bossyk-gate",policy_id="",run_label="leg-b",verdict="allow"} 3
+bossyk_gate_decisions_total{instance="",job="bossyk-gate",policy_id="destructive-shell",run_label="leg-b",verdict="hold"} 1
+bossyk_gate_decisions_total{instance="",job="bossyk-gate",policy_id="no-network-egress",run_label="leg-b",verdict="block"} 1
+# TYPE bossyk_gate_holds_total counter
+bossyk_gate_holds_total{instance="",job="bossyk-gate",resolution="held_then_blocked",run_label="leg-b"} 1
+# HELP push_failure_time_seconds Last Unix time when changing this group in the Pushgateway failed.
+# TYPE push_failure_time_seconds gauge
+push_failure_time_seconds{instance="",job="bossyk-gate",run_label="leg-b"} 0
+# HELP push_time_seconds Last Unix time when changing this group in the Pushgateway succeeded.
+# TYPE push_time_seconds gauge
+push_time_seconds{instance="",job="bossyk-gate",run_label="leg-b"} 1.7888654529446898e+09
+# HELP pushgateway_http_push_duration_seconds HTTP request duration for pushes to the Pushgateway.
+# TYPE pushgateway_http_push_duration_seconds summary
+pushgateway_http_push_duration_seconds{method="put",quantile="0.1"} 0.000170259
+pushgateway_http_push_duration_seconds{method="put",quantile="0.5"} 0.000170259
+pushgateway_http_push_duration_seconds{method="put",quantile="0.9"} 0.000728002
+pushgateway_http_push_duration_seconds_sum{method="put"} 0.0008982609999999999
+pushgateway_http_push_duration_seconds_count{method="put"} 2
+# HELP pushgateway_http_push_size_bytes HTTP request size for pushes to the Pushgateway.
+# TYPE pushgateway_http_push_size_bytes summary
+pushgateway_http_push_size_bytes{method="put",quantile="0.1"} 171
+pushgateway_http_push_size_bytes{method="put",quantile="0.5"} 171
+pushgateway_http_push_size_bytes{method="put",quantile="0.9"} 584
+pushgateway_http_push_size_bytes_sum{method="put"} 755
+pushgateway_http_push_size_bytes_count{method="put"} 2

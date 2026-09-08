@@ -1,0 +1,7 @@
+# TYPE bossyk_gate_decisions_total counter
+# HELP bossyk_gate_decisions_total Gate decisions by verdict and policy.
+bossyk_gate_decisions_total{verdict="allow",policy_id=""} 3
+bossyk_gate_decisions_total{verdict="block",policy_id="no-network-egress"} 1
+bossyk_gate_decisions_total{verdict="hold",policy_id="destructive-shell"} 1
+# TYPE bossyk_gate_holds_total counter
+bossyk_gate_holds_total{resolution="held_then_blocked"} 1

@@ -22,6 +22,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -29,6 +30,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from bossyk_sandbox.gateproxy.events import verify_event_log
 from bossyk_sandbox.gateproxy.hold import HoldRequest
 from bossyk_sandbox.gateproxy.proxy import GateProxyConfig, build_config, create_app
+from bossyk_sandbox.gateproxy.telemetry import Telemetry, TelemetryConfig
 from tests.unit.gateproxy.conftest import POLICY_PACK_YAML, openai_response, tool_call
 
 
@@ -687,6 +689,113 @@ class TestIdentityPacks:
 
 
 # The smallest argv build_config accepts; the identity tests add to it.
+class _TelemetryCapture:
+    def __init__(self) -> None:
+        self.requests: list[httpx.Request] = []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        return httpx.Response(200, json={"partialSuccess": {}})
+
+
+def _telemetry_client(
+    config: GateProxyConfig, upstream_body: dict[str, Any]
+) -> tuple[TestClient, _TelemetryCapture]:
+    capture = _TelemetryCapture()
+    telemetry = Telemetry(
+        TelemetryConfig(
+            otlp_endpoint="http://collector.invalid:4318",
+            pushgateway_url="http://pgw.invalid:9091",
+        ),
+        transport=httpx.MockTransport(capture),
+    )
+    app = create_app(config, upstream=lambda b, h: upstream_body, telemetry=telemetry)
+    return TestClient(app), capture
+
+
+class TestTelemetryWiring:
+    def test_off_by_default_and_signed_log_unaffected(
+        self, config: GateProxyConfig, signing_keys: tuple[Path, str]
+    ) -> None:
+        _priv, pub_pem = signing_keys
+        assert config.otlp_endpoint is None and config.pushgateway_url is None
+        client = _client(
+            config, openai_response(tool_calls=[tool_call("c1", "bash", '{"command": "ls"}')])
+        )
+        client.post("/v1/chat/completions", json=_REQUEST)
+        assert verify_event_log(config.events_path, pub_pem).verified_count == 1
+
+    def test_one_span_log_and_push_per_decision_with_signed_fields(
+        self, config: GateProxyConfig, signing_keys: tuple[Path, str]
+    ) -> None:
+        _priv, pub_pem = signing_keys
+        body = openai_response(
+            tool_calls=[
+                tool_call("c1", "bash", '{"command": "ls"}'),
+                tool_call("c2", "bash", '{"command": "curl http://x.example"}'),
+            ]
+        )
+        client, capture = _telemetry_client(config, body)
+        client.post("/v1/chat/completions", json=_REQUEST)
+        paths = [r.url.path for r in capture.requests]
+        assert paths.count("/v1/traces") == 2
+        assert paths.count("/v1/logs") == 2
+        assert paths.count("/metrics/job/bossyk-gate/run_label/leg-b-test") == 2
+        spans = [
+            json.loads(r.content)["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+            for r in capture.requests
+            if r.url.path == "/v1/traces"
+        ]
+        attrs = [{a["key"]: a["value"]["stringValue"] for a in s["attributes"]} for s in spans]
+        events = [json.loads(line)["event"] for line in config.events_path.read_text().splitlines()]
+        assert [a["bossyk.verdict"] for a in attrs] == [e["verdict"] for e in events]
+        assert attrs[1]["bossyk.policy_id"] == "no-network-egress"
+        assert attrs[0]["bossyk.pack_sha256"] == events[0]["pack_sha256"]
+        assert attrs[0]["bossyk.gate_version"] == events[0]["gate_version"]
+        assert attrs[0]["bossyk.run_label"] == "leg-b-test"
+        assert verify_event_log(config.events_path, pub_pem).verified_count == 2
+
+    def test_utterance_decisions_are_exported_too(self, config: GateProxyConfig) -> None:
+        client, capture = _telemetry_client(config, openai_response(content="done"))
+        client.post("/v1/chat/completions", json=_REQUEST)
+        span = json.loads(next(r for r in capture.requests if r.url.path == "/v1/traces").content)[
+            "resourceSpans"
+        ][0]["scopeSpans"][0]["spans"][0]
+        attrs = {a["key"]: a["value"]["stringValue"] for a in span["attributes"]}
+        assert attrs["bossyk.kind"] == "utterance"
+
+    def test_metrics_endpoint_serves_prometheus_text(self, config: GateProxyConfig) -> None:
+        client = _client(
+            config,
+            openai_response(tool_calls=[tool_call("c1", "bash", '{"command": "curl x"}')]),
+        )
+        client.post("/v1/chat/completions", json=_REQUEST)
+        response = client.get("/gate/metrics")
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/plain")
+        assert 'bossyk_gate_decisions_total{verdict="block",policy_id="no-network-egress"} 1' in (
+            response.text
+        )
+
+    def test_build_config_parses_exporter_flags(self) -> None:
+        argv = [
+            *_MINIMAL_ARGV,
+            "--otlp-endpoint",
+            "http://collector:4318",
+            "--pushgateway-url",
+            "http://pgw:9091",
+        ]
+        built = build_config(argv)
+        assert built.otlp_endpoint == "http://collector:4318"
+        assert built.pushgateway_url == "http://pgw:9091"
+
+    def test_build_config_exporters_default_off(self) -> None:
+        built = build_config(_MINIMAL_ARGV)
+        assert built.otlp_endpoint is None
+        assert built.pushgateway_url is None
+
+
+# The smallest argv build_config accepts; the exporter tests add to it.
 _HOLD_PACK_YAML = """\
 version: 1
 policies:

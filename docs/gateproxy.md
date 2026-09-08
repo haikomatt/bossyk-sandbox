@@ -131,6 +131,43 @@ one gate getting different verdicts for the same proposed action, and a
 caller with no certificate refused at the handshake. Your SPIRE
 deployment's own trust bundle was not available, so this is coded to the
 SPIFFE X509-SVID and SPIFFE-ID specs and says so.
+## Telemetry: the same decisions in your Grafana, Loki and Tempo
+
+The signed `gate-events.jsonl` is the system of record. Optionally the
+gate also **projects** every decision into an existing observability
+stack, alongside the signed log and never instead of it:
+
+- **OTLP/HTTP (JSON)**: one `gate.decision` span and one linked log
+  record per decision, attributes `bossyk.verdict`, `bossyk.policy_id`,
+  `bossyk.tool_name`, `bossyk.kind`, `bossyk.pack_sha256`,
+  `bossyk.run_label`, `bossyk.gate_version` (plus `bossyk.resolution` /
+  `bossyk.resolved_verdict` for held decisions). Tool arguments are never
+  exported: telemetry carries the decision, the signed log carries the
+  evidence.
+- **Prometheus**: `bossyk_gate_decisions_total{verdict,policy_id}`,
+  `bossyk_gate_blocks_total{policy_id}`, `bossyk_gate_holds_total{resolution}`,
+  served on `GET /gate/metrics` for scraping and, if configured, pushed
+  to a push gateway grouped by `job="bossyk-gate"` and `run_label`.
+
+```bash
+python -m bossyk_sandbox.gateproxy ... \
+  --otlp-endpoint http://otel-collector:4318 \
+  --pushgateway-url http://pushgateway:9091
+```
+
+Both are **off by default** (air-gap friendly); `/gate/metrics` is always
+served since it needs no egress. An exporter that is unreachable or slow
+is logged and ignored: a telemetry outage never becomes a gate outage,
+and the signed log is written first either way.
+
+The wire formats were validated against a real `otel/opentelemetry-collector`
+(0.160.0) and `prom/pushgateway` (1.11.3) rather than assumed; the request
+bodies and what the receivers decoded are kept under `tests/fixtures/otel/`,
+and `tests/e2e/test_gate_telemetry_e2e.py` (gated on
+`RUN_GATE_TELEMETRY_E2E=1`) replays the check against live receivers.
+Your own collector config was not available, so this emits standard OTLP
+and says so; a receiver that wants different attribute names gets a
+collector-side transform, not a gate change.
 ## HOLD: pause for a decision instead of ending the turn
 
 ALLOW and BLOCK are the two verdicts the gate reaches on its own. A policy
