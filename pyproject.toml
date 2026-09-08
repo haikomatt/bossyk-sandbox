@@ -6,7 +6,6 @@ license = { text = "BUSL-1.1" }
 requires-python = ">=3.12"
 dependencies = [
     "auditk",
-    "tau2",
     "langgraph>=1.0",
     "fastapi>=0.115",
     "uvicorn>=0.32",
@@ -20,6 +19,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# The experiment half of the repo (LangGraph agent runtime, live multi-turn
+# conditions, the console demo, and their tests) runs inside Sierra's
+# tau2-bench airline/retail environments. The gate proxy needs none of it,
+# so a gate-only install is `uv sync`; the experiments (and CI) use
+# `uv sync --extra experiments`, which also needs the ../tau2-bench sibling.
+experiments = ["tau2"]
 # Phase 1's real drift judge (auditk's llm-judge@0.3 scorer) needs auditk's
 # `nli` extra (torch + transformers, local NLI model). Only needed for
 # scripts/benchmark_run.py, not for the deterministic test suite — install
@@ -41,7 +46,9 @@ detector-train = [
 
 [tool.uv.sources]
 auditk = { path = "../auditk", editable = true }
-tau2 = { path = "../tau2-bench", editable = true }
+# Pinned upstream commit (2026-06-10); not a sibling checkout, so a gate-only
+# `uv sync` never needs it on disk. Bump the rev deliberately.
+tau2 = { git = "https://github.com/sierra-research/tau2-bench", rev = "5ebebbe827b455b3ed04fcb9294235c6ef4e5fd6" }
 
 [dependency-groups]
 dev = [

@@ -322,7 +322,6 @@ dependencies = [
     { name = "langgraph" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
-    { name = "tau2" },
     { name = "uvicorn" },
 ]
 
@@ -337,6 +336,9 @@ detector-train = [
     { name = "sentencepiece" },
     { name = "torch" },
     { name = "transformers" },
+]
+experiments = [
+    { name = "tau2" },
 ]
 
 [package.dev-dependencies]
@@ -367,12 +369,12 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "sentencepiece", marker = "extra == 'detector-train'", specifier = ">=0.2" },
-    { name = "tau2", editable = "../tau2-bench" },
+    { name = "tau2", marker = "extra == 'experiments'", git = "https://github.com/sierra-research/tau2-bench?rev=5ebebbe827b455b3ed04fcb9294235c6ef4e5fd6" },
     { name = "torch", marker = "extra == 'detector-train'", specifier = ">=2.5" },
     { name = "transformers", marker = "extra == 'detector-train'", specifier = ">=4.46" },
     { name = "uvicorn", specifier = ">=0.32" },
 ]
-provides-extras = ["bench", "detector-train"]
+provides-extras = ["experiments", "bench", "detector-train"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -3254,7 +3256,7 @@ wheels = [
 [[package]]
 name = "tau2"
 version = "1.0.0"
-source = { editable = "../tau2-bench" }
+source = { git = "https://github.com/sierra-research/tau2-bench?rev=5ebebbe827b455b3ed04fcb9294235c6ef4e5fd6#5ebebbe827b455b3ed04fcb9294235c6ef4e5fd6" }
 dependencies = [
     { name = "addict" },
     { name = "deepdiff" },
@@ -3276,59 +3278,6 @@ dependencies = [
     { name = "typer" },
     { name = "uvicorn" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "addict", specifier = ">=2.4.0" },
-    { name = "aiohttp", marker = "extra == 'voice'", specifier = ">=3.0" },
-    { name = "aws-sdk-bedrock-runtime", marker = "extra == 'voice'", specifier = ">=0.3.0" },
-    { name = "boto3", marker = "extra == 'voice'", specifier = ">=1.35.0" },
-    { name = "deepdiff", specifier = ">=8.4.2" },
-    { name = "deepgram-sdk", marker = "extra == 'voice'", specifier = ">=3.7.3" },
-    { name = "docstring-parser", specifier = ">=0.16" },
-    { name = "elevenlabs", marker = "extra == 'voice'", specifier = ">=1.54.0" },
-    { name = "fastapi", specifier = ">=0.115.11" },
-    { name = "google-auth", marker = "extra == 'voice'", specifier = ">=2.23.0" },
-    { name = "google-cloud-aiplatform", marker = "extra == 'voice'", specifier = ">=1.38.0" },
-    { name = "google-genai", marker = "extra == 'voice'", specifier = ">=1.0.0" },
-    { name = "gymnasium", marker = "extra == 'gym'", specifier = ">=1.2.2" },
-    { name = "httpx", specifier = ">=0.24.0" },
-    { name = "jiwer", marker = "extra == 'voice'", specifier = ">=3.0.0" },
-    { name = "litellm", specifier = ">=1.80.15,<1.82.7" },
-    { name = "livekit-agents", marker = "extra == 'voice'", specifier = ">=1.5.0" },
-    { name = "livekit-plugins-deepgram", marker = "extra == 'voice'", specifier = ">=1.5.0" },
-    { name = "livekit-plugins-openai", marker = "extra == 'voice'", specifier = ">=1.5.0" },
-    { name = "loguru", specifier = ">=0.7.3" },
-    { name = "matplotlib", marker = "extra == 'experiments'", specifier = ">=3.10.1" },
-    { name = "numpy", specifier = ">=1.24.0" },
-    { name = "openai", marker = "extra == 'knowledge'", specifier = ">=1.0.0" },
-    { name = "pandas", specifier = ">=2.2.3" },
-    { name = "plotly", marker = "extra == 'experiments'", specifier = ">=6.0.0" },
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.0.0" },
-    { name = "psutil", specifier = ">=7.0.0" },
-    { name = "pyaudio", marker = "extra == 'voice'", specifier = ">=0.2.14" },
-    { name = "pydub", marker = "extra == 'voice'", specifier = ">=0.25.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.5" },
-    { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.5.0" },
-    { name = "python-dotenv", specifier = ">=1.0.0" },
-    { name = "pyyaml", specifier = ">=6.0.2" },
-    { name = "rank-bm25", marker = "extra == 'knowledge'", specifier = ">=0.2.2" },
-    { name = "requests", specifier = ">=2.31.0" },
-    { name = "rich" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9.1" },
-    { name = "scikit-learn", marker = "extra == 'experiments'", specifier = ">=1.6.1" },
-    { name = "scipy", marker = "extra == 'voice'", specifier = ">=1.10.0" },
-    { name = "seaborn", marker = "extra == 'experiments'", specifier = ">=0.13.2" },
-    { name = "tabulate", specifier = ">=0.9.0" },
-    { name = "tau2", extras = ["voice", "knowledge", "gym", "dev", "experiments"], marker = "extra == 'all'" },
-    { name = "tenacity", specifier = ">=9.0.0" },
-    { name = "toml", specifier = ">=0.10.2" },
-    { name = "tqdm", marker = "extra == 'voice'", specifier = ">=4.0" },
-    { name = "typer", specifier = ">=0.12.5" },
-    { name = "uvicorn", specifier = ">=0.34.0" },
-    { name = "websockets", marker = "extra == 'voice'", specifier = ">=13.0" },
-]
-provides-extras = ["voice", "knowledge", "gym", "dev", "experiments", "all"]
 
 [[package]]
 name = "tenacity"
