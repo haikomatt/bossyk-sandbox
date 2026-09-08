@@ -420,17 +420,20 @@ def co_occurrence_restrictions(specs: dict[str, BoundarySpec]) -> frozenset[tupl
     honest empty set), and a pair that collapses to one boundary is
     dropped. This imports the hand-authored oracle's assumptions about
     which tools share an entity; it is enforcement wiring, not coverage."""
-    structural = [
-        spec for spec in specs.values() if spec.is_structural and spec.action_tool is not None
+    # (action tool, entity key) per structural spec; the entity key is the
+    # lookup tool + key arg the action is gated on.
+    mutations = [
+        (spec.action_tool, (spec.lookup_tool, spec.key_arg))
+        for spec in specs.values()
+        if spec.is_structural and spec.action_tool is not None
     ]
     pairs: set[tuple[str, str]] = set()
-    for index, first in enumerate(structural):
-        for second in structural[index + 1 :]:
-            if (first.lookup_tool, first.key_arg) != (second.lookup_tool, second.key_arg):
+    for index, (first_tool, first_entity) in enumerate(mutations):
+        for second_tool, second_entity in mutations[index + 1 :]:
+            if first_entity != second_entity:
                 continue
-            assert first.action_tool is not None and second.action_tool is not None
-            for left in boundaries_for_tool(first.action_tool):
-                for right in boundaries_for_tool(second.action_tool):
+            for left in boundaries_for_tool(first_tool):
+                for right in boundaries_for_tool(second_tool):
                     if left != right:
                         pairs.add((min(left, right), max(left, right)))
     return frozenset(pairs)
