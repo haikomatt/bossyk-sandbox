@@ -1,6 +1,6 @@
 """Red-phase contract for gate telemetry export (round-2 Phase 2).
 
-Radek's stack is Grafana + Loki + Tempo behind an OpenTelemetry collector,
+The target stack is Grafana + Loki + Tempo behind an OpenTelemetry collector,
 with a Prometheus push gateway. Gate decisions therefore go out as OTLP
 spans and log records (OTLP/HTTP, JSON encoding) and as Prometheus
 counters (scrape endpoint plus optional push). Telemetry is a PROJECTION
@@ -11,9 +11,9 @@ exporters are on, off, or failing.
 Phase 0 evidence (tests/fixtures/otel/): the request shapes here were
 accepted verbatim by otelcol 0.160.0 (`{"partialSuccess":{}}`, HTTP 200;
 a non-hex trace id is refused with HTTP 400) and by pushgateway 1.11.3
-(HTTP 200; a malformed line is refused with HTTP 400). Radek's own
+(HTTP 200; a malformed line is refused with HTTP 400). The target
 collector config was not available, so this codes to the OTLP spec, not
-to his pipeline.
+to any particular pipeline.
 """
 
 from __future__ import annotations
