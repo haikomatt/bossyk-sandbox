@@ -78,6 +78,49 @@ execution (the enforceable class); everything needing judgement stays
 audit-side. That split is a design position, stated on every scorecard,
 not a limitation discovered later.
 
+## HOLD: pause for a decision instead of ending the turn
+
+ALLOW and BLOCK are the two verdicts the gate reaches on its own. A policy
+line can instead ask for a **HOLD**: the proposed action is paused and
+handed out for a decision, then resumed on approve or refused on deny.
+Precedence inside one response is BLOCK over HOLD over ALLOW, and as with
+a block, one refused call refuses the whole response.
+
+```yaml
+policies:
+  - id: destructive-shell
+    type: network-egress        # any predicate type can be held
+    on_match: hold              # default: block
+    on_hold: block              # what a hold nobody answers resolves to; default: block
+    tools: [bash]
+    commands: [rm]
+```
+
+A `pi --print` batch run has no human at a console, so the decision comes
+from an **approver hook** configured on the gate, and a hold falls back to
+the policy's own `on_hold` default when no approver is configured or the
+approver does not answer in time:
+
+```bash
+python -m bossyk_sandbox.gateproxy ... \
+  --approver-cmd "./approve.sh"          # held action as JSON on stdin; exit 0 approves
+# or
+  --approver-url http://approvals.internal/hold   # JSON POST; reply {"decision": "allow"|"block"}
+  --approver-timeout 30                  # seconds; then on_hold applies
+```
+
+The approver sees only what the signed event already records about the
+action (tool name, arguments, policy id, reason, run label). Every held
+decision is logged with `verdict: hold`, a `resolution`
+(`held_then_allowed`, `held_then_blocked`, or `hold_timed_out`) and the
+`resolved_verdict` it took effect with; the scorecard counts and shows
+it, and the incident report treats a held-then-blocked decision exactly
+like a block, corroboration check included. Interactive console approval
+is a later increment; nothing here claims a human always answers.
+
+This is the mechanism behind the crosswalk's AI Act Art. 14
+(human oversight) line: the gate can stop and ask.
+
 ## Latency, honestly
 
 The gate adds single-digit milliseconds per response (JSON parse,

@@ -542,3 +542,76 @@ class TestModuleExecution:
         with mock.patch.object(sys, "argv", argv):
             runpy.run_module("bossyk_sandbox.gateproxy.incident", run_name="__main__")
         assert out.exists()
+
+
+_HELD_BLOCKED_EVENT = {
+    "kind": "tool_call",
+    "tool_name": "bash",
+    "arguments": {"command": "rm -rf build"},
+    "verdict": "hold",
+    "resolution": "held_then_blocked",
+    "resolved_verdict": "block",
+    "policy_id": "destructive-shell",
+    "reason": "destructive-shell: network egress via 'rm' is not permitted",
+    "model": "test-model",
+}
+
+_HELD_ALLOWED_EVENT = {
+    **_HELD_BLOCKED_EVENT,
+    "resolution": "held_then_allowed",
+    "resolved_verdict": "allow",
+}
+
+_HELD_REFUSAL_STEPS = [
+    *_CLEAN_STEPS,
+    {
+        "step_id": "held0001",
+        "actor": "agent",
+        "timestamp": "2026-09-07T20:00:05+00:00",
+        "action": {
+            "type": "utterance",
+            "payload": {
+                "text": (
+                    "[bossyk gate] BLOCKED: this response proposed actions that violate policy.\n"
+                    "- destructive-shell: network egress via 'rm' is not permitted"
+                )
+            },
+        },
+    },
+]
+
+
+class TestHeldDecisions:
+    def test_held_then_blocked_is_an_incident_with_corroboration(
+        self, tmp_path: Path, signer: Path, pub_pem: str
+    ) -> None:
+        from bossyk_sandbox.gateproxy.incident import build_incident
+
+        inputs = _inputs(
+            tmp_path,
+            signer,
+            pub_pem,
+            steps=_HELD_REFUSAL_STEPS,
+            events=[_ALLOW_EVENT, _HELD_BLOCKED_EVENT],
+        )
+        card = build_scorecard(inputs)
+        decision = determine_incident(card)
+        assert decision.triggered is True
+        assert decision.severity == "contained"
+        html = render_incident_html(build_incident(inputs, card, decision))
+        assert "held" in html.lower()
+        assert "destructive-shell" in html
+        assert "held0001" in html
+
+    def test_held_then_allowed_is_not_an_incident(
+        self, tmp_path: Path, signer: Path, pub_pem: str
+    ) -> None:
+        inputs = _inputs(
+            tmp_path,
+            signer,
+            pub_pem,
+            steps=_CLEAN_STEPS,
+            events=[_ALLOW_EVENT, _HELD_ALLOWED_EVENT],
+        )
+        decision = determine_incident(build_scorecard(inputs))
+        assert decision.triggered is False

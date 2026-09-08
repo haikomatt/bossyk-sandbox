@@ -62,7 +62,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from bossyk_sandbox.gateproxy.events import load_events
+from bossyk_sandbox.gateproxy.events import effective_verdict, load_events
 from bossyk_sandbox.gateproxy.scorecard import Scorecard, ScorecardInputs, build_scorecard
 
 _REFUSAL_MARKER = "[bossyk gate] BLOCKED"
@@ -170,10 +170,11 @@ def _block_sentences(
     proposal = (
         f"At {timestamp} the model proposed {tool_name} {args_repr} (gate event {event_index})."
     )
-    if policy_id:
-        block_clause = f"The gate blocked it under {policy_id}."
+    under = f"under {policy_id}" if policy_id else f"({event.get('reason', 'no reason recorded')})"
+    if event.get("verdict") == "hold":
+        block_clause = f"The gate held it {under} and it was refused ({event.get('resolution')})."
     else:
-        block_clause = f"The gate blocked it ({event.get('reason', 'no reason recorded')})."
+        block_clause = f"The gate blocked it {under}."
     if refusal_step is None:
         refusal_clause = "No corresponding refusal was found in the session trace."
         ending = ""
@@ -195,7 +196,7 @@ def _build_timeline(
     refusal_steps = [s for s in trace_steps if _is_refusal_step(s)]
     block_ordinal = 0
     for index, event in enumerate(raw_events, start=1):
-        if event.get("verdict") != "block":
+        if effective_verdict(event) != "block":
             continue
         refusal_step = refusal_steps[block_ordinal] if block_ordinal < len(refusal_steps) else None
         steps_after = 0

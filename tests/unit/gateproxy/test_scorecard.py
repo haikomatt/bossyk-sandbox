@@ -506,3 +506,71 @@ class TestModuleExecution:
         with mock.patch.object(sys, "argv", argv):
             runpy.run_module("bossyk_sandbox.gateproxy.scorecard", run_name="__main__")
         assert out.exists()
+
+
+_HELD_BLOCKED_EVENT: dict[str, Any] = {
+    "kind": "tool_call",
+    "tool_name": "bash",
+    "arguments": {"command": "rm -rf build"},
+    "verdict": "hold",
+    "resolution": "held_then_blocked",
+    "resolved_verdict": "block",
+    "policy_id": "destructive-shell",
+    "reason": "destructive-shell: network egress via 'rm' is not permitted",
+    "model": "accounts/fireworks/models/minimax-m3",
+    "pack_sha256": _TEST_PACK_SHA256,
+    "gate_version": _TEST_GATE_VERSION,
+}
+
+_HELD_ALLOWED_EVENT: dict[str, Any] = {
+    **_HELD_BLOCKED_EVENT,
+    "resolution": "held_then_allowed",
+    "resolved_verdict": "allow",
+}
+
+
+def _append_events(path: Path, signer_key: Path, events: list[dict[str, Any]]) -> None:
+    log = EventLog(path=path, signer_key_path=signer_key, run_label="leg-b-test")
+    for event in events:
+        log.append(event)
+
+
+class TestHeldDecisions:
+    def test_held_counts_and_resolution_rows(
+        self, inputs: ScorecardInputs, signing_keys: tuple[Path, str]
+    ) -> None:
+        priv, _ = signing_keys
+        _append_events(inputs.gate_events_path, priv, [_HELD_BLOCKED_EVENT, _HELD_ALLOWED_EVENT])
+        card = build_scorecard(inputs)
+        assert card.gate.held_count == 2
+        # A held decision counts under the verdict it resolved to, so the
+        # three counts always partition the decisions.
+        assert card.gate.allowed_count == 2
+        assert card.gate.blocked_count == 2
+        held_rows = [d for d in card.gate.decisions if d.verdict == "hold"]
+        assert [d.resolution for d in held_rows] == ["held_then_blocked", "held_then_allowed"]
+        assert "destructive-shell" in card.gate.policies_triggered
+
+    def test_held_then_blocked_needs_corroboration_like_a_block(
+        self, inputs: ScorecardInputs, signing_keys: tuple[Path, str]
+    ) -> None:
+        priv, _ = signing_keys
+        _append_events(inputs.gate_events_path, priv, [_HELD_BLOCKED_EVENT])
+        card = build_scorecard(inputs)
+        assert card.corroboration.block_events == 2
+
+    def test_unheld_rows_have_no_resolution(self, inputs: ScorecardInputs) -> None:
+        card = build_scorecard(inputs)
+        assert all(d.resolution is None for d in card.gate.decisions)
+
+    def test_render_shows_hold_badge_with_resolution(
+        self, inputs: ScorecardInputs, signing_keys: tuple[Path, str]
+    ) -> None:
+        priv, _ = signing_keys
+        _append_events(inputs.gate_events_path, priv, [_HELD_BLOCKED_EVENT, _HELD_ALLOWED_EVENT])
+        html = render_scorecard_html(build_scorecard(inputs))
+        assert 'class="badge hold"' in html
+        assert "HOLD" in html
+        assert "held_then_blocked" in html
+        assert "held_then_allowed" in html
+        assert "2 held" in html

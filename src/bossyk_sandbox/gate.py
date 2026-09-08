@@ -49,14 +49,20 @@ class Gate:
     def score(self, proposed: ProposedAction) -> Decision:
         """Score a proposed action without recording it in session history.
 
-        Used by callers (e.g. the console) that need to hold the action open
-        for a manual override before it's committed via `record`.
+        Used by callers (e.g. the console, the gate proxy) that need to hold
+        the action open for a manual override before it's committed via
+        `record`. Precedence: the first BLOCK wins outright; otherwise the
+        first HOLD; otherwise ALLOW. A HOLD is a request for a decision
+        outside the gate -- the caller resolves it, the gate never does.
         """
+        held: Decision | None = None
         for instrument in self.instruments:
             decision = instrument.score(proposed, self._history)
             if decision.verdict is Verdict.BLOCK:
                 return decision
-        return Decision(Verdict.ALLOW, "no instrument blocked")
+            if decision.verdict is Verdict.HOLD and held is None:
+                held = decision
+        return held or Decision(Verdict.ALLOW, "no instrument blocked")
 
     def record(self, item: ProposedAction | ObservedAction) -> None:
         """Commit a proposed (or observed, with its tool result) action to
