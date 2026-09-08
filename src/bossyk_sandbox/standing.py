@@ -38,40 +38,29 @@ from dataclasses import dataclass
 
 from bossyk_sandbox.instruments.base import ProposedAction
 
-# Each governed write tool maps to a consequence boundary (mirrors the demo
-# taxonomy / compliance.attribution). Read tools are not governed here.
+# Each governed write tool maps to the SET of consequence boundaries it can
+# cross (mirrors the demo taxonomy / compliance.attribution). Read tools are
+# not governed here.
 #
 # D5 -- single global, domain-agnostic map, NOT a per-domain registry:
-# `boundary_for` is called without a domain everywhere it's used (this
-# module, standing_amount.py, live_boundary.py); promoting to a per-domain
-# registry would ripple a domain param through all three call sites for no
-# payoff, since outreach's tool names (lookup_prospect, check_suppression,
-# ..., book_survey, apply_discount, ...) don't collide with retail's or
-# airline's. Extend-Before-Create: this simply extends the existing map.
-# Revisit only if a real cross-domain name collision appears.
+# `boundaries_for_tool` is called without a domain at both call sites (this
+# module and standing_amount.py); promoting to a per-domain registry would
+# ripple a domain param through them for no payoff, since outreach's tool
+# names (lookup_prospect, check_suppression, ..., book_survey,
+# apply_discount, ...) don't collide with retail's or airline's.
+# Extend-Before-Create: this simply extends the existing map. Revisit only
+# if a real cross-domain name collision appears.
 #
-# KNOWN GAP for a slice-2 reader -- `out_of_hours_contact` is UNREACHABLE via
-# `boundary_for` today, on purpose, not by oversight:
-#   - The spec's tool-surface table has `place_call`/`send_sms`/`send_email`
-#     each crossing EITHER `contact_without_consent` OR `out_of_hours_contact`
-#     depending on context (which check failed) -- a genuine one-tool/
-#     two-boundary relationship.
-#   - This dict is 1:1 (tool -> single boundary), so each of those three
-#     tools is recorded under `contact_without_consent` only (the PECR/TPS
-#     consent check -- boundary 1, the outcome-aware rule slice 2 actually
-#     builds). `out_of_hours_contact` (boundary 2) has no tool mapped to it
-#     at all here.
-#   - This is harmless TODAY because neither boundary is enforced in slice 1
-#     (only `booking_without_eligibility` and `unauthorised_incentive` are
-#     live -- D6). It stops being harmless the moment slice 2 wires
-#     `out_of_hours_contact` to a real check (the `StandingGrant.window` +
-#     injected-`now` mechanism D6 already names): that will need either (a)
-#     `_TOOL_BOUNDARY` to become tool -> list[boundary] and every caller
-#     (`evaluate_authority`, `resolve_amount`, `live_boundary.py`) to check
-#     all of a tool's boundaries, or (b) a second, separate lookup outside
-#     this dict for the hours check. Whichever it is, this dict alone will
-#     no longer be sufficient to answer "which boundaries can `place_call`
-#     cross" -- do not assume it is.
+# Action-class shape (tool -> frozenset of boundaries): a tool may carry
+# more than one boundary. The spec's tool-surface table has `place_call` /
+# `send_sms` / `send_email` each crossing EITHER `contact_without_consent`
+# OR `out_of_hours_contact` depending on context (which check failed), so
+# the three share `_CONTACT_BOUNDARIES`. `evaluate_authority` checks every
+# granted boundary of a tool and is `over` if any trips; the history filter
+# matches on membership so a prior contact consumes authority on both.
+# (Before this shape the map was 1:1 and `out_of_hours_contact` was
+# unreachable -- Bounded Agents, arXiv 2608.15888, hit the identical
+# constraint with its one-class-per-tool `mu`.)
 #
 # `record_consent` is an audit write, not a boundary (spec), so it has no
 # entry.
