@@ -79,10 +79,26 @@ def _auroc(scores: Array, y: NDArray[np.bool_]) -> float:
     return auroc(scores[m].tolist(), y[m].tolist()) if m.sum() else float("nan")
 
 
-def analyse(payload: Any, *, layer: int, n_splits: int = 5, seed: int = 0) -> dict[str, Any]:
-    """Per-offset residual vs text-so-far AUROC (group-CV by prompt) at one layer."""
+LABELS = ("is_violation", "called_tool")
+
+
+def analyse(
+    payload: Any,
+    *,
+    layer: int,
+    n_splits: int = 5,
+    seed: int = 0,
+    label: str = "is_violation",
+) -> dict[str, Any]:
+    """Per-offset residual vs text-so-far AUROC (group-CV by prompt) at one layer.
+
+    `label` selects the binary target column: `is_violation` (ours: will this
+    rollout cross the policy) or `called_tool` (the pre-generation tool-call
+    decoding literature's: will any tool be called; emitted since #16)."""
+    if label not in LABELS:
+        raise ValueError(f"unknown label {label!r}; use one of {LABELS}")
     offsets = [int(o) for o in payload["offsets"]]
-    y = np.asarray(payload["is_violation"], dtype=bool)
+    y = np.asarray(payload[label], dtype=bool)
     groups = np.asarray(payload["prompt_id"], dtype=np.intp)
     text = np.asarray(payload["text_so_far"])  # (n, n_offsets) str
     xall = np.asarray(payload[f"X_{layer}"], dtype=np.float64)  # (n, n_offsets, d)
@@ -130,7 +146,7 @@ def analyse(payload: Any, *, layer: int, n_splits: int = 5, seed: int = 0) -> di
                 "residual_beats_text": bool(lo > 0.0),
             }
         )
-    return {"layer": layer, "offsets": rows}
+    return {"layer": layer, "label": label, "offsets": rows}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -139,20 +155,34 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", required=True)
     parser.add_argument("--layers", default="7,14,27")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--label",
+        choices=LABELS,
+        default="is_violation",
+        help="target column to probe (called_tool = the tool-call-decoding label, #16)",
+    )
     args = parser.parse_args(argv)
 
     with np.load(args.acts, allow_pickle=False) as npz:
         payload = {k: npz[k] for k in npz.files}
-    n = int(len(payload["is_violation"]))
-    nv = int(np.asarray(payload["is_violation"]).sum())
+    n = int(len(payload[args.label]))
+    nv = int(np.asarray(payload[args.label]).sum())
     report: dict[str, Any] = {
         "n_rollouts": n,
-        "n_violation": nv,
+        "label": args.label,
+        "n_positive": nv,
+        "n_violation": int(np.asarray(payload["is_violation"]).sum()),
         "n_prompts": int(len(set(np.asarray(payload["prompt_id"]).tolist()))),
-        "layers": [analyse(payload, layer=int(x), seed=args.seed) for x in args.layers.split(",")],
+        "layers": [
+            analyse(payload, layer=int(x), seed=args.seed, label=args.label)
+            for x in args.layers.split(",")
+        ],
     }
     Path(args.out).write_text(json.dumps(report, indent=2))
-    print(f"wrote {args.out}: {n} rollouts ({nv} viol) over {report['n_prompts']} prompts")
+    print(
+        f"wrote {args.out}: {n} rollouts ({nv} positive on {args.label}) "
+        f"over {report['n_prompts']} prompts"
+    )
     for lay in report["layers"]:
         print(f"layer {lay['layer']}:  offset  residual  text   res>text")
         for r in lay["offsets"]:
