@@ -128,3 +128,44 @@ def test_build_gen_payload_tool_call_anchor_is_backward_and_action_only() -> Non
     assert payload["text_so_far"][0, 2] == "I'll just cancel"
     assert payload["text_so_far"][0, 1] == "I'll just"
     assert payload["text_so_far"][0, 0] == ""  # position before generation start
+
+
+def test_build_gen_payload_emits_called_tool_label() -> None:
+    """The payload carries a `called_tool` label alongside `is_violation`.
+
+    Needed to probe the label used by the pre-generation tool-call decoding
+    literature (arXiv 2605.09252, 2604.01202), which asks "will a tool be
+    called", not "will this be a policy violation". Under the `start` anchor
+    both classes are present, so the two labels are genuinely different: a
+    lookup-first rollout calls a tool without violating.
+    """
+    m = _import()
+    d = 2
+    # lookup-first: calls a tool, does NOT violate
+    lookup = m.Rollout(
+        prompt_id=0,
+        is_violation=False,
+        token_strings=["Let", " me", " <tool_call>", "{"],
+        residuals={7: [[float(i)] * d for i in range(4)]},
+    )
+    # text-only compliant: no tool call at all
+    text_only = m.Rollout(
+        prompt_id=0,
+        is_violation=False,
+        token_strings=["Could", " you", " confirm"],
+        residuals={7: [[9.0] * d for _ in range(3)]},
+    )
+    # mutation-first: calls a tool AND violates
+    mutation = m.Rollout(
+        prompt_id=1,
+        is_violation=True,
+        token_strings=["Sure", " <tool_call>", "{"],
+        residuals={7: [[1.0] * d for _ in range(3)]},
+    )
+
+    payload = m.build_gen_payload([lookup, text_only, mutation], layers=[7], offsets=[0])
+
+    assert payload["called_tool"].tolist() == [True, False, True]
+    assert payload["is_violation"].tolist() == [False, False, True]
+    # the two labels genuinely differ: rollout 0 calls a tool without violating
+    assert payload["called_tool"][0] != payload["is_violation"][0]
