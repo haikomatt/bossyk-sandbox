@@ -132,7 +132,10 @@ def build_gen_payload(
     before generation start for a backward offset). `text_so_far` (n_kept,
     n_offsets) is the decoded generation up to and including each target
     position -- input to the text-so-far baseline. `prompt_id` supports the
-    essential group-CV by prompt."""
+    essential group-CV by prompt. Two labels are emitted: `is_violation` (the
+    eventual gated-mutation outcome) and `called_tool` (did a tool call happen
+    at all), the latter for head-to-head comparison against the tool-call
+    decoding literature."""
     if anchor not in {"start", "tool_call"}:
         raise ValueError(f"unknown anchor {anchor!r}; use 'start' or 'tool_call'")
 
@@ -154,6 +157,16 @@ def build_gen_payload(
         "layers": np.asarray(layers, dtype=np.int64),
         "anchor": np.asarray(anchor),
         "is_violation": np.asarray([r.is_violation for r, _ in kept], dtype=bool),
+        # Second, independent label: did this rollout call a tool AT ALL? This is
+        # the label the pre-generation tool-call decoding work uses (arXiv
+        # 2605.09252, 2604.01202), and it differs from `is_violation` -- a
+        # lookup-first rollout calls a tool without violating. Under the
+        # `tool_call` anchor it is True by construction (that filter keeps only
+        # action rollouts), so it is only informative under `start`.
+        "called_tool": np.asarray(
+            [find_tool_call_token_index(r.token_strings) is not None for r, _ in kept],
+            dtype=bool,
+        ),
         "prompt_id": np.asarray([r.prompt_id for r, _ in kept], dtype=np.int64),
     }
     text_so_far = np.empty((n, len(offs)), dtype=object)
