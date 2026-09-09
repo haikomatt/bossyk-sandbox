@@ -432,3 +432,36 @@ def test_poll_ssh_failure_with_pod_still_running_retries_then_raises(tmp_path: P
     # the finally still tore the pod down
     assert len(client.terminated) == 1
     assert client.list_pod_ids() == []
+
+
+def test_rest_reads_send_an_explicit_user_agent(monkeypatch: object) -> None:
+    """Regression ratchet (2026-09-09): rest.runpod.io sits behind Cloudflare,
+    which now answers HTTP 403 (error 1010) to Python's default
+    `Python-urllib/x.y` user agent. Every money-relevant read (`list_pod_ids`,
+    `get_status`, `terminate_pod`) goes through `_rest`, so a missing
+    User-Agent silently breaks pod verification. curl's default UA is accepted."""
+    import io
+    import urllib.request
+
+    m = _import()
+    seen: list[urllib.request.Request] = []
+
+    class _Resp(io.BytesIO):
+        status = 200
+
+        def __enter__(self) -> _Resp:
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+    def fake_urlopen(req: urllib.request.Request, timeout: float = 0) -> _Resp:
+        seen.append(req)
+        return _Resp(b"[]")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)  # type: ignore[attr-defined]
+    monkeypatch.setenv("RUNPOD_API_KEY", "rpa_test")  # type: ignore[attr-defined]
+    code, body = m.RunpodCTLClient()._rest("GET", "/pods")
+    assert (code, body) == (200, "[]")
+    ua = seen[0].get_header("User-agent", "")
+    assert ua and not ua.startswith("Python-urllib"), ua
