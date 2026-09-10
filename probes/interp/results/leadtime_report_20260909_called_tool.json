@@ -1,0 +1,171 @@
+{
+  "n_rollouts": 312,
+  "label": "called_tool",
+  "n_positive": 121,
+  "n_violation": 89,
+  "n_prompts": 26,
+  "layers": [
+    {
+      "layer": 7,
+      "label": "called_tool",
+      "offsets": [
+        {
+          "offset": 0,
+          "n": 312,
+          "residual_auroc": 0.6313660161827701,
+          "text_auroc": 0.9546319934230453,
+          "residual_minus_text_ci_lo": -0.37890025221320944,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 1,
+          "n": 312,
+          "residual_auroc": 0.9607546190125914,
+          "text_auroc": 0.9550430530916014,
+          "residual_minus_text_ci_lo": -0.01074450646819065,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 2,
+          "n": 312,
+          "residual_auroc": 0.960776253731989,
+          "text_auroc": 0.957228159750768,
+          "residual_minus_text_ci_lo": -0.014717279430655367,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 4,
+          "n": 312,
+          "residual_auroc": 0.9620527021764528,
+          "text_auroc": 0.9566223876076327,
+          "residual_minus_text_ci_lo": -0.009313263661586826,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 8,
+          "n": 312,
+          "residual_auroc": 0.9630262645493488,
+          "text_auroc": 0.9609060620483753,
+          "residual_minus_text_ci_lo": -0.012402963226742095,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 16,
+          "n": 312,
+          "residual_auroc": 0.9670286876379214,
+          "text_auroc": 0.9028601099043745,
+          "residual_minus_text_ci_lo": 0.02067181638211089,
+          "residual_beats_text": true
+        }
+      ]
+    },
+    {
+      "layer": 14,
+      "label": "called_tool",
+      "offsets": [
+        {
+          "offset": 0,
+          "n": 312,
+          "residual_auroc": 0.5101250486781187,
+          "text_auroc": 0.9546319934230453,
+          "residual_minus_text_ci_lo": -0.5076819282640225,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 1,
+          "n": 312,
+          "residual_auroc": 0.9599324996754792,
+          "text_auroc": 0.9550430530916014,
+          "residual_minus_text_ci_lo": -0.00943117077997276,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 2,
+          "n": 312,
+          "residual_auroc": 0.9603435593440353,
+          "text_auroc": 0.957228159750768,
+          "residual_minus_text_ci_lo": -0.015758739329787233,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 4,
+          "n": 312,
+          "residual_auroc": 0.9554757474795552,
+          "text_auroc": 0.9566223876076327,
+          "residual_minus_text_ci_lo": -0.020970117678965478,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 8,
+          "n": 312,
+          "residual_auroc": 0.954372376790273,
+          "text_auroc": 0.9609060620483753,
+          "residual_minus_text_ci_lo": -0.024204205086506208,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 16,
+          "n": 312,
+          "residual_auroc": 0.9732162173856606,
+          "text_auroc": 0.9028601099043745,
+          "residual_minus_text_ci_lo": 0.02945890423785567,
+          "residual_beats_text": true
+        }
+      ]
+    },
+    {
+      "layer": 27,
+      "label": "called_tool",
+      "offsets": [
+        {
+          "offset": 0,
+          "n": 312,
+          "residual_auroc": 0.49013456795465365,
+          "text_auroc": 0.9546319934230453,
+          "residual_minus_text_ci_lo": -0.5283718126396115,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 1,
+          "n": 312,
+          "residual_auroc": 0.9614036605945221,
+          "text_auroc": 0.9550430530916014,
+          "residual_minus_text_ci_lo": -0.01002858305870101,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 2,
+          "n": 312,
+          "residual_auroc": 0.9612954869975336,
+          "text_auroc": 0.957228159750768,
+          "residual_minus_text_ci_lo": -0.007881075104841668,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 4,
+          "n": 312,
+          "residual_auroc": 0.9586776859504132,
+          "text_auroc": 0.9566223876076327,
+          "residual_minus_text_ci_lo": -0.017181161498248942,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 8,
+          "n": 312,
+          "residual_auroc": 0.9551079572497945,
+          "text_auroc": 0.9609060620483753,
+          "residual_minus_text_ci_lo": -0.02321061355413375,
+          "residual_beats_text": false
+        },
+        {
+          "offset": 16,
+          "n": 312,
+          "residual_auroc": 0.9678508069750336,
+          "text_auroc": 0.9028601099043745,
+          "residual_minus_text_ci_lo": 0.023360720648251728,
+          "residual_beats_text": true
+        }
+      ]
+    }
+  ]
+}

@@ -250,7 +250,12 @@ class RunpodCTLClient:
         req = urllib.request.Request(
             f"{self._REST_BASE}{path}",
             method=method,
-            headers={"Authorization": f"Bearer {os.environ['RUNPOD_API_KEY']}"},
+            headers={
+                "Authorization": f"Bearer {os.environ['RUNPOD_API_KEY']}",
+                # rest.runpod.io is fronted by Cloudflare, which 403s (error
+                # 1010) the default `Python-urllib/x.y` agent as of 2026-09-09.
+                "User-Agent": "bossyk-sandbox-pod-runner/1.0",
+            },
         )
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
