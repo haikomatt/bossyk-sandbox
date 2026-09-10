@@ -237,3 +237,35 @@ null on a second label, with the "by construction" caveat now stated. Finding 4
 is new and modest (residual leads the text on tool identity by a token or two
 once the tool-call marker is lexically ambiguous). Neither supports "the model
 knows before it says".
+
+### H1a (propensity), same capture, 2026-09-10
+
+The runbook's caveated secondary, run because the two pre-generation decoding
+papers (arXiv 2605.09252, 2604.01202) work in the regime where the prompt
+determines the outcome. `scripts/propensity_probe.py`: one row per prompt (its
+offset-0 residual, identical across rollouts, asserted) against its empirical
+positive rate over 12 rollouts; leave-one-prompt-out ridge; Spearman on
+held-out predictions; bag-of-words on the PROMPT text as the baseline; paired
+bootstrap of the difference. n = 26, so only a large effect is detectable.
+Reports: `propensity_report_20260909_{is_violation,called_tool}.json`.
+
+| label | layer | residual rho [CI] | text rho [CI] | paired residual-text CI |
+|---|---|---|---|---|
+| is_violation | 7 | 0.73 [0.43, 0.86] | 0.68 [0.38, 0.85] | [-0.15, 0.18] |
+| is_violation | 14 | 0.77 [0.58, 0.88] | 0.68 | [-0.06, 0.30] |
+| is_violation | 27 | 0.87 [0.65, 0.93] | 0.68 | [-0.02, 0.42] |
+| called_tool | 7 | 0.72 [0.45, 0.87] | 0.60 [0.23, 0.83] | [-0.01, 0.32] |
+| called_tool | 14 | 0.76 [0.51, 0.90] | 0.60 | [0.00, 0.40] |
+| called_tool | 27 | **0.89 [0.79, 0.95]** | 0.60 | **[0.07, 0.64]** |
+
+Reading: the pre-generation state DOES carry the per-prompt propensity, on both
+labels, strongly at layer 27. On the tool-call label (their label) it beats
+prompt text with a paired CI that excludes zero at layer 27; on the violation
+label the point estimate is higher than text at every layer but the CI includes
+zero. So the literature's result reproduces on our data in its own regime, and
+the two findings are consistent: the pre-generation residual encodes how likely
+this prompt is to produce a tool call (and, weaker, a violation), and cannot
+encode which sampled rollout will. The runbook's confound stands: prompts with
+different rates differ textually, so this is a propensity-vs-text comparison
+across 26 prompts, not a within-prompt result. Do not headline it; cite it as
+the reconciliation.
