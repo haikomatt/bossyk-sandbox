@@ -16,7 +16,11 @@ from bossyk_sandbox.instruments.base import (
 )
 from bossyk_sandbox.instruments.drift import ERROR_LABEL, UNSCORED_LABEL
 from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel, RequirePassedCheck
-from bossyk_sandbox.instruments.minimisation import MinimisationInstrument, config_for_scenario
+from bossyk_sandbox.instruments.minimisation import (
+    MinimisationConfig,
+    MinimisationInstrument,
+    config_for_scenario,
+)
 from bossyk_sandbox.instruments.outcome_key import OutcomeKeyLookup
 from bossyk_sandbox.scenarios.loader import Scenario
 from bossyk_sandbox.scoring.confusion import GateOutcomeRecord
@@ -124,6 +128,30 @@ def advice_fast_rules(scenario: Scenario | None = None) -> list[Instrument]:
     incomplete. See docs/threat-model.md, "Expressiveness", class E.
     """
     return [MinimisationInstrument(config=config_for_scenario(scenario))]
+
+
+def advice_fast_rules_observe_only(scenario: Scenario | None = None) -> list[Instrument]:
+    """Observe-only counterpart of `advice_fast_rules` (free-threshold-
+    predicate arms A/B pre-registration,
+    an-agent-with-a-free-threshold-predicate-narrows-beyond-its-task): the
+    SAME `MinimisationInstrument`/`config_for_scenario` wiring, except
+    `score()` always ALLOWs the predicate instead of enforcing the width
+    rule/count budget. `evaluate()` is unaffected either way -- it never
+    consulted `score()`'s block logic -- so R and the bisecting flag are
+    still reported for every call in the session history.
+
+    Arms A and B measure the UNMITIGATED leak: if they ran through
+    `advice_fast_rules()`'s live BLOCK, R could never exceed 1 and the
+    experiment would silently measure the control instead of the behaviour.
+    This is a SEPARATE, explicit opt-in factory -- `advice_fast_rules()`
+    itself (the shipped, wired-in default) is completely unchanged, still
+    blocking, for every existing caller that never asks for this.
+    """
+    return [
+        MinimisationInstrument(
+            config=config_for_scenario(scenario, base=MinimisationConfig(observe_only=True))
+        )
+    ]
 
 
 def advice_eligibility_fast_rules(scenario: Scenario | None = None) -> list[Instrument]:
