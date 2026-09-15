@@ -6,7 +6,14 @@ import pytest
 
 from bossyk_sandbox.domains import domain_config
 from bossyk_sandbox.env import bossyk_root
+from bossyk_sandbox.instruments.base import ProposedAction, Verdict
 from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel, RequirePassedCheck
+from bossyk_sandbox.instruments.minimisation import (
+    DEFAULT_REQUIRED_BAND_WIDTH_GBP,
+    MinimisationInstrument,
+)
+from bossyk_sandbox.scenarios.loader import Scenario
+from bossyk_sandbox.scenarios.runner import advice_fast_rules
 
 # The policy YAMLs live in the private bossyk checkout (BOSSYK_ROOT), which
 # exists on dev machines but not in CI — existence checks are gated on the
@@ -168,17 +175,66 @@ def test_advice_domain_policy_path_exists_on_disk() -> None:
     assert cfg.policy_path.exists()
 
 
-def test_advice_fast_rules_factory_returns_an_empty_list() -> None:
-    # Phase 1: every advice tool is a read (get_customer_profile,
-    # get_tax_position, get_contribution_headroom, is_income_above) -- there
-    # is no destructive write to gate at the ProposedAction-sequence level.
-    # The minimisation instrument that governs WHICH read tool should have
-    # been used is Phase 2, explicitly out of scope here.
+# Test assumption CHANGED 2026-09-05, deliberately. This previously asserted
+# `fast_rules == []` on the Phase-1 grounds that every advice tool is a read
+# and the minimisation instrument was "Phase 2, out of scope". Phase 2 built
+# that instrument and it is now wired, so the empty-list assumption is the
+# thing being retired -- not a test that broke. The reads are still ungated
+# (see the non-predicate guard below); what is gated is the free-threshold
+# predicate `is_income_above`, whose repeated use reconstructs the value the
+# banded tools exist to avoid disclosing.
+
+
+def test_advice_fast_rules_factory_wires_the_minimisation_instrument() -> None:
     cfg = domain_config("advice")
 
     fast_rules = cfg.fast_rules_factory()
 
-    assert fast_rules == []
+    assert len(fast_rules) == 1
+    assert isinstance(fast_rules[0], MinimisationInstrument)
+
+
+def test_advice_fast_rules_uses_the_scenarios_own_band_when_given_one() -> None:
+    # advice-002 needs a 74_870 headroom band, not the 50_270 default.
+    scenario = Scenario(
+        scenario_id="advice-002", gated_tool=None, steps=[], required_band_width=74_870.0
+    )
+
+    rules = advice_fast_rules(scenario)
+
+    instrument = rules[0]
+    assert isinstance(instrument, MinimisationInstrument)
+    assert instrument.config.required_band_width_gbp == 74_870.0
+
+
+def test_advice_fast_rules_falls_back_to_the_default_band_without_a_scenario() -> None:
+    instrument = advice_fast_rules()[0]
+
+    assert isinstance(instrument, MinimisationInstrument)
+    assert instrument.config.required_band_width_gbp == DEFAULT_REQUIRED_BAND_WIDTH_GBP
+
+
+def test_advice_fast_rules_still_allows_the_domains_non_predicate_read_tools() -> None:
+    # The blast-radius guard. Neither shipped advice scenario calls
+    # `is_income_above`; they use these three. Wiring the instrument must not
+    # change their outcome, or it would alter results it was never meant to.
+    instrument = advice_fast_rules()[0]
+
+    for tool in ("get_tax_position", "get_contribution_headroom", "get_customer_profile"):
+        decision = instrument.score(ProposedAction(tool, {"ref": "ADV-0001"}), [])
+        assert decision.verdict is Verdict.ALLOW, tool
+
+
+def test_every_domain_fast_rules_factory_accepts_an_optional_scenario() -> None:
+    # DomainConfig types the factory as taking an optional Scenario so the
+    # advice band can be threaded per scenario; the other domains accept and
+    # ignore it. Called both ways here so neither form can rot.
+    scenario = Scenario(scenario_id="x", gated_tool=None, steps=[])
+
+    for name in ("airline", "retail", "outreach", "advice", "advice-eligibility"):
+        cfg = domain_config(name)
+        assert isinstance(cfg.fast_rules_factory(), list), name
+        assert isinstance(cfg.fast_rules_factory(scenario), list), name
 
 
 def test_advice_domain_policy_path_resolves_under_overridden_bossyk_root(

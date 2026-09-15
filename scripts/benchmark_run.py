@@ -320,7 +320,9 @@ def main() -> None:
             _, scenario_scored_steps = run_scenario(
                 scenario,
                 slow_instruments=[drift_instrument, policy_instrument],
-                fast_rules=cfg.fast_rules_factory(),
+                # Pass the scenario so the advice domain gets that scenario's
+                # own required band; every other domain ignores it.
+                fast_rules=cfg.fast_rules_factory(scenario),
             )
             domain_scored_steps.extend(scenario_scored_steps)
 
