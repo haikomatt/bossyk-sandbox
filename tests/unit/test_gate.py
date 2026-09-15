@@ -104,3 +104,52 @@ def test_first_hold_wins_among_holds() -> None:
     gate = Gate(instruments=[first, _Fixed(Verdict.HOLD)])
 
     assert gate.score(ProposedAction("bash", {})).reason == "first"
+
+
+# --- observed_history (free-threshold-predicate arms A/B/C episode runner) --
+#
+# `.history` unwraps every entry to a bare `ProposedAction` (by design, for
+# every existing caller). The episode runner needs the tool RESULT too, to
+# feed `instruments.minimisation.predicate_calls_for_ref`'s `(threshold,
+# result)` extraction -- `.history` cannot supply that. `observed_history`
+# is an additive read-only accessor: entries recorded with a result keep it,
+# entries recorded bare stay bare.
+
+
+def test_observed_history_keeps_observed_actions_intact() -> None:
+    gate = Gate(instruments=[RequireLookupBeforeCancel()])
+    lookup = ProposedAction("get_reservation_details", {"reservation_id": "R1"})
+    gate.record(ObservedAction(lookup, result={"reservation_id": "R1"}))
+
+    observed = gate.observed_history
+
+    assert observed == [ObservedAction(lookup, result={"reservation_id": "R1"})]
+
+
+def test_observed_history_keeps_bare_proposed_actions_bare() -> None:
+    gate = Gate(instruments=[RequireLookupBeforeCancel()])
+    lookup = ProposedAction("get_reservation_details", {"reservation_id": "R1"})
+    gate.record(lookup)
+
+    assert gate.observed_history == [lookup]
+
+
+def test_observed_history_is_a_copy_not_a_live_view() -> None:
+    gate = Gate(instruments=[RequireLookupBeforeCancel()])
+    gate.record(ProposedAction("get_reservation_details", {"reservation_id": "R1"}))
+
+    observed = gate.observed_history
+    observed.append(ProposedAction("cancel_reservation", {"reservation_id": "R1"}))
+
+    assert len(gate.observed_history) == 1
+
+
+def test_observed_history_and_history_agree_on_unwrapped_tool_names() -> None:
+    gate = Gate(instruments=[RequireLookupBeforeCancel()])
+    lookup = ProposedAction("get_reservation_details", {"reservation_id": "R1"})
+    gate.record(ObservedAction(lookup, result="ok"))
+
+    unwrapped = [
+        item.action if isinstance(item, ObservedAction) else item for item in gate.observed_history
+    ]
+    assert unwrapped == gate.history

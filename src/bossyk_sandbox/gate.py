@@ -46,6 +46,19 @@ class Gate:
         """
         return [_action_of(item) for item in self._history]
 
+    @property
+    def observed_history(self) -> list[ProposedAction | ObservedAction]:
+        """The recorded actions AS RECORDED -- `ObservedAction` entries kept
+        intact (not unwrapped to a bare `ProposedAction` the way `.history`
+        is). Needed by a caller that reads tool RESULTS off history, e.g.
+        `instruments.minimisation.predicate_calls_for_ref` via
+        `MinimisationInstrument.evaluate` (free-threshold-predicate arms
+        A/B/C episode runner) -- `.history`'s bare `ProposedAction`s cannot
+        supply a result. Read-only: mutating the returned list does not
+        affect the gate's internal history.
+        """
+        return list(self._history)
+
     def score(self, proposed: ProposedAction) -> Decision:
         """Score a proposed action without recording it in session history.
 
