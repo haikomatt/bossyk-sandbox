@@ -20,6 +20,7 @@ from pathlib import Path
 
 from auditk.schema import Step, Trace
 
+from bossyk_sandbox.console.paths import is_safe_path_component
 from bossyk_sandbox.domains import domain_config
 from bossyk_sandbox.evidence.trace import build_trace, make_attested_step
 from bossyk_sandbox.gate import Gate
@@ -111,6 +112,8 @@ def load_replay_preset(preset_id: str) -> ReplayPreset:
     unregistered domain (via `domain_config` at drive time), rather than
     silently substituting a default.
     """
+    if not is_safe_path_component(preset_id):
+        raise FileNotFoundError(f"unknown preset: {preset_id!r}")
     data = json.loads((_PRESETS_DIR / f"{preset_id}.json").read_text())
     turns = [
         ReplayTurn(
