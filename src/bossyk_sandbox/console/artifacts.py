@@ -32,6 +32,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
 from bossyk_sandbox.compliance.frameworks import load_frameworks
+from bossyk_sandbox.console.paths import is_safe_path_component
 from bossyk_sandbox.story import load_story
 
 router = APIRouter()
@@ -76,7 +77,7 @@ def _safe_path_or_404(dir_path: Path, name: str) -> Path:
     containing a path separator or `..` before doing anything else; only
     then checks membership in `os.listdir(dir_path)` (never existence of a
     joined path) and that the resulting entry is a regular file."""
-    if not name or "/" in name or "\\" in name or ".." in name:
+    if not is_safe_path_component(name):
         raise HTTPException(status_code=404, detail="not found")
     if not dir_path.is_dir() or name not in os.listdir(dir_path):
         raise HTTPException(status_code=404, detail="not found")
