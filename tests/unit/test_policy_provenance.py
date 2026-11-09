@@ -22,6 +22,8 @@ from pathlib import Path
 import pytest
 from auditk.attestation.signer import generate_keypair
 from auditk.schema import Trace
+
+from bossyk_sandbox.domains import DomainConfig, domain_config
 from bossyk_sandbox.evidence.policy_provenance import (
     MANIFEST_METADATA_KEY,
     DiffKind,
@@ -33,8 +35,6 @@ from bossyk_sandbox.evidence.policy_provenance import (
     manifest_for,
     verify_policy_provenance,
 )
-
-from bossyk_sandbox.domains import DomainConfig, domain_config
 from bossyk_sandbox.evidence.signed_trace import (
     SignedTrace,
     build_signed_trace,
