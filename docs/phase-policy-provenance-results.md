@@ -60,3 +60,23 @@ hash, instantiated fast rules, standing grants), and
   `scripts/export_evidence_sample.py` generates a fresh key on every run. The
   sample trace and pack were regenerated because the sample trace now carries
   a manifest.
+
+# Phase B: standing integrity guard
+
+## Issues & Fixes
+
+1. **Retail return reconciliation: the test's assumption was wrong (test changed, code not).**
+   `test_retail_return_resolved_amount_equals_observed_refund` asserted that the
+   amount `resolve_amount` prices before a return equals the `payment_history`
+   delta after it. It failed on real data (order `#W4817420`: 47.76 vs 0).
+   tau2's `return_delivered_order_items` only records a request: it sets
+   `order.status = "return requested"`, `order.return_items` and
+   `return_payment_method_id`, and moves no money at execution. A requested
+   return still consumes refund authority, so the test now reconciles the
+   resolved amount against the sum of the prices of `order.return_items` after
+   execution (47.76 == 47.76). Cancellation and payment change still reconcile
+   on the `payment_history` delta. Renamed to
+   `test_retail_return_resolved_amount_equals_priced_return_items`.
+   The Red commit already contains the corrected test.
+2. **Finding 4 (live `apply_discount` amount resolved to `None`).** See the
+   fix commit below.
