@@ -85,10 +85,10 @@ hash, instantiated fast rules, standing grants), and
    `resolve_amount` returned `None` for `apply_discount` anyway. Under a
    `max_amount` grant a `None` amount is over standing, so EVERY outreach
    discount escalated in the live path, even 50 against a 150 ceiling at count
-   1 of 5. Fix (`0145763`): `resolve_amount` takes the `amount` argument for the
+   1 of 5. Fix (`10652a5`): `resolve_amount` takes the `amount` argument for the
    argument-priced `unauthorised_incentive` boundary, its `reader` is optional,
    and both live callers (`console/live.py`, `console/app.py`) always call it.
-   Guard (Red `a8332e1`, shown failing before the fix):
+   Guard (Red `6d95c35`, shown failing before the fix):
    `test_a_discount_within_the_outreach_ceiling_is_not_escalated_in_the_live_path`.
 3. **Negative-amount hardening (added with the fix).** A missing, non-numeric,
    bool, null, NaN, infinite or negative `amount` argument resolves to `None`
