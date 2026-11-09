@@ -39,11 +39,12 @@ from bossyk_sandbox.evidence.signed_trace import build_signed_trace
 from bossyk_sandbox.gate import Gate
 from bossyk_sandbox.instruments.policy import build_default_policy_instrument
 from bossyk_sandbox.scenarios.runner import retail_fast_rules
+from tests.unit._bossyk import SYNTHETIC_POLICY, FakeBossyk
 
 
-def _loaded_instrument(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str = "p.yaml"):  # type: ignore[no-untyped-def]
-    monkeypatch.setenv("FIREWORKS_API_KEY", "dummy-never-used")
-    original = domain_config("retail").policy_path.read_bytes()
+def _loaded_instrument(tmp_path: Path, name: str = "p.yaml"):  # type: ignore[no-untyped-def]
+    """Needs the `fake_bossyk` fixture active (stands in for the private loader)."""
+    original = SYNTHETIC_POLICY
     policy_file = tmp_path / name
     policy_file.write_bytes(original)
     return build_default_policy_instrument(policy_file), policy_file, original
@@ -60,9 +61,9 @@ def _stub_session() -> Any:
 
 
 def test_call_site_binds_hash_of_loaded_bytes_not_current_disk(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, fake_bossyk: FakeBossyk
 ) -> None:
-    instrument, policy_file, original = _loaded_instrument(tmp_path, monkeypatch)
+    instrument, policy_file, original = _loaded_instrument(tmp_path)
     # The operator edits the policy AFTER the instrument loaded it, BEFORE the trace is built.
     policy_file.write_bytes(original + b"\n# loosened after load\n")
 
@@ -89,9 +90,9 @@ def test_call_site_without_policy_instrument_records_none_and_never_reads_disk(
 
 
 def test_manifest_for_domain_takes_bytes_only_from_the_instrument(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, fake_bossyk: FakeBossyk
 ) -> None:
-    instrument, policy_file, original = _loaded_instrument(tmp_path, monkeypatch)
+    instrument, policy_file, original = _loaded_instrument(tmp_path)
     policy_file.write_bytes(b"policy_id: swapped\n")
     manifest = manifest_for_domain(
         "retail", retail_fast_rules(), None, slow_instruments=[instrument]
@@ -100,11 +101,9 @@ def test_manifest_for_domain_takes_bytes_only_from_the_instrument(
     assert instrument.__class__.__name__ not in repr(manifest.fast_rules)  # not described as a rule
 
 
-def test_two_policy_instruments_are_refused(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    a, _, _ = _loaded_instrument(tmp_path, monkeypatch, "a.yaml")
-    b, _, _ = _loaded_instrument(tmp_path, monkeypatch, "b.yaml")
+def test_two_policy_instruments_are_refused(tmp_path: Path, fake_bossyk: FakeBossyk) -> None:
+    a, _, _ = _loaded_instrument(tmp_path, "a.yaml")
+    b, _, _ = _loaded_instrument(tmp_path, "b.yaml")
     with pytest.raises(ManifestSerialisationError):
         manifest_for_domain("retail", retail_fast_rules(), None, slow_instruments=[a, b])
 
@@ -114,7 +113,7 @@ def test_not_loaded_policy_reports_note_and_diffs_against_a_hashed_approval(
 ) -> None:
     private, _ = generate_keypair(tmp_path / "k")
     cfg = domain_config("retail")
-    approved = manifest_for(cfg, cfg.fast_rules_factory(), None, cfg.policy_path.read_bytes())
+    approved = manifest_for(cfg, cfg.fast_rules_factory(), None, SYNTHETIC_POLICY)
     unloaded = manifest_for_domain("retail", cfg.fast_rules_factory(), None)
     assert unloaded.policy_yaml_sha256 is None
 

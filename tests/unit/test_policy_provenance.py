@@ -45,6 +45,7 @@ from bossyk_sandbox.instruments.base import Decision, Instrument, ProposedAction
 from bossyk_sandbox.instruments.hardcoded_rule import RequirePassedCheck
 from bossyk_sandbox.instruments.policy import build_default_policy_instrument
 from bossyk_sandbox.standing import StandingGrant, retail_standing_grants
+from tests.unit._bossyk import SYNTHETIC_POLICY, FakeBossyk, requires_bossyk_checkout
 
 
 def _trace() -> Trace:
@@ -64,7 +65,7 @@ def _manifest(
         cfg,
         fast_rules if fast_rules is not None else cfg.fast_rules_factory(),
         grants,
-        policy_bytes if policy_bytes is not None else cfg.policy_path.read_bytes(),
+        policy_bytes if policy_bytes is not None else SYNTHETIC_POLICY,
     )
 
 
@@ -193,7 +194,7 @@ def test_yaml_byte_change_gives_yaml_hash_diff(keys: tuple[Path, str]) -> None:
     private, public = keys
     cfg = domain_config("retail")
     approved = _manifest(cfg, grants=retail_standing_grants())
-    edited = cfg.policy_path.read_bytes() + b"\n# one extra byte-level edit\n"
+    edited = SYNTHETIC_POLICY + b"\n# one extra byte-level edit\n"
     signed = _signed(_manifest(cfg, grants=retail_standing_grants(), policy_bytes=edited), private)
     assert verify_signed_trace(signed, public) is True
     report = verify_policy_provenance(signed, approved)
@@ -354,12 +355,11 @@ def test_different_named_predicates_differ() -> None:
 
 
 def test_policy_instrument_binds_hash_of_loaded_bytes_not_the_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, fake_bossyk: FakeBossyk
 ) -> None:
     import hashlib
 
-    monkeypatch.setenv("FIREWORKS_API_KEY", "dummy-never-used")  # no network: never scored
-    original = domain_config("retail").policy_path.read_bytes()
+    original = SYNTHETIC_POLICY
     policy_file = tmp_path / "policy.yaml"
     policy_file.write_bytes(original)
 
@@ -375,27 +375,28 @@ def test_policy_instrument_binds_hash_of_loaded_bytes_not_the_path(
 
 
 def test_policy_instrument_snapshot_is_not_the_original_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, fake_bossyk: FakeBossyk
 ) -> None:
     """load_policy must never re-read the original path (TOCTOU)."""
-    monkeypatch.setenv("FIREWORKS_API_KEY", "dummy-never-used")
     policy_file = tmp_path / "policy.yaml"
-    policy_file.write_bytes(domain_config("retail").policy_path.read_bytes())
-    seen: list[Path] = []
-
-    import sys
-
-    from bossyk_sandbox.instruments.policy import bossyk_src_path
-
-    sys.path.insert(0, str(bossyk_src_path()))
-    import policy as bossyk_policy  # type: ignore[import-not-found]
-
-    real = bossyk_policy.load_policy
-
-    def spy(path: str | Path) -> object:
-        seen.append(Path(path))
-        return real(path)
-
-    monkeypatch.setattr(bossyk_policy, "load_policy", spy)
+    policy_file.write_bytes(SYNTHETIC_POLICY)
     build_default_policy_instrument(policy_file)
-    assert seen and all(p != policy_file for p in seen)
+    assert fake_bossyk.loaded_paths
+    assert all(p != policy_file for p in fake_bossyk.loaded_paths)
+
+
+@requires_bossyk_checkout
+def test_policy_instrument_with_the_real_bossyk_loader(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same hash-of-loaded-bytes property against bossyk's REAL
+    `load_policy` / `PolicyAwareJudge` (dev machines only; skipped in CI)."""
+    import hashlib
+
+    monkeypatch.setenv("FIREWORKS_API_KEY", "dummy-never-used")  # never scored
+    original = domain_config("retail").policy_path.read_bytes()
+    policy_file = tmp_path / "policy.yaml"
+    policy_file.write_bytes(original)
+    instrument = build_default_policy_instrument(policy_file)
+    policy_file.write_bytes(original + b"\n# edited after load\n")
+    assert instrument.policy_sha256 == hashlib.sha256(original).hexdigest()
