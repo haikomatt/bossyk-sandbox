@@ -34,6 +34,26 @@ hash, instantiated fast rules, standing grants), and
    `policy_manifest` argument of `build_trace`. They now accept
    `policy_manifest: object = None`. No assertion was changed or weakened.
 
+3. **CI failed: provenance tests read the private bossyk policy files (fixed).**
+   27 tests in `test_policy_provenance.py` and `test_policy_provenance_wiring.py`
+   failed in CI with `FileNotFoundError` on `.../Projects/bossyk/data/policies/*.yaml`.
+   The policy YAMLs, and the `judge` / `policy` modules that
+   `build_default_policy_instrument` imports, live in the private bossyk
+   checkout (`BOSSYK_ROOT`). CI does not have it; dev machines do, which is why
+   every local gate passed. Reproduced locally with `BOSSYK_ROOT=/nonexistent/bossyk`
+   (a missing root, as in CI; an empty directory is not equivalent because
+   `requires_bossyk_checkout` only checks that the root exists). That run is
+   now part of the gate.
+   Fix: tests that need only some policy bytes use a committed synthetic
+   placeholder (`tests/fixtures/policies/synthetic-support-v1.yaml`); the
+   `build_default_policy_instrument` tests run in CI against a `fake_bossyk`
+   fixture that stands in for the private `load_policy` and `judge` (the fake
+   `load_policy` reads the path it is given, so the hash-of-loaded-bytes and
+   TOCTOU properties are still exercised). Only one test needs the real loader
+   and is gated by `requires_bossyk_checkout`:
+   `test_policy_instrument_with_the_real_bossyk_loader` (skipped in CI).
+   `requires_bossyk_checkout` moved to `tests/unit/_bossyk.py`.
+
 ## Notes for the PR description
 
 - `docs/bench_output/evidence_pack_sample.pub` changed because
