@@ -35,6 +35,7 @@ from bossyk_sandbox.console.replay import (
     load_replay_preset,
     trace_id_for,
 )
+from bossyk_sandbox.evidence.policy_provenance import manifest_for_domain
 from bossyk_sandbox.evidence.trace import build_trace, make_attested_step
 from bossyk_sandbox.gate import Gate
 from bossyk_sandbox.instruments.base import ProposedAction, Verdict
@@ -185,7 +186,12 @@ async def _run_stub_session(session: ConsoleSession, hold_timeout_s: float = 5.0
                 }
             )
 
-        build_trace(trace_id="console-session-1", agent_config_ref="console-stub@0.1", steps=steps)
+        build_trace(
+            trace_id="console-session-1",
+            agent_config_ref="console-stub@0.1",
+            steps=steps,
+            policy_manifest=manifest_for_domain("airline", gate.instruments, None),
+        )
         await _broadcast({"type": "session_complete", "step_count": len(steps)})
     finally:
         _sessions.pop(session.session_id, None)
@@ -260,6 +266,7 @@ async def _run_replay_session(
             trace_id=trace_id_for(preset),
             agent_config_ref=f"replay:{preset.preset_id}",
             steps=steps,
+            policy_manifest=manifest_for_domain("airline", gate.instruments, None),
         )
         await _broadcast(
             {
@@ -356,10 +363,12 @@ async def _run_live_session(
             await _broadcast(step_event)
             i += 1
 
+        assert agent_session.gate is not None
         build_trace(
             trace_id=agent_session.trace_id,
             agent_config_ref="live:weakened-retail",
             steps=agent_session.steps,
+            policy_manifest=manifest_for_domain("retail", agent_session.gate.instruments, grants),
         )
         await _broadcast(
             {

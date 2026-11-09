@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from auditk.schema import Action, ActionType, Actor, FlowType, Step, Trace
 
 from bossyk_sandbox.compliance.attribution import CONTROLS_METADATA_KEY, controls_for_step
 from bossyk_sandbox.instruments.base import Decision, ProposedAction, Verdict
+
+if TYPE_CHECKING:
+    from bossyk_sandbox.evidence.policy_provenance import PolicyManifest
 
 
 def make_step(
@@ -84,11 +88,20 @@ def build_trace(
     agent_config_ref: str,
     steps: list[Step],
     source_adapter: str = "bossyk-sandbox-gate@0.1",
+    policy_manifest: PolicyManifest | None = None,
 ) -> Trace:
-    return Trace(
+    """`policy_manifest`, if given, is bound into `Trace.metadata` so the
+    signature covers the policy the gate ran (evidence/policy_provenance.py)."""
+    trace = Trace(
         trace_id=trace_id,
         flow_type=FlowType.GENERIC,
         agent_config_ref=agent_config_ref,
         steps=steps,
         source_adapter=source_adapter,
     )
+    if policy_manifest is not None:
+        # Lazy: policy_provenance imports domains, which imports this module.
+        from bossyk_sandbox.evidence.policy_provenance import bind_policy_manifest
+
+        bind_policy_manifest(trace, policy_manifest)
+    return trace

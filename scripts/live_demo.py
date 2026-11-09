@@ -22,6 +22,7 @@ from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 
 from bossyk_sandbox.evidence.pack import build_and_sign, verify_offline, write_pack
+from bossyk_sandbox.evidence.policy_provenance import manifest_for_domain
 from bossyk_sandbox.evidence.signed_trace import (
     build_signed_trace,
     verify_signed_trace,
@@ -75,7 +76,13 @@ def main() -> None:
         payload = step.action.payload
         print(f"{payload['gate_verdict'].upper():6} {payload['tool_name']}({payload['arguments']})")
 
-    trace = build_trace(trace_id=trace_id, agent_config_ref="airline-live@0.1", steps=session.steps)
+    assert session.gate is not None
+    trace = build_trace(
+        trace_id=trace_id,
+        agent_config_ref="airline-live@0.1",
+        steps=session.steps,
+        policy_manifest=manifest_for_domain("airline", session.gate.instruments, None),
+    )
 
     out_dir = Path("demo_output")
     out_dir.mkdir(exist_ok=True)

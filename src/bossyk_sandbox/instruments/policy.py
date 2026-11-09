@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import sys
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -66,6 +68,11 @@ class PolicyInstrument:
     name: str = "policy"
     on_call: Callable[[TokenUsage, bool], None] | None = None
     _step_counter: int = field(default=0, repr=False)
+    # Provenance (evidence/policy_provenance.py): the exact bytes the judge's
+    # policy was parsed from, and their hash. Set by
+    # `build_default_policy_instrument`; None for fake-judge test instruments.
+    policy_bytes: bytes | None = field(default=None, repr=False)
+    policy_sha256: str | None = None
 
     def annotate(
         self, proposed: ProposedAction, history: list[ProposedAction]
@@ -118,5 +125,17 @@ def build_default_policy_instrument(
     from judge import PolicyAwareJudge  # type: ignore[import-not-found]
     from policy import load_policy  # type: ignore[import-not-found]
 
-    policy = load_policy(resolved_policy_path)
-    return PolicyInstrument(judge=PolicyAwareJudge(policy=policy))
+    # Hash what is loaded, at load time: read the bytes ONCE, hash them, and
+    # parse from a private snapshot of those same bytes. `load_policy` only
+    # takes a path, and re-reading the original path would be a TOCTOU bypass
+    # (the file could change between hash and parse).
+    policy_bytes = Path(resolved_policy_path).read_bytes()
+    with tempfile.TemporaryDirectory() as snapshot_dir:
+        snapshot = Path(snapshot_dir) / Path(resolved_policy_path).name
+        snapshot.write_bytes(policy_bytes)
+        policy = load_policy(snapshot)
+    return PolicyInstrument(
+        judge=PolicyAwareJudge(policy=policy),
+        policy_bytes=policy_bytes,
+        policy_sha256=hashlib.sha256(policy_bytes).hexdigest(),
+    )

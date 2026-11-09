@@ -12,6 +12,7 @@ from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 
 from bossyk_sandbox.conditions.live_boundary import parse_family
+from bossyk_sandbox.evidence.policy_provenance import manifest_for_domain
 from bossyk_sandbox.evidence.trace import build_trace, make_step
 from bossyk_sandbox.instruments.base import (
     Decision,
@@ -176,14 +177,29 @@ def _drive_session(session: AgentSession, payload: str, trace_id: str) -> None:
         )
 
 
-def _live_run_result(session: AgentSession, trace_id: str, agent_config_ref: str) -> LiveRunResult:
+def _live_run_result(
+    session: AgentSession,
+    trace_id: str,
+    agent_config_ref: str,
+    domain: str | None = None,
+) -> LiveRunResult:
     proposed = [
         ProposedAction(step.action.payload["tool_name"], step.action.payload["arguments"])
         for step in session.steps
     ]
     assert session.gate is not None
     executed = session.gate.history
-    trace = build_trace(trace_id=trace_id, agent_config_ref=agent_config_ref, steps=session.steps)
+    # Bind the policy the gate was actually handed. No standing is applied on
+    # this path (it never calls `authority_for`), so none is claimed.
+    manifest = (
+        manifest_for_domain(domain, session.gate.instruments, None) if domain is not None else None
+    )
+    trace = build_trace(
+        trace_id=trace_id,
+        agent_config_ref=agent_config_ref,
+        steps=session.steps,
+        policy_manifest=manifest,
+    )
     return LiveRunResult(
         proposed=proposed,
         executed=executed,
