@@ -44,10 +44,12 @@ from pydantic import BaseModel, ValidationError
 from bossyk_sandbox.domains import DomainConfig, domain_config
 from bossyk_sandbox.evidence.signed_trace import SignedTrace
 from bossyk_sandbox.instruments.base import Instrument
+from bossyk_sandbox.instruments.policy import PolicyInstrument
 from bossyk_sandbox.standing import StandingGrant
 
 MANIFEST_METADATA_KEY = "bossyk.policy_manifest"
-MANIFEST_SCHEMA_VERSION = 1
+# v2: `policy_yaml_sha256` is nullable (no policy instrument loaded the YAML).
+MANIFEST_SCHEMA_VERSION = 2
 
 
 class ManifestSerialisationError(ValueError):
@@ -57,7 +59,7 @@ class ManifestSerialisationError(ValueError):
 class PolicyManifest(BaseModel):
     schema_version: int = MANIFEST_SCHEMA_VERSION
     domain: str
-    policy_yaml_sha256: str
+    policy_yaml_sha256: str | None
     fast_rules: list[dict[str, Any]]
     standing: dict[str, dict[str, Any]] | None
     manifest_sha256: str
@@ -71,6 +73,7 @@ class ProvenanceStatus(StrEnum):
 
 class ProvenanceNote(StrEnum):
     STANDING_NOT_CONFIGURED = "STANDING_NOT_CONFIGURED"
+    POLICY_NOT_LOADED = "POLICY_NOT_LOADED"
 
 
 class DiffKind(StrEnum):
@@ -174,12 +177,14 @@ def manifest_for(
     domain_cfg: DomainConfig,
     fast_rules: Sequence[Instrument],
     grants: Mapping[str, StandingGrant] | None,
-    policy_bytes: bytes,
+    policy_bytes: bytes | None,
 ) -> PolicyManifest:
     body: dict[str, Any] = {
         "schema_version": MANIFEST_SCHEMA_VERSION,
         "domain": domain_cfg.name,
-        "policy_yaml_sha256": hashlib.sha256(policy_bytes).hexdigest(),
+        "policy_yaml_sha256": (
+            hashlib.sha256(policy_bytes).hexdigest() if policy_bytes is not None else None
+        ),
         "fast_rules": [_describe_rule(r) for r in fast_rules],
         "standing": _describe_standing(grants),
     }
@@ -188,20 +193,26 @@ def manifest_for(
 
 def manifest_for_domain(
     domain: str,
-    fast_rules: Sequence[Instrument],
+    instruments: Sequence[Any],
     grants: Mapping[str, StandingGrant] | None,
-    policy_bytes: bytes | None = None,
+    *,
+    slow_instruments: Sequence[Any] = (),
 ) -> PolicyManifest:
-    """Convenience for call sites that know the domain name and the rule
-    objects the gate was handed. `policy_bytes` defaults to the domain's
-    policy file, for runs where no policy instrument loaded it (pass the
-    instrument's own `policy_bytes` when one did)."""
-    cfg = domain_config(domain)
+    """Manifest for call sites that know the domain name and the instruments
+    the gate was handed. Policy bytes come ONLY from the `PolicyInstrument`
+    among `instruments` + `slow_instruments` (its `policy_bytes`, read once at
+    load). There is deliberately no disk fallback: re-reading the file at
+    trace-build time would be a TOCTOU bypass of design rule 1. With no
+    policy instrument the manifest records `policy_yaml_sha256: None`.
+    More than one policy instrument is ambiguous and is refused."""
+    loaded = [i for i in (*instruments, *slow_instruments) if isinstance(i, PolicyInstrument)]
+    if len(loaded) > 1:
+        raise ManifestSerialisationError(
+            f"{len(loaded)} policy instruments found; the loaded policy is ambiguous"
+        )
+    rules = [i for i in instruments if not isinstance(i, PolicyInstrument)]
     return manifest_for(
-        cfg,
-        fast_rules,
-        grants,
-        policy_bytes if policy_bytes is not None else cfg.policy_path.read_bytes(),
+        domain_config(domain), rules, grants, loaded[0].policy_bytes if loaded else None
     )
 
 
@@ -351,6 +362,10 @@ def verify_policy_provenance(signed: SignedTrace, approved: PolicyManifest) -> P
         )
     diffs += _diff_rules(approved.fast_rules, actual.fast_rules)
     diffs += _diff_standing(approved.standing, actual.standing)
-    notes = {ProvenanceNote.STANDING_NOT_CONFIGURED} if actual.standing is None else set()
+    notes: set[ProvenanceNote] = set()
+    if actual.standing is None:
+        notes.add(ProvenanceNote.STANDING_NOT_CONFIGURED)
+    if actual.policy_yaml_sha256 is None:
+        notes.add(ProvenanceNote.POLICY_NOT_LOADED)
     status = ProvenanceStatus.MISMATCH if diffs else ProvenanceStatus.MATCH
     return ProvenanceReport(status, diffs, notes)

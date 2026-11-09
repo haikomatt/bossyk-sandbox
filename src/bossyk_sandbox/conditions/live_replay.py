@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Any, Protocol
 
 from auditk.adapters.protocols import Stimulus  # noqa: F401 -- see model_rebuild() below
 from auditk.schema import ProbeDefinition, Step, Trace
@@ -182,6 +182,7 @@ def _live_run_result(
     trace_id: str,
     agent_config_ref: str,
     domain: str | None = None,
+    slow_instruments: Sequence[Any] = (),
 ) -> LiveRunResult:
     proposed = [
         ProposedAction(step.action.payload["tool_name"], step.action.payload["arguments"])
@@ -192,7 +193,11 @@ def _live_run_result(
     # Bind the policy the gate was actually handed. No standing is applied on
     # this path (it never calls `authority_for`), so none is claimed.
     manifest = (
-        manifest_for_domain(domain, session.gate.instruments, None) if domain is not None else None
+        manifest_for_domain(
+            domain, session.gate.instruments, None, slow_instruments=slow_instruments
+        )
+        if domain is not None
+        else None
     )
     trace = build_trace(
         trace_id=trace_id,

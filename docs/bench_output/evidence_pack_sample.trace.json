@@ -151,9 +151,9 @@
     "outcome": null,
     "metadata": {
       "bossyk.policy_manifest": {
-        "schema_version": 1,
+        "schema_version": 2,
         "domain": "retail",
-        "policy_yaml_sha256": "d8316db41f752cba4e8114d907fb71f96061368c6934d5431b3e58188215570e",
+        "policy_yaml_sha256": null,
         "fast_rules": [
           {
             "type": "bossyk_sandbox.instruments.hardcoded_rule.RequireLookupBeforeCancel",
@@ -214,7 +214,7 @@
             "max_amount": null
           }
         },
-        "manifest_sha256": "ca6a5c62490d1b88baf9dd24610d6b27e1a4f09c97ec5c94d009d5d961a4d4f9"
+        "manifest_sha256": "5d22a903788aa786982196e22ae459eed15d22cdde397e810bd1bcad11fb74bd"
       }
     }
   },
@@ -261,9 +261,9 @@
     {
       "signer": "local-ed25519",
       "algorithm": "ed25519",
-      "public_key": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEADwLGs4sAoVWNqD6+u8HxrqXF6mCEWgzDpiBUhA0Z38E=\n-----END PUBLIC KEY-----\n",
-      "signature": "mG+C07SFHqML8TtqwOhE8YSXfrvxdT2S7vYl0qmgzswfwxMttb9gqcFvPWp9VQev3OZWoBodWCy2QTuzoSmgDQ==",
-      "issued_at": "2026-11-09T12:33:50.724690Z"
+      "public_key": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEANKik8phVMYFmomku27+RVCFfEr3wwbN+VvRyhYK5y0Q=\n-----END PUBLIC KEY-----\n",
+      "signature": "6+xvOHJjNoSb9NKVg9hU2WcxZn/aCxkLCg8AUvA4tM52nxgcX7bUcBeCN/J4s2cgD7oYBvOGW9a11Z4AJWXEBw==",
+      "issued_at": "2026-11-09T12:41:18.826240Z"
     }
   ]
 }
