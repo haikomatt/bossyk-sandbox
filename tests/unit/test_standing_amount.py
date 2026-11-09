@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from bossyk_sandbox.instruments.base import ProposedAction
 from bossyk_sandbox.standing_amount import (
     OrderItemView,
@@ -141,3 +143,29 @@ def test_missing_order_is_unresolvable() -> None:
 def test_missing_order_id_argument_is_unresolvable() -> None:
     malformed = ProposedAction("cancel_pending_order", {"reason": "no longer needed"})
     assert resolve_amount(malformed, READER) is None
+
+
+# --- argument-priced boundary: outreach apply_discount (Phase B, finding 4) ---
+
+
+@pytest.mark.parametrize(
+    ("arguments", "expected"),
+    [
+        ({"prospect_id": "P-1", "amount": 50.0}, 50.0),
+        ({"prospect_id": "P-1", "amount": 50}, 50.0),
+        ({"prospect_id": "P-1", "amount": 0}, 0.0),
+        ({"prospect_id": "P-1"}, None),  # missing
+        ({"prospect_id": "P-1", "amount": "50"}, None),  # non-numeric
+        ({"prospect_id": "P-1", "amount": None}, None),
+        ({"prospect_id": "P-1", "amount": True}, None),  # bool is not an amount
+        ({"prospect_id": "P-1", "amount": -10.0}, None),  # would reduce cumulative spend
+        ({"prospect_id": "P-1", "amount": float("nan")}, None),
+        ({"prospect_id": "P-1", "amount": float("inf")}, None),
+    ],
+)
+def test_apply_discount_amount_comes_from_its_own_argument_and_fails_safe(
+    arguments: dict[str, object], expected: float | None
+) -> None:
+    proposed = ProposedAction("apply_discount", arguments)
+    assert resolve_amount(proposed) == expected  # no reader needed
+    assert resolve_amount(proposed, None) == expected

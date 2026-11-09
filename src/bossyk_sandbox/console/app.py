@@ -318,7 +318,7 @@ async def _run_live_session(
             proposed = ProposedAction(
                 str(held["tool_name"]), cast(dict[str, Any], held["arguments"])
             )
-            amount = resolve_amount(proposed, reader) if reader is not None else None
+            amount = resolve_amount(proposed, reader)
             verdict, decision = resolve_call(
                 held, authority=authority_for(held, history, grants, now=now, amount=amount)
             )
