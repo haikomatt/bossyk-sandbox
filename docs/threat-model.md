@@ -91,6 +91,14 @@ and offline signature verification against committed fixtures
 (`demo_output/`). Verifiability of the *record* is stronger today than
 verifiability of the *runtime* (see property 2).
 
+**Policy provenance (CISO blind spot #2).** A signed trace can now carry a
+manifest of the policy the gate ran (fast rules, standing grants, and the
+policy YAML hash where a policy instrument loaded it), checked against an
+approved manifest by `verify_policy_provenance`. The manifest is still
+declared by the runtime, so a compromised runtime can claim the approved one;
+live and console traces bind no YAML (`POLICY_NOT_LOADED`). Boundary and
+residuals: `probes/attestation/tcb_claim_boundary.md`.
+
 ## Expressiveness: which policies a monitor could enforce at all
 
 Anderson's three properties ask whether the monitor is *positioned* correctly.
