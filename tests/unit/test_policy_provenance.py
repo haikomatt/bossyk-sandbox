@@ -164,8 +164,7 @@ def test_trace_without_manifest_is_unbound(keys: tuple[Path, str]) -> None:
     signed = _signed(None, private)
     assert verify_signed_trace(signed, public) is True
     report = verify_policy_provenance(signed, approved)
-    assert report.status is ProvenanceStatus.UNBOUND
-    assert report.status is not ProvenanceStatus.MATCH
+    assert report.status is ProvenanceStatus.UNBOUND  # UNBOUND is never MATCH
 
 
 def test_malformed_manifest_is_unbound(keys: tuple[Path, str]) -> None:
@@ -238,7 +237,7 @@ class _OpaqueRule:
 def test_unserialisable_rule_state_is_refused() -> None:
     cfg = domain_config("airline")
     with pytest.raises(ManifestSerialisationError):
-        _manifest(cfg, fast_rules=[_OpaqueRule()])  # type: ignore[list-item]
+        _manifest(cfg, fast_rules=[_OpaqueRule()])
 
 
 def test_lambda_predicate_is_refused() -> None:

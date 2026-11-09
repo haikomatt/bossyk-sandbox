@@ -70,6 +70,7 @@ def test_call_site_binds_hash_of_loaded_bytes_not_current_disk(
         _stub_session(), "t1", "ref@0.1", domain="retail", slow_instruments=[instrument]
     )
 
+    assert result.trace is not None
     bound = PolicyManifest.model_validate(result.trace.metadata[MANIFEST_METADATA_KEY])
     assert bound.policy_yaml_sha256 == hashlib.sha256(original).hexdigest()
 
@@ -82,6 +83,7 @@ def test_call_site_without_policy_instrument_records_none_and_never_reads_disk(
 
     monkeypatch.setattr(Path, "read_bytes", boom)
     result = _live_run_result(_stub_session(), "t1", "ref@0.1", domain="retail")
+    assert result.trace is not None
     bound = PolicyManifest.model_validate(result.trace.metadata[MANIFEST_METADATA_KEY])
     assert bound.policy_yaml_sha256 is None
 
