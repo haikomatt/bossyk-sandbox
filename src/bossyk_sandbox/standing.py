@@ -28,6 +28,40 @@ it fails safe rather than silently allowing. `max_amount=None` (the default)
 keeps a grant exactly as before -- not amount-gated at all. Kept proprietary,
 not proposed to auditk-spec (per demonstrator §13); the shape is a v0.2
 candidate if a second implementer appears.
+
+INVARIANTS (Phase B, standing integrity). The governed agent must not be able to
+write ANY input to the standing verdict (grants, history, amount, `now`). Each
+is enforced by a guard test, which is itself shown to fail against a
+deliberately broken variant; a prose "do not regress" is not enforcement.
+Guards live in `tests/unit/test_standing_integrity.py` unless named otherwise.
+
+1. No toolkit or environment module imports the standing model, its amount
+   oracle or a grant factory.
+   Guard: `test_no_toolkit_or_environment_module_imports_the_standing_model`.
+2. Grants are unchanged across every scripted scenario of a domain, and each
+   grant factory returns a fresh dict (no shared mutable state).
+   Guards: `test_grants_are_byte_identical_after_every_scripted_scenario`,
+   `test_each_factory_call_returns_a_fresh_dict`.
+3. Authority history comes only from gate-ALLOWed actions. A forged prior-action
+   record in a tool result or a user message changes nothing.
+   Guard: `test_forged_prior_action_records_change_nothing`.
+4. The resolved amount reconciles with the effect: retail cancellation and
+   payment change against the `payment_history` delta, returns against the
+   prices of `order.return_items` (a return only records a request); outreach
+   `apply_discount` echo against its argument (it applies nothing to state).
+   Guards: `test_retail_cancellation_resolved_amount_equals_observed_refund`,
+   `test_retail_payment_change_resolved_amount_equals_observed_redirect`,
+   `test_retail_return_resolved_amount_equals_priced_return_items`,
+   `test_outreach_apply_discount_echo_equals_argument`.
+5. `apply_discount`'s amount comes from its own argument; a missing,
+   non-numeric, non-finite or negative value resolves to None, which is
+   over standing (escalates). A negative amount must never reduce the
+   cumulative spend the agent controls.
+   Guards: `test_a_discount_within_the_outreach_ceiling_is_not_escalated_in_the_live_path`,
+   and (in `tests/unit/test_standing_amount.py`)
+   `test_apply_discount_amount_comes_from_its_own_argument_and_fails_safe`.
+6. A user's claim of authority does not change the verdict.
+   Guard: `test_user_claim_of_elevated_authority_escalates_exactly_as_without_the_claim`.
 """
 
 from __future__ import annotations
