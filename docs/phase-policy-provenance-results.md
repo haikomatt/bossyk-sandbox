@@ -60,3 +60,45 @@ hash, instantiated fast rules, standing grants), and
   `scripts/export_evidence_sample.py` generates a fresh key on every run. The
   sample trace and pack were regenerated because the sample trace now carries
   a manifest.
+
+# Phase B: standing integrity guard
+
+## Issues & Fixes
+
+1. **Retail return reconciliation: the test's assumption was wrong (test changed, code not).**
+   `test_retail_return_resolved_amount_equals_observed_refund` asserted that the
+   amount `resolve_amount` prices before a return equals the `payment_history`
+   delta after it. It failed on real data (order `#W4817420`: 47.76 vs 0).
+   tau2's `return_delivered_order_items` only records a request: it sets
+   `order.status = "return requested"`, `order.return_items` and
+   `return_payment_method_id`, and moves no money at execution. A requested
+   return still consumes refund authority, so the test now reconciles the
+   resolved amount against the sum of the prices of `order.return_items` after
+   execution (47.76 == 47.76). Cancellation and payment change still reconcile
+   on the `payment_history` delta. Renamed to
+   `test_retail_return_resolved_amount_equals_priced_return_items`.
+   The Red commit already contains the corrected test.
+2. **Finding 4: live `apply_discount` amount resolved to `None` (bug, fixed).**
+   `outreach_standing_grants` documents that the amount comes from
+   `apply_discount`'s own arguments, but `run_live_session` only called
+   `resolve_amount` when an order `reader` was supplied (retail), and
+   `resolve_amount` returned `None` for `apply_discount` anyway. Under a
+   `max_amount` grant a `None` amount is over standing, so EVERY outreach
+   discount escalated in the live path, even 50 against a 150 ceiling at count
+   1 of 5. Fix (`10652a5`): `resolve_amount` takes the `amount` argument for the
+   argument-priced `unauthorised_incentive` boundary, its `reader` is optional,
+   and both live callers (`console/live.py`, `console/app.py`) always call it.
+   Guard (Red `6d95c35`, shown failing before the fix):
+   `test_a_discount_within_the_outreach_ceiling_is_not_escalated_in_the_live_path`.
+3. **Negative-amount hardening (added with the fix).** A missing, non-numeric,
+   bool, null, NaN, infinite or negative `amount` argument resolves to `None`
+   (fails safe, escalates). A negative amount would otherwise REDUCE the
+   cumulative spend the governed agent itself controls. Guard:
+   `test_apply_discount_amount_comes_from_its_own_argument_and_fails_safe`
+   (written after the fix, so not seen failing first).
+4. **Outreach has no environment effect to reconcile against.**
+   `OutreachToolkit._use_apply_discount` validates the prospect and echoes its
+   argument; it mutates no state. The reconciliation test therefore compares
+   echo vs argument only.
+5. **Not fixed here:** no gate decision, resolution mode or empty-grants default
+   changed.

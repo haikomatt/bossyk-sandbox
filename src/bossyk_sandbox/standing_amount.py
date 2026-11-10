@@ -23,6 +23,7 @@ auditk-spec (per demonstrator §13), same as the rest of §F.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
@@ -34,6 +35,10 @@ from bossyk_sandbox.standing import boundaries_for_tool
 # `account_change` (modify_user_address) moves no value -- it stays
 # PII/step-up gated, never amount-gated (locked design decision #3).
 _PRICED_BOUNDARIES = {"cancellation", "refund", "payment_change"}
+
+# Boundaries whose value is the call's OWN `amount` argument (outreach
+# `apply_discount`), so no order state / reader is needed to resolve it.
+_ARGUMENT_PRICED_BOUNDARIES = {"unauthorised_incentive"}
 
 
 @dataclass(frozen=True)
@@ -107,7 +112,20 @@ def _refund_amount(order: OrderView, item_ids: Sequence[object]) -> float | None
     return total
 
 
-def resolve_amount(proposed: ProposedAction, reader: OrderReader) -> float | None:
+def _argument_amount(proposed: ProposedAction) -> float | None:
+    """The call's own `amount` argument, or `None` (fail-safe: escalate) if it
+    is missing, non-numeric, non-finite or negative. A negative amount must
+    never be accepted: it would REDUCE the cumulative spend the agent itself
+    controls."""
+    value = proposed.arguments.get("amount")
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    if not math.isfinite(value) or value < 0:
+        return None
+    return float(value)
+
+
+def resolve_amount(proposed: ProposedAction, reader: OrderReader | None = None) -> float | None:
     """The value `proposed` moves, resolved against order state via `reader`,
     or `None` if it can't be resolved: not an amount-gated boundary (e.g.
     `account_change` or an ungoverned lookup), a missing/malformed order id,
@@ -118,6 +136,10 @@ def resolve_amount(proposed: ProposedAction, reader: OrderReader) -> float | Non
     amount-gated `evaluate_authority`) treats it as fail-safe -- escalate,
     never silently allow -- so this oracle can stay conservative rather than
     guessing."""
+    if boundaries_for_tool(proposed.tool_name) & _ARGUMENT_PRICED_BOUNDARIES:
+        return _argument_amount(proposed)
+    if reader is None:
+        return None  # order-priced boundaries need order state
     priced = boundaries_for_tool(proposed.tool_name) & _PRICED_BOUNDARIES
     if len(priced) != 1:
         # Not an amount-gated boundary, or (never today) a tool spanning two

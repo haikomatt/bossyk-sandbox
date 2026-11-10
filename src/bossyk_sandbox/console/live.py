@@ -210,7 +210,7 @@ def run_live_session(
             break  # the graph reached END with no further held call
         now = clock()
         proposed = _proposed_of(payload)
-        amount = resolve_amount(proposed, reader) if reader is not None else None
+        amount = resolve_amount(proposed, reader)
         authority = authority_for(payload, history, grants, now=now, amount=amount)
         verdict, decision = resolve_call(payload, authority=authority)
         verdicts.append(verdict.value)
