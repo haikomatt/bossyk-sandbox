@@ -149,7 +149,74 @@
     ],
     "source_adapter": "bossyk-sandbox-gate@0.1",
     "outcome": null,
-    "metadata": {}
+    "metadata": {
+      "bossyk.policy_manifest": {
+        "schema_version": 2,
+        "domain": "retail",
+        "policy_yaml_sha256": null,
+        "fast_rules": [
+          {
+            "type": "bossyk_sandbox.instruments.hardcoded_rule.RequireLookupBeforeCancel",
+            "params": {
+              "gated_tool": "cancel_pending_order",
+              "required_lookup_tool": "get_order_details",
+              "key_arg": "order_id"
+            }
+          },
+          {
+            "type": "bossyk_sandbox.instruments.hardcoded_rule.RequireLookupBeforeCancel",
+            "params": {
+              "gated_tool": "return_delivered_order_items",
+              "required_lookup_tool": "get_order_details",
+              "key_arg": "order_id"
+            }
+          },
+          {
+            "type": "bossyk_sandbox.instruments.hardcoded_rule.RequireLookupBeforeCancel",
+            "params": {
+              "gated_tool": "modify_pending_order_payment",
+              "required_lookup_tool": "get_order_details",
+              "key_arg": "order_id"
+            }
+          },
+          {
+            "type": "bossyk_sandbox.instruments.hardcoded_rule.RequireLookupBeforeCancel",
+            "params": {
+              "gated_tool": "modify_user_address",
+              "required_lookup_tool": "get_user_details",
+              "key_arg": "user_id"
+            }
+          }
+        ],
+        "standing": {
+          "account_change": {
+            "boundary": "account_change",
+            "max_count": 1,
+            "window": null,
+            "max_amount": null
+          },
+          "cancellation": {
+            "boundary": "cancellation",
+            "max_count": 2,
+            "window": null,
+            "max_amount": null
+          },
+          "payment_change": {
+            "boundary": "payment_change",
+            "max_count": 0,
+            "window": null,
+            "max_amount": null
+          },
+          "refund": {
+            "boundary": "refund",
+            "max_count": 1,
+            "window": null,
+            "max_amount": null
+          }
+        },
+        "manifest_sha256": "5d22a903788aa786982196e22ae459eed15d22cdde397e810bd1bcad11fb74bd"
+      }
+    }
   },
   "coverage": {
     "eu-ai-act:art-12": [
@@ -194,9 +261,9 @@
     {
       "signer": "local-ed25519",
       "algorithm": "ed25519",
-      "public_key": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAEwROoEOOuE1FNz+y6iT7W75dNeeL6Yc6FISRIhLA8Mw=\n-----END PUBLIC KEY-----\n",
-      "signature": "+J3QfvGpVmeofLW1fXGaDkMCRXBj+DBN1qkbcAXIWIFRq5SYnqbnRP8jpxpdDfGRRCTmLfx6rg0Xqdq2BoLZBg==",
-      "issued_at": "2026-07-30T07:03:10.164587Z"
+      "public_key": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEANKik8phVMYFmomku27+RVCFfEr3wwbN+VvRyhYK5y0Q=\n-----END PUBLIC KEY-----\n",
+      "signature": "6+xvOHJjNoSb9NKVg9hU2WcxZn/aCxkLCg8AUvA4tM52nxgcX7bUcBeCN/J4s2cgD7oYBvOGW9a11Z4AJWXEBw==",
+      "issued_at": "2026-11-09T12:41:18.826240Z"
     }
   ]
 }

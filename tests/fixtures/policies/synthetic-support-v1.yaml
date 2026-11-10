@@ -1,0 +1,12 @@
+# Synthetic placeholder policy for tests. NOT a bossyk policy: the real
+# policies live in the private bossyk checkout (BOSSYK_ROOT). It only has the
+# shape `policy.load_policy` expects, so provenance tests can hash and load
+# "some policy bytes" in CI.
+policy_id: synthetic-support-v1
+description: Synthetic support agent policy used only by tests
+authorised_goals:
+  - answer questions about a synthetic product
+prohibited_actions:
+  - do something the synthetic policy prohibits
+scope_note: >
+  Synthetic scope note. Exists so the file has every field the loader reads.

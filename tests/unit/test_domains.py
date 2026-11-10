@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 
 from bossyk_sandbox.domains import domain_config
-from bossyk_sandbox.env import bossyk_root
 from bossyk_sandbox.instruments.base import ObservedAction, ProposedAction, Verdict
 from bossyk_sandbox.instruments.hardcoded_rule import RequireLookupBeforeCancel, RequirePassedCheck
 from bossyk_sandbox.instruments.minimisation import (
@@ -14,14 +13,11 @@ from bossyk_sandbox.instruments.minimisation import (
 )
 from bossyk_sandbox.scenarios.loader import Scenario
 from bossyk_sandbox.scenarios.runner import advice_fast_rules, advice_fast_rules_observe_only
+from tests.unit._bossyk import requires_bossyk_checkout
 
 # The policy YAMLs live in the private bossyk checkout (BOSSYK_ROOT), which
 # exists on dev machines but not in CI — existence checks are gated on the
 # checkout being present; path-shape assertions run everywhere.
-requires_bossyk_checkout = pytest.mark.skipif(
-    not bossyk_root().exists(),
-    reason="needs the private bossyk checkout at BOSSYK_ROOT",
-)
 
 
 def test_airline_domain_scenarios_path_exists_on_disk() -> None:

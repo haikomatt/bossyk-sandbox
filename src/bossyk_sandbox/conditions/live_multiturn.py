@@ -163,4 +163,6 @@ def run_live_multiturn_retail_session(
         first_agent_message=as_assistant_message(GREETING),
         max_turns=max_turns,
     )
-    return _live_run_result(session, trace_id, agent_config_ref="live-h2h4-retail-multiturn@0.1")
+    return _live_run_result(
+        session, trace_id, agent_config_ref="live-h2h4-retail-multiturn@0.1", domain="retail"
+    )

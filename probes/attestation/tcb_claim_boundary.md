@@ -124,6 +124,45 @@ This is the paragraph to publish. Own the boundary and sell the ladder above
 it, rather than let a CISO or auditor discover the gap and break the pitch with
 it.
 
+## Policy provenance (what the manifest adds, and what it does not)
+
+`evidence/policy_provenance.py` binds a manifest of the policy the gate ran
+into `Trace.metadata["bossyk.policy_manifest"]`, inside the signed payload:
+the policy YAML hash, the instantiated fast rules, and the standing grants.
+`verify_policy_provenance` compares it with an approved manifest and reports
+a field-level diff (`tests/unit/test_policy_provenance.py`). A trace from a
+loosened config now passes signature verification and fails provenance.
+
+**Now proved:** a trace signed by the key and bound to a manifest was
+*declared* to have run under exactly that manifest, and an auditor holding an
+approved manifest can see what differs, field by field. The claim upgrades
+from "the gate decided this" to "the gate decided this *under the policy you
+approved*, as declared by the runtime".
+
+**Not proved:**
+
+1. **The manifest is still declared by the runtime** (blind spot #2). A
+   compromised runtime can write the approved manifest into the trace while
+   running something else. Provenance narrows the gap between a config change
+   and a clean-looking trace; it does not close the capture-fidelity gap
+   (rungs 3 to 5 above).
+2. **A predicate's source hash does not capture module-level globals it
+   reads.** Predicates (`RequirePassedCheck.predicate`) are identified by
+   `{module, qualname, source_sha256}` of `inspect.getsource`, so changing a
+   constant the function reads changes behaviour without changing the
+   manifest. The two current outreach predicates read none.
+3. **Live and console traces bind no policy YAML today.** The policy judge
+   (`PolicyInstrument`) runs only in the benchmark, so live and console traces
+   carry `policy_yaml_sha256: null` and verify with the `POLICY_NOT_LOADED`
+   note. What is pinned there is the fast rules and the standing grants. The
+   YAML hash binds only where a policy instrument actually loaded the file,
+   and then from the bytes it loaded, not from the path.
+4. The YAML drives the *slow, annotating* instrument. Gate decisions come
+   from the fast rules and standing, so all three belong in the manifest, but
+   the YAML hash alone says nothing about what the gate enforced.
+5. "No standing configured" is visible (`STANDING_NOT_CONFIGURED`), not
+   changed: such domains still run with no authority ceiling.
+
 ## Recommendation
 
 - **Publish the claim boundary now.** It is already slotted into the CISO

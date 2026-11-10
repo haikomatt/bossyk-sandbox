@@ -27,7 +27,9 @@ def _patch_broadcast_and_trace(monkeypatch: pytest.MonkeyPatch) -> list[Step]:
     async def _fake_broadcast(_event: dict[str, Any]) -> None:
         return None
 
-    def _fake_build_trace(*, trace_id: str, agent_config_ref: str, steps: list[Step]) -> None:
+    def _fake_build_trace(
+        *, trace_id: str, agent_config_ref: str, steps: list[Step], policy_manifest: object = None
+    ) -> None:
         captured_steps.extend(steps)
 
     monkeypatch.setattr(console_app, "_broadcast", _fake_broadcast)
@@ -184,7 +186,9 @@ def _patch_broadcast_events_and_trace(
     async def _fake_broadcast(event: dict[str, Any]) -> None:
         captured_events.append(event)
 
-    def _fake_build_trace(*, trace_id: str, agent_config_ref: str, steps: list[Step]) -> None:
+    def _fake_build_trace(
+        *, trace_id: str, agent_config_ref: str, steps: list[Step], policy_manifest: object = None
+    ) -> None:
         captured_steps.extend(steps)
 
     monkeypatch.setattr(console_app, "_broadcast", _fake_broadcast)

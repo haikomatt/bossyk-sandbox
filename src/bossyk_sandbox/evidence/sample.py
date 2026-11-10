@@ -22,8 +22,11 @@ from typing import Any
 
 from auditk.schema import EvidencePack, Trace
 
+from bossyk_sandbox.evidence.policy_provenance import manifest_for_domain
 from bossyk_sandbox.evidence.trace import build_trace, make_attested_step
 from bossyk_sandbox.instruments.base import Decision, ProposedAction, Verdict
+from bossyk_sandbox.scenarios.runner import retail_fast_rules
+from bossyk_sandbox.standing import retail_standing_grants
 
 SAMPLE_TRACE_ID = "bossyk-sample-attested-log"
 SAMPLE_AGENT_CONFIG_REF = "retail-support-demo@sample"
@@ -68,7 +71,14 @@ def build_sample_trace() -> Trace:
         step_id="sample-step-2-unauthorised-cancel",
         timestamp=_SAMPLE_EPOCH.replace(second=1),
     )
-    return build_trace(SAMPLE_TRACE_ID, SAMPLE_AGENT_CONFIG_REF, [lookup, unauthorised_cancel])
+    return build_trace(
+        SAMPLE_TRACE_ID,
+        SAMPLE_AGENT_CONFIG_REF,
+        [lookup, unauthorised_cancel],
+        policy_manifest=manifest_for_domain(
+            "retail", retail_fast_rules(), retail_standing_grants()
+        ),
+    )
 
 
 def stable_manifest(pack: EvidencePack) -> dict[str, Any]:
