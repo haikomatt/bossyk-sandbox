@@ -904,7 +904,10 @@ class TestHoldPath:
         (event,) = _events(config)
         assert (event["resolution"], event["resolved_verdict"]) == ("held_then_blocked", "block")
 
-    @pytest.mark.parametrize("on_hold, resolved", [("block", "block"), ("allow", "allow")])
+    # Decision D2 (fail-closed audit, Phase B): a configured approver that
+    # never answers is a BLOCK whatever the policy's on_hold says; on_hold
+    # only decides when NO approver is configured. Was ("allow", "allow").
+    @pytest.mark.parametrize("on_hold, resolved", [("block", "block"), ("allow", "block")])
     def test_approver_timeout_resolves_by_policy_default(
         self, config: GateProxyConfig, on_hold: str, resolved: str
     ) -> None:
