@@ -825,10 +825,8 @@ def test_unnamed_policy_guard_catches_a_resolver_that_defaults_to_allow() -> Non
 
 
 def unresolved_hold_violations(effective: Callable[[dict[str, Any]], str]) -> list[str]:
-    # Only the MISSING-key case is pinned here. A hold event carrying an
-    # explicit `"resolved_verdict": null` currently yields "None" (not
-    # "block"); the proxy never writes one, and it is reported in the
-    # phase's Issues & Fixes rather than fixed in this phase.
+    # The MISSING-key case. A present-but-null or otherwise unrecognised
+    # resolution is pinned separately (Issues & Fixes 10).
     event = {"kind": "tool_call", "verdict": "hold"}
     return [] if effective(event) == "block" else [f"unresolved hold -> {effective(event)!r}"]
 
@@ -839,6 +837,23 @@ def test_an_unresolved_hold_event_counts_as_block() -> None:
 
 def test_unresolved_hold_guard_catches_a_reader_that_counts_it_as_allowed() -> None:
     assert unresolved_hold_violations(lambda event: "allow") != []
+
+
+@pytest.mark.parametrize(
+    "resolved", [None, "", "maybe", "hold", "ALLOW", "None", 0, 1, True, [], {}]
+)
+def test_a_hold_whose_resolution_is_not_allow_or_block_counts_as_block(resolved: Any) -> None:
+    # Regression (Issues & Fixes 10): only "allow" and "block" are
+    # resolutions. A present-but-null or any other resolved_verdict is no
+    # answer, and no answer is a BLOCK -- not the string "None".
+    event = {"kind": "tool_call", "verdict": "hold", "resolved_verdict": resolved}
+    assert effective_verdict(event) == "block"
+
+
+@pytest.mark.parametrize("resolved", ["allow", "block"])
+def test_a_hold_resolved_to_allow_or_block_keeps_its_resolution(resolved: str) -> None:
+    event = {"kind": "tool_call", "verdict": "hold", "resolved_verdict": resolved}
+    assert effective_verdict(event) == resolved
 
 
 # =============================================================================
