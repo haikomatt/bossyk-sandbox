@@ -421,4 +421,5 @@ def test_a_gate_blocked_escalation_is_not_attributed_to_standing() -> None:
     for step in gate_blocked_escalations:
         assert step.action.payload["gate_verdict"] == "block"
         assert step.metadata["automatic_verdict"] == "block"
-        assert step.metadata.get("resolution_source") != "standing"
+        assert step.metadata["mode"] == "escalate"
+        assert step.metadata["resolution_source"] == "gate"

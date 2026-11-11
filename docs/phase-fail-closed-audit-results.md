@@ -195,5 +195,25 @@ use the bare-string resume, and Phase C introduces `override_source`.
    gate decided them, not standing: wrong provenance in the signed record
    (design rule 2). On `main` these steps carried no source at all. The
    verdict is right (block) and nothing executes, so enforcement is
-   unaffected. A regression test is written and shown failing, but not
-   committed. The fix waits on the choice of the right source.
+   unaffected.
+   - **Decision (Matt, "Yes, source gate").** A gate-blocked escalation
+     resumes with `{"verdict": "block", "mode": "escalate", "source": "gate"}`.
+     `"standing"` is used only when the gate ALLOWed and standing turned the
+     action into an escalation.
+   - **Red** (`b7c4cb7`): `test_a_gate_blocked_escalation_is_not_attributed_to_standing`
+     failed with `assert 'standing' != 'standing'`. It was written to fit
+     either candidate fix, so it asserted only "not standing".
+   - **Fix**: `resolve_held` picks the source from the gate's own verdict.
+   - **Test tightened after Green (documented reason).** Once the decision
+     fixed the expected value, the assertion changed from `!= "standing"` to
+     `== "gate"`, and it now also asserts `mode == "escalate"`. The loose form
+     would have passed for an absent or arbitrary source, so it pinned less
+     than the agreed behaviour.
+
+### Phase A final gate (before the PR)
+
+Run with the API keys exported empty and `RUN_SANDBOX_E2E=1`. ruff format:
+355 files already formatted. ruff check: clean. mypy over `src/` and
+`tests/`: no issues in 315 files. pytest: 1897 passed, 4 skipped. pytest
+with `BOSSYK_ROOT` set to a missing path: 1891 passed, 10 skipped. Nothing
+under `frontend/` changed, so the frontend build isn't part of this gate.

@@ -185,12 +185,17 @@ def resolve_held(
     the live loop, so it resolves to BLOCK (decision D1), resumed as a
     structured `{verdict, mode, source}` so the signed step records the mode
     and that standing (not a human) decided it. Anything else resumes with
-    the gate's own verdict (no human override); `defer` therefore executes."""
+    the gate's own verdict (no human override); `defer` therefore executes.
+
+    The source names who decided the block: `"gate"` when the gate itself
+    blocked an irreversible write, `"standing"` only when the gate ALLOWed and
+    standing authority turned it into an escalation."""
     if decision.mode == "escalate":
+        source = "gate" if gate_verdict is Verdict.BLOCK else "standing"
         return HeldResolution(
             final=Verdict.BLOCK,
             resume=Command(
-                resume={"verdict": Verdict.BLOCK.value, "mode": "escalate", "source": "standing"}
+                resume={"verdict": Verdict.BLOCK.value, "mode": "escalate", "source": source}
             ),
         )
     return HeldResolution(final=gate_verdict, resume=Command(resume=payload["auto_verdict"]))
