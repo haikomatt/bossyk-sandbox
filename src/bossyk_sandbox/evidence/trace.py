@@ -47,6 +47,8 @@ def make_attested_step(
     *,
     auto_decision: Decision,
     final_verdict: Verdict,
+    mode: str | None = None,
+    resolution_source: str | None = None,
     step_id: str | None = None,
     timestamp: datetime | None = None,
 ) -> Step:
@@ -55,12 +57,22 @@ def make_attested_step(
     decision) rather than the automatic decision alone.
 
     `overridden` is True whenever `final_verdict` differs from
-    `auto_decision.verdict`. The step's payload/metadata always reflect the
-    final verdict; `gate_reason` explains the automatic reasoning, prefixed
-    with a manual-override note when the human overrode it.
+    `auto_decision.verdict` and no `resolution_source` is given. The step's
+    payload/metadata always reflect the final verdict; `gate_reason` explains
+    the automatic reasoning, prefixed with a manual-override note when the
+    human overrode it.
+
+    `resolution_source` names a non-human component that decided the final
+    verdict (e.g. `"standing"` for an escalation resolved to BLOCK); it and
+    `mode` are recorded in metadata, and the step is NOT an override.
     """
-    overridden = final_verdict is not auto_decision.verdict
-    if overridden:
+    overridden = final_verdict is not auto_decision.verdict and resolution_source is None
+    if resolution_source is not None and final_verdict is not auto_decision.verdict:
+        reason = (
+            f"{mode or 'resolved'} by {resolution_source}: final {final_verdict.value} "
+            f"over automatic {auto_decision.verdict.value}: {auto_decision.reason}"
+        )
+    elif overridden:
         reason = (
             f"manual override of automatic {auto_decision.verdict.value}: {auto_decision.reason}"
         )
@@ -76,6 +88,10 @@ def make_attested_step(
     )
     step.metadata["automatic_verdict"] = auto_decision.verdict.value
     step.metadata["overridden"] = overridden
+    if mode is not None:
+        step.metadata["mode"] = mode
+    if resolution_source is not None:
+        step.metadata["resolution_source"] = resolution_source
     step.metadata[CONTROLS_METADATA_KEY] = [
         tag.model_dump()
         for tag in controls_for_step(proposed, final_verdict, overridden=overridden)

@@ -101,3 +101,70 @@ Modified test helper (mechanical, no assertion changed): in
 test can pass a structured resume.
 
 Full suite at Red: 8 failed (exactly the Red tests), 1886 passed, 6 skipped.
+
+### Green
+
+- `runtime/langgraph_agent.py`: `approve_node` accepts a dict resume
+  `{verdict, mode, source}` and stores `final_mode` / `final_source` in
+  state. A bare-string resume behaves as before (human override, or
+  acceptance of the automatic verdict). `execute_node` passes mode and source
+  to `make_attested_step`.
+- `evidence/trace.py::make_attested_step`: takes optional `mode` and
+  `resolution_source` and records both in step metadata. When a
+  `resolution_source` is given, the step is not an override: `overridden`
+  stays False, the reason says which component decided it
+  (`"escalate by standing: final block over automatic allow: ..."`), and no
+  `verdict:overridden` control is tagged.
+- `console/live.py::resume_after(payload, decision=None)`: when the mode is
+  `escalate`, it resumes with `{"verdict": "block", "mode": "escalate",
+  "source": "standing"}`. Otherwise it resumes with the gate's own verdict,
+  as before. `run_live_session` stops appending escalated actions to
+  standing history.
+- `console/app.py::_run_live_session`: computes the final verdict (BLOCK on
+  `escalate`), appends to history only on a final ALLOW, passes the decision
+  to `resume_after`, and sends the final verdict in the step event. The held
+  event's `auto_verdict` is still the gate's own verdict.
+
+No test changed in Green.
+
+Known limit (Phase C's job): a dict resume with `source: "human"` would also
+record `overridden=False`. No caller does this today. Human overrides still
+use the bare-string resume, and Phase C introduces `override_source`.
+
+### Green gate
+
+- `ruff format --check .`: 355 files already formatted. `ruff check --no-cache .`:
+  all checks passed. `mypy --explicit-package-bases src/ tests/`: no issues in
+  315 source files.
+- `pytest tests/ --no-cov -q` with `RUN_SANDBOX_E2E=1` and the API-key variables
+  exported empty: 1896 passed, 4 skipped.
+- Same run with `BOSSYK_ROOT` set to a path that doesn't exist (what CI sees):
+  1890 passed, 10 skipped.
+
+7. **Surprise: a nested worktree loads the main checkout's `.env`, and the
+   gate made two real model-API calls.** `tau2/utils/utils.py` calls
+   `load_dotenv()` with no arguments at import. That searches upward from
+   `.venv/…/tau2` and reaches `~/Projects/bossyk-sandbox/.env`, because this
+   worktree lives inside the main checkout at `.claude/worktrees/`. The first
+   gate run copied CI's `RUN_SANDBOX_E2E=1`, so
+   `tests/e2e/test_interp_behavioral_e2e.py` found a `FIREWORKS_API_KEY` and
+   called Fireworks, once in each of the two pytest runs. Both calls returned
+   `404 Model not found`, so no completion was served. Whether Fireworks bills
+   for that wasn't checked. This broke the scope's no-network rule. The fix,
+   from then on: run the gate with the key variables (`FIREWORKS_API_KEY`,
+   `AGENT_API_KEY`, `AGENT_BASE_URL`, `ANTHROPIC_API_KEY`, `HF_TOKEN`,
+   `RUNPOD_API_KEY`, `FIREWORKS_MODEL`) exported empty. `load_dotenv(override=False)`
+   then leaves them empty, the e2e test skips, and the run matches CI.
+   Follow-up, outside this scope: the test's own docstring says its gate is a
+   billable one, but `RUN_SANDBOX_E2E=1` (which CI sets) is the only thing
+   standing between it and a live call. A separate opt-in flag would close
+   that.
+8. **`BOSSYK_ROOT` pointing at an empty directory is not CI-faithful.**
+   `tests/unit/_bossyk.py::requires_bossyk_checkout` skips only when
+   `bossyk_root()` does not exist. An empty directory counts as present, so 6
+   private-checkout tests run and fail: the five
+   `test_domains.py::test_*_domain_policy_path_exists_on_disk` tests and
+   `test_policy_provenance.py::test_policy_instrument_with_the_real_bossyk_loader`.
+   Nothing in this phase touches those tests or the code they cover. CI has no
+   checkout at all, so the CI-faithful run uses a path that doesn't exist
+   (1890 passed, 10 skipped), as Phase B of the previous scope did.

@@ -69,6 +69,8 @@ class AgentState(TypedDict):
     auto_verdict: str | None
     auto_reason: str | None
     final_verdict: str | None
+    final_mode: str | None
+    final_source: str | None
 
 
 @dataclass
@@ -499,8 +501,17 @@ def _build_agent_session(
                 "auto_reason": state["auto_reason"],
             }
         )
+        # A bare verdict string is a human override (or acceptance of the
+        # automatic verdict); a dict `{verdict, mode, source}` is a final
+        # verdict some other component decided (e.g. standing escalation).
+        if isinstance(override, dict):
+            return {
+                "final_verdict": Verdict(override["verdict"]).value,
+                "final_mode": override.get("mode"),
+                "final_source": override.get("source"),
+            }
         final = Verdict(override) if override else Verdict(auto_verdict)
-        return {"final_verdict": final.value}
+        return {"final_verdict": final.value, "final_mode": None, "final_source": None}
 
     def execute_node(state: AgentState) -> dict[str, Any]:
         call = state["active_call"]
@@ -514,7 +525,12 @@ def _build_agent_session(
         final = Verdict(final_verdict_str)
 
         step = make_attested_step(
-            trace_id=trace_id, proposed=proposed, auto_decision=auto_decision, final_verdict=final
+            trace_id=trace_id,
+            proposed=proposed,
+            auto_decision=auto_decision,
+            final_verdict=final,
+            mode=state.get("final_mode"),
+            resolution_source=state.get("final_source"),
         )
         steps.append(step)
 
@@ -557,6 +573,8 @@ def _build_agent_session(
             "auto_verdict": None,
             "auto_reason": None,
             "final_verdict": None,
+            "final_mode": None,
+            "final_source": None,
         }
 
     def route_after_agent(state: AgentState) -> str:

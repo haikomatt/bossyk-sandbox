@@ -164,8 +164,14 @@ def sort_hitl_queue(queue: list[dict[str, str]]) -> list[dict[str, str]]:
     return sorted(queue, key=lambda item: SEVERITY_RANK.get(item["severity"], 99))
 
 
-def resume_after(payload: dict[str, object]) -> Command[Any]:
-    """Resume the graph enforcing the gate's own verdict (no human override)."""
+def resume_after(payload: dict[str, object], decision: ModeDecision | None = None) -> Command[Any]:
+    """Resume the graph enforcing the gate's own verdict (no human override).
+    An `escalate` has no approver in the live loop, so it resolves to BLOCK
+    (decision D1), recorded as decided by standing, not by a human."""
+    if decision is not None and decision.mode == "escalate":
+        return Command(
+            resume={"verdict": Verdict.BLOCK.value, "mode": "escalate", "source": "standing"}
+        )
     return Command(resume=payload["auto_verdict"])
 
 
@@ -217,9 +223,9 @@ def run_live_session(
         modes.append(decision.mode)
         if decision.mode == "escalate" and decision.hitl is not None:
             hitl_queue.append(hitl_item(payload, decision))
-        if verdict is Verdict.ALLOW:
+        if verdict is Verdict.ALLOW and decision.mode != "escalate":
             history.append(TimedAction(proposed, now, amount=amount))
-        inp = resume_after(payload)
+        inp = resume_after(payload, decision)
 
     return LiveResult(
         verdicts=verdicts,

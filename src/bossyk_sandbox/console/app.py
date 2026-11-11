@@ -322,7 +322,8 @@ async def _run_live_session(
             verdict, decision = resolve_call(
                 held, authority=authority_for(held, history, grants, now=now, amount=amount)
             )
-            if verdict is Verdict.ALLOW:
+            final = Verdict.BLOCK if decision.mode == "escalate" else verdict
+            if final is Verdict.ALLOW:
                 history.append(TimedAction(proposed, now, amount=amount))
             await _broadcast(
                 {
@@ -343,14 +344,14 @@ async def _run_live_session(
             # Advancing runs execute_node for THIS call (appending its attested
             # step) then pauses at the next held call (or END).
             payload = await asyncio.to_thread(
-                advance_to_interrupt, graph, resume_after(held), config
+                advance_to_interrupt, graph, resume_after(held, decision), config
             )
             step = agent_session.steps[i]
             step_event: dict[str, Any] = {
                 "type": "step",
                 "tool_name": held["tool_name"],
                 "arguments": held["arguments"],
-                "verdict": verdict.value,
+                "verdict": final.value,
                 "overridden": False,
                 "controls": _display_controls(step),
                 "label": held["tool_name"],
