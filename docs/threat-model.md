@@ -156,6 +156,28 @@ these domains; it is matched to the class of policy they generate. The single
 class-E line is the only one this architecture cannot reach, and it is stated
 below with its precise boundary rather than left looking like unfinished work.
 
+**A raw-shell or generic-HTTP tool is not class A at the tool-call layer.**
+Class A needs a finite witness *in what the monitor observes*. For a tool such
+as `bash(command)` or `http_request(url, body)`, the monitor observes argument
+text, and the effect is whatever the interpreter or the remote end makes of
+it. "No network egress" is a safety property of the *effects*, not of the
+command string. `c\url`, `$(printf 'cu%s' rl)`, a base64-decoded payload, a
+script written to disk and run later, or a URL in a variable all reach the
+network with no listed command token in the text. A predicate over the
+argument text is input-bound. It can catch the honest spelling, and it fails
+closed on a value it can't read (a present, non-string `command` blocks). It
+cannot decide the policy.
+
+So the gate-proxy packs' `class: A` label on a bash or HTTP predicate
+classifies the *predicate* (a finite witness in the string), not the policy
+it stands in for. For those tools the policy is class C as built: the witness
+is outside what the tool-call monitor observes. Enforcement has to move to
+the effect layer: network egress filtering, a filesystem sandbox, a
+syscall-level monitor. The tool-call gate there is a cheap first filter and
+an evidence source, not the control. (Tools with typed, narrow arguments,
+such as `cancel_pending_order(order_id)`, are where tool-call-layer class A
+is real.)
+
 ## Threat table (STRIDE x OWASP-LLM)
 
 | # | Threat | Class | Mitigation | Residual / evidence |
@@ -166,7 +188,7 @@ below with its precise boundary rather than left looking like unfinished work.
 | T4 | Tampering with monitor, policy, or record | Tampering | Ed25519 attestation + oracle binding (property 2) | Capture-fidelity gap, demonstrated and bounded in the TCB doc |
 | T5 | Confused deputy on standing privilege | Elevation / LLM08 | HOLD/HITL enforcement modes; standing-authority modes (Act 7) | HITL fatigue; authority scoping is policy, not code |
 | T6 | Exfiltration inside permitted calls | Info disclosure / LLM02 | Minimisation toggle in the advice domain (derived-only tool surface) | Utterance-side exfil is now partly governed (class B, phrase list only, outreach only). Cross-session leakage stays permanently ungoverned: class E, see out of scope |
-| T7 | Latency pressure forces fail-open | DoS / LLM04 | Two-speed gate; latency budget measured (latency-budget phase) | Fail-open/closed per tool class is a policy decision to document |
+| T7 | Latency pressure forces fail-open | DoS / LLM04 | Two-speed gate; latency budget measured (latency-budget phase); fail-closed defaults pinned (`tests/unit/test_fail_closed.py`) | Slow instruments, empty grants and a missing proxy argument stay fail-soft by design; see the TCB claim boundary, "Fail-closed defaults" |
 | T8 | Letter-vs-intent policy gap | Goodhart / LLM06 | SMACTR loop grows the threat model from caught failures (`governance/smactr.py`) | Coverage is never provably complete |
 | T9 | Repudiation of what was enforced | Repudiation | Signed evidence pack, offline-verifiable; auditk protocol on the audit side | Log integrity inherits T4's boundary |
 | T10 | Evade the detector while violating | Evasion / ATLAS | Enforcement does not depend on detection. Act 4: laundering the request fails (AUROC drop <= 0.001) because the violation *is* the mutation request; internals add nothing over text | Result is domain-specific; the probe stays a cheap cascade filter, never a control |

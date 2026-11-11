@@ -370,3 +370,46 @@ Gate (API keys exported empty, `RUN_SANDBOX_E2E=1`): ruff format reports
 `tests/` finds no issues in 316 files. pytest with `BOSSYK_ROOT` set to a
 missing path: 1956 passed, 10 skipped. That is 1933 from before, plus the 10
 Red cases now passing, plus the 13 item-10 cases.
+
+### Refactor (Phase B)
+
+No behaviour change and no change in test results. The gate is identical to
+Green: 1956 passed, 10 skipped; ruff and mypy clean.
+
+- `instruments/minimisation.py::score`: removed the now-redundant
+  `if isinstance(ref, str):` and dedented the width rule. The empty-string
+  ref is unchanged, as Matt asked: it is still treated as a string.
+- `tests/unit/test_fail_closed.py`: registry ids are now stable and
+  readable, `domain:Class[gated_tool]`, and minimisation ids add the required
+  band (e.g. `advice:MinimisationInstrument[is_income_above,band=50270]`).
+  The old ids used discovery-order suffixes (`#8` / `#9`). The sweep test now
+  asserts that ids are unique. No assertion was weakened.
+- `tests/unit/gateproxy/test_proxy.py`: renamed
+  `test_approver_timeout_resolves_by_policy_default` to
+  `test_approver_timeout_blocks_whatever_the_policy_default`. Only the name
+  changed (item 11).
+- Brought wording in line with D2 wherever it still said a timeout falls back
+  to `on_hold`: the `policies.py` comment, the `hold.py` module docstring and
+  `Approver` comment, the proxy's `--approver-timeout` help text, the
+  `test_hold.py` module docstring, and `docs/gateproxy.md`.
+
+### Docs (Phase B)
+
+- `probes/attestation/tcb_claim_boundary.md` has a new section, "Fail-closed
+  defaults (what is pinned, what is fail-soft, and durability)". It covers:
+  - what is pinned, from Phase A and B;
+  - what is fail-soft by design: slow instruments, empty grants, the
+    observe-only advice rules, a missing proxy argument (item 12), and
+    `on_hold: allow` with no approver;
+  - item 14: a signed `allow` event for a call never forwarded, because a
+    later call's instrument raised;
+  - durability: the proxy writes and closes each event before it responds,
+    without `fsync`; the live-agent trace is signed only at session end.
+- `docs/threat-model.md`:
+  - The Expressiveness section gains ARTEX item 2's line: a raw-shell or
+    generic-HTTP tool is not class A at the tool-call layer, and enforcement
+    for one must move to the effect layer. The section explains why, and
+    says the packs' `class: A` label on a bash or HTTP predicate classifies
+    the predicate, not the policy (class C as built).
+  - The T7 residual now points at the pinned defaults and the claim-boundary
+    section.

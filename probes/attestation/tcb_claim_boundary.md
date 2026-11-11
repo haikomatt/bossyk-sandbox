@@ -163,6 +163,84 @@ approved*, as declared by the runtime".
 5. "No standing configured" is visible (`STANDING_NOT_CONFIGURED`), not
    changed: such domains still run with no authority ceiling.
 
+## Fail-closed defaults (what is pinned, what is fail-soft, and durability)
+
+Design rule: **every effect requires an affirmative ALLOW.** No path may
+execute on a verdict it reached by default, timeout or exception; the absence
+of an answer is a BLOCK. These are properties of the code under test. They
+say nothing about the TCB above: a compromised runtime can skip them.
+
+**Pinned.** `tests/unit/test_fail_closed.py`, plus the Phase A tests in
+`test_live_session.py`, `test_console_live.py` and `test_langgraph_agent.py`.
+Every case that was already fail-closed is also shown failing against a
+deliberately broken variant.
+
+- **Escalation is enforced.** In both live console loops, an action whose
+  mode is `escalate` resolves to BLOCK when no approver answers. It never
+  reaches the toolkit and does not consume standing authority. Its signed
+  step says `block`, with `mode: escalate` and a `resolution_source` (`gate`
+  or `standing`), and it is not recorded as a human override.
+- **Registered fast rules never ALLOW their gated tool on hostile input.**
+  The fast rules are discovered from the domain registry, not sampled.
+  Hostile input means a missing, null or non-string key. A rule class with
+  no declared hostile-input surface fails the suite.
+- **Outcome-aware rules.** A predicate that raises, or a malformed observed
+  check result, never passes.
+- **A raising instrument has no effect.** `Gate` and `TwoSpeedGate`
+  propagate the exception before recording, the LangGraph session stops
+  before the toolkit, and the gate proxy returns 500 without forwarding any
+  tool call. The agent graph executes only on a final ALLOW; a resumed
+  `hold` or `block` never runs.
+- **Gate proxy.**
+  - A configured approver that does not answer resolves the hold to BLOCK,
+    whatever the policy's `on_hold` says.
+  - A hold on a policy the pack cannot name blocks.
+  - Unparseable tool arguments block.
+  - A governed argument (`command`, `path`) that is present but not a string
+    blocks.
+  - A hold event whose resolution is missing, null or unrecognised counts as
+    `block` in the scorecard and incident report.
+
+**Fail-soft by design.** Each of these is stated so that none can be mistaken
+for a fail-closed default:
+
+- **Slow instruments** (policy judge, drift) turn an exception or timeout
+  into an `error` label and never gate. They annotate; the gate decision is
+  identical with or without them.
+- **Empty grants.** A domain with no standing configured runs with no
+  authority ceiling. Provenance makes this visible
+  (`STANDING_NOT_CONFIGURED`) but doesn't change it; the default remains an
+  open decision.
+- **Observe-only advice rules.** `advice_fast_rules_observe_only` ALLOWs
+  every predicate call so that arms A/B can measure the unmitigated leak. It
+  is an explicit opt-in factory, registered in no domain, and it is a named
+  exemption in the fail-closed sweep.
+- **A missing proxy argument.** The gate-proxy rules are deny-list
+  predicates. A tool call with no `command` or `path` gives a rule nothing to
+  match, so that rule allows it. Only a *present*, non-string value is
+  refused.
+- **`on_hold: allow` with no approver configured** means "allow and log".
+
+**Record versus effect.**
+
+- **A log line can read `allow` for an action that never happened.** The
+  gate proxy signs and appends each tool call's event as it scores the
+  response. Suppose a later call in the same response hits an instrument
+  that raises. The request then fails with 500 and nothing is forwarded, but
+  the earlier call's signed event already says `allow`. This is still fail
+  closed (no effect), but that signed `allow` is a decision, not proof the
+  action ran.
+- **Durability.**
+  - The proxy writes each signed event line, closing the file, before it
+    returns the response, so the ordering is record-before-effect. There is
+    no `fsync`, so an OS crash or power loss can still lose the last lines.
+  - The live agent builds its steps in memory and signs the trace once, at
+    session end. A crash mid-session loses the record of actions that already
+    executed.
+  - Until there is a write-ahead journal (out of scope here), the live-agent
+    claim is "the signed record of a *completed* session", not "a signed
+    record of every executed action".
+
 ## Recommendation
 
 - **Publish the claim boundary now.** It is already slotted into the CISO
