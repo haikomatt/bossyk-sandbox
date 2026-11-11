@@ -30,8 +30,9 @@ from bossyk_sandbox.instruments.base import (
 _SUPPORTED_PACK_VERSION = 1
 
 # `on_match` is what a matching policy line asks the gate for; `on_hold`
-# is how a HOLD resolves when no approver answers. Both default to block:
-# a pack must opt in to holding, and a hold nobody answers fails closed.
+# is how a HOLD resolves when NO approver is configured. Both default to
+# block: a pack must opt in to holding. A configured approver that does not
+# answer is always a block, whatever `on_hold` says (decision D2).
 _ON_MATCH_VALUES = frozenset({"block", "hold"})
 _ON_HOLD_VALUES = frozenset({"block", "allow"})
 _POLICY_META_KEYS = frozenset({"id", "type", "class", "trap", "on_match", "on_hold"})

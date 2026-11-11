@@ -908,7 +908,7 @@ class TestHoldPath:
     # never answers is a BLOCK whatever the policy's on_hold says; on_hold
     # only decides when NO approver is configured. Was ("allow", "allow").
     @pytest.mark.parametrize("on_hold, resolved", [("block", "block"), ("allow", "block")])
-    def test_approver_timeout_resolves_by_policy_default(
+    def test_approver_timeout_blocks_whatever_the_policy_default(
         self, config: GateProxyConfig, on_hold: str, resolved: str
     ) -> None:
         body = openai_response(tool_calls=[_RM_CALL])

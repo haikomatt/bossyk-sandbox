@@ -108,8 +108,19 @@ def registered_fast_rules() -> list[tuple[str, Instrument]]:
                 if key in seen:
                     continue
                 seen.add(key)
-                rules.append((f"{domain}:{type(rule).__name__}#{len(rules)}", rule))
+                rules.append((_rule_id(domain, rule), rule))
     return rules
+
+
+def _rule_id(domain: str, rule: Any) -> str:
+    """A stable, readable test id: domain, class and the tool the rule gates
+    (plus the required band for a minimisation rule, whose instances differ
+    only by scenario config). Independent of discovery order."""
+    if isinstance(rule, MinimisationInstrument):
+        detail = f"{rule.config.predicate_tool_name},band={rule.config.required_band_width_gbp:.0f}"
+    else:
+        detail = str(getattr(rule, "gated_tool", "?"))
+    return f"{domain}:{type(rule).__name__}[{detail}]"
 
 
 REGISTERED = registered_fast_rules()
@@ -200,6 +211,8 @@ def fail_open_cases(rules: Sequence[Any]) -> list[str]:
 def test_the_fast_rule_registry_sweep_is_not_empty() -> None:
     classes = {type(rule) for _id, rule in REGISTERED}
     assert {RequireLookupBeforeCancel, RequirePassedCheck, MinimisationInstrument} <= classes
+    ids = [rule_id for rule_id, _rule in REGISTERED]
+    assert len(ids) == len(set(ids))  # every discovered rule gets its own stable id
 
 
 def test_every_registered_fast_rule_has_a_declared_hostile_input_surface() -> None:

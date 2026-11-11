@@ -7,7 +7,9 @@ JSON on stdin; exit 0 approves, any other exit denies) or a URL (JSON
 POST; the response body's ``decision`` is ``allow`` or ``block``). Each
 hook has a timeout. A timeout, a missing command, an HTTP error or an
 unrecognised answer all yield ``None`` -- "no decision" -- and the proxy
-resolves the hold by the policy's own ``on_hold`` default. The approver is
+resolves the hold to BLOCK (no answer is a block, whatever the policy's
+``on_hold`` says; ``on_hold`` only decides when no approver is configured).
+The approver is
 only ever shown what the signed event already records about the action.
 
 This is the mechanism behind an AI Act Art. 14 human-oversight
@@ -40,7 +42,7 @@ class HoldRequest:
 
 
 # True approves, False denies, None means no decision was reached (timeout
-# or failure) and the policy's `on_hold` default applies.
+# or failure) and the hold resolves to BLOCK.
 Approver = Callable[[HoldRequest], bool | None]
 
 

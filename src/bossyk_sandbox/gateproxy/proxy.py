@@ -445,7 +445,7 @@ def build_config(argv: list[str]) -> GateProxyConfig:
         "--approver-timeout",
         type=float,
         default=30.0,
-        help="Seconds to wait for the approver before the policy's on_hold default applies.",
+        help="Seconds to wait for the approver; no answer in time blocks the held action.",
     )
     import os
     import shlex
