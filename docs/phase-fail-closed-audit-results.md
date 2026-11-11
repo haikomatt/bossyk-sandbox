@@ -168,3 +168,32 @@ use the bare-string resume, and Phase C introduces `override_source`.
    Nothing in this phase touches those tests or the code they cover. CI has no
    checkout at all, so the CI-faithful run uses a path that doesn't exist
    (1890 passed, 10 skipped), as Phase B of the previous scope did.
+
+### Refactor
+
+- `console/live.py`: `resume_after` is replaced by
+  `resolve_held(payload, gate_verdict, decision) -> HeldResolution(final, resume)`.
+  This is now the one place a gate verdict and a derived mode become the
+  final verdict and the graph resume. Both loops call it, and both use
+  `resolution.final` for standing history (and, in the async loop, for the
+  step event). That closes the drift Green left behind: one loop tested
+  `verdict is ALLOW and mode != "escalate"`, the other computed its own
+  `final`. `resume_after` had no other callers.
+- Docstrings in `live.py` (module) and `app.py::_run_live_session` no longer
+  say a held call is "resumed with its automatic verdict".
+- No behaviour or test change. The gate result is identical to Green:
+  1896 passed / 4 skipped with keys blanked and `RUN_SANDBOX_E2E=1`;
+  1890 passed / 10 skipped with `BOSSYK_ROOT` set to a missing path. ruff
+  and mypy are clean.
+
+9. **Bug found in Refactor (Green regression; not fixed yet, awaiting a
+   decision).** `derive_mode` also yields `escalate` for *gate BLOCK +
+   irreversible write*, such as a refund without a prior lookup. Green's
+   resume (kept unchanged by the refactor) sends every `escalate` as
+   `{"verdict": "block", "mode": "escalate", "source": "standing"}`, so those
+   gate-blocked steps are signed with `resolution_source: "standing"`. The
+   gate decided them, not standing: wrong provenance in the signed record
+   (design rule 2). On `main` these steps carried no source at all. The
+   verdict is right (block) and nothing executes, so enforcement is
+   unaffected. A regression test is written and shown failing, but not
+   committed. The fix waits on the choice of the right source.
