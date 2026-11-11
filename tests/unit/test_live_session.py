@@ -403,3 +403,22 @@ def test_a_deferred_cancel_still_executes() -> None:
     ]
     assert cancelled == ["#A", "#B", "#C"]
     assert result.steps[-1].action.payload["gate_verdict"] == "allow"
+
+
+def test_a_gate_blocked_escalation_is_not_attributed_to_standing() -> None:
+    # Regression (Phase A Issues & Fixes 9): a refund / payment change with no
+    # prior lookup is BLOCKed by the gate itself, then derives `escalate`
+    # because it is irreversible. Its signed step must not claim standing
+    # decided it -- no grants are even configured here.
+    session = build_retail_agent_session(llm=_scripted_llm(), environment=_FakeEnv())
+
+    result = run_live_session(session)  # grants=None
+
+    gate_blocked_escalations = [
+        step for step, mode in zip(result.steps, result.modes, strict=True) if mode == "escalate"
+    ]
+    assert len(gate_blocked_escalations) == 2
+    for step in gate_blocked_escalations:
+        assert step.action.payload["gate_verdict"] == "block"
+        assert step.metadata["automatic_verdict"] == "block"
+        assert step.metadata.get("resolution_source") != "standing"
