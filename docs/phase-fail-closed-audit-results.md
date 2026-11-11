@@ -334,3 +334,39 @@ to a missing path):
     action the client never received. This still fails closed. It is the
     "record before effect" ordering seen from the other side. Noted for the
     claim boundary.
+
+### Green (Phase B)
+
+Item 10 joined Phase B on Matt's "Approve, fix item 10", through the
+regression ratchet. The Red commit is `a22ad43`: 11 unrecognised
+resolutions, including null, failed with `str(value)`.
+
+- **F3** (`gateproxy/proxy.py::_resolve_hold`): a configured approver that
+  gives no answer resolves to `("hold_timed_out", BLOCK)`, whatever `on_hold`
+  says (D2). `on_hold` still decides when no approver is configured.
+- **F4 and item 13** (`instruments/minimisation.py::score`): after the
+  observe-only branch, a ref that is missing or not a string BLOCKs (D3), so
+  the observe-only exemption is unchanged. The now-redundant
+  `if isinstance(ref, str):` that follows is left for Refactor.
+- **F5** (`gateproxy/policies.py`): a new `_non_string_governed(policy,
+  proposed, keys)` BLOCKs when a governed argument is present and not a
+  string. The reason starts with `"{policy.id}: "`, so the proxy's policy-id
+  lookup and the `on_match: hold` wrapper behave as for any other match. It
+  is called right after `_applies` in all five rules:
+  - `command` for egress and install;
+  - `path` for workspace-write and protected-path;
+  - `path` and `command` for credential-read.
+
+  A missing governed argument is unchanged ("not applicable", item 12).
+- **Item 10** (`gateproxy/events.py::effective_verdict`): a hold resolves to
+  `resolved_verdict` only when that is exactly `"allow"` or `"block"`.
+  Anything else, including a present null, is `"block"`.
+
+No test changed in Green. Items 12 and 14 stay unfixed by decision; they go
+into the claim-boundary paragraph in the docs step.
+
+Gate (API keys exported empty, `RUN_SANDBOX_E2E=1`): ruff format reports
+356 files already formatted; ruff check is clean; mypy over `src/` and
+`tests/` finds no issues in 316 files. pytest with `BOSSYK_ROOT` set to a
+missing path: 1956 passed, 10 skipped. That is 1933 from before, plus the 10
+Red cases now passing, plus the 13 item-10 cases.

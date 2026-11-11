@@ -53,7 +53,8 @@ def effective_verdict(event: dict[str, Any]) -> str:
     verdict = str(event.get("verdict", ""))
     if verdict != "hold":
         return verdict
-    return str(event.get("resolved_verdict", "block"))
+    resolved = event.get("resolved_verdict")
+    return resolved if resolved in ("allow", "block") else "block"
 
 
 def load_events(path: Path) -> list[dict[str, Any]]:

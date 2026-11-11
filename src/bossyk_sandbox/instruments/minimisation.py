@@ -344,6 +344,11 @@ class MinimisationInstrument:
         # blocking on a count would stop a legitimate-but-inefficient agent
         # before it had learned the band at all.
         ref = proposed.arguments.get(self.config.key_arg)
+        if not isinstance(ref, str):
+            return Decision(
+                Verdict.BLOCK,
+                f"{self.config.predicate_tool_name} requires a string {self.config.key_arg}",
+            )
         if isinstance(ref, str):
             achieved = narrow_interval(
                 predicate_calls_for_ref(history, ref=ref, config=self.config)
