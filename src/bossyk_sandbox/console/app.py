@@ -24,7 +24,7 @@ from bossyk_sandbox.console.live import (
     initial_input,
     order_reader_from_toolkit,
     resolve_call,
-    resume_after,
+    resolve_held,
     sort_hitl_queue,
     thread_config,
 )
@@ -294,8 +294,9 @@ async def _run_live_session(
     LangGraph graph (offloading each blocking LLM segment to a thread), derive
     the resolution mode per held call from the gate's own verdict, and broadcast
     the same event shape as the preset replay. Enforces the gate — a held call is
-    resumed with its automatic verdict, never a human override — so no blocked
-    tool executes. BILLABLE: `agent_session` runs a real LLM per turn.
+    resumed with its final verdict from `live.resolve_held` (the gate's own
+    verdict, or BLOCK for an `escalate`), never a human override — so no
+    blocked or escalated tool executes. BILLABLE: `agent_session` runs a real LLM per turn.
 
     `reader` (an `OrderReader` adapted from the live tau2 environment via
     `order_reader_from_toolkit`) resolves each held call's amount for §F's
@@ -322,7 +323,8 @@ async def _run_live_session(
             verdict, decision = resolve_call(
                 held, authority=authority_for(held, history, grants, now=now, amount=amount)
             )
-            if verdict is Verdict.ALLOW:
+            resolution = resolve_held(held, verdict, decision)
+            if resolution.final is Verdict.ALLOW:
                 history.append(TimedAction(proposed, now, amount=amount))
             await _broadcast(
                 {
@@ -343,14 +345,14 @@ async def _run_live_session(
             # Advancing runs execute_node for THIS call (appending its attested
             # step) then pauses at the next held call (or END).
             payload = await asyncio.to_thread(
-                advance_to_interrupt, graph, resume_after(held), config
+                advance_to_interrupt, graph, resolution.resume, config
             )
             step = agent_session.steps[i]
             step_event: dict[str, Any] = {
                 "type": "step",
                 "tool_name": held["tool_name"],
                 "arguments": held["arguments"],
-                "verdict": verdict.value,
+                "verdict": resolution.final.value,
                 "overridden": False,
                 "controls": _display_controls(step),
                 "label": held["tool_name"],

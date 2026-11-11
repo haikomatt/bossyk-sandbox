@@ -83,7 +83,7 @@ def _run_to_completion(
     session: AirlineAgentSession,
     *,
     thread_id: str,
-    resume_values: dict[str, str] | None = None,
+    resume_values: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Invoke the graph to completion, resuming every interrupt encountered.
 
@@ -207,6 +207,75 @@ def test_manual_block_over_automatic_allow_does_not_execute_and_attests_honestly
     assert step.action.payload["gate_verdict"] == "block"
     assert step.metadata["automatic_verdict"] == "allow"
     assert step.metadata["overridden"] is True
+
+
+# --- Phase A: a structured resume carries the final verdict's mode + source --
+# The live console resumes an `escalate` with BLOCK (decision D1). That block
+# comes from standing authority, not a human, so the signed step must say
+# `block` with the mode and source in metadata and must NOT claim a manual
+# override (S2). The bare-string resume (`"allow"` / `"block"`) stays the
+# human-override path, unchanged (see the two manual-override tests above).
+
+
+def _single_lookup_session(toolkit: _CountingToolkit, trace_id: str) -> AirlineAgentSession:
+    llm = _ScriptedLLM(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    _tool_call("get_reservation_details", {"reservation_id": "R1"}, "call-1")
+                ],
+            ),
+            AIMessage(content="done"),
+        ]
+    )
+    return build_airline_agent_session(
+        trace_id=trace_id, llm=llm, environment=_FakeEnvironment(tools=toolkit)
+    )
+
+
+def test_a_standing_block_resume_does_not_execute_and_is_not_a_manual_override() -> None:
+    toolkit = _CountingToolkit()
+    session = _single_lookup_session(toolkit, "t-standing-block")
+
+    _result, payloads = _run_to_completion(
+        session,
+        thread_id="standing-block",
+        resume_values={"call-1": {"verdict": "block", "mode": "escalate", "source": "standing"}},
+    )
+
+    assert payloads[0]["auto_verdict"] == "allow"
+    assert toolkit.call_count("get_reservation_details", reservation_id="R1") == 0
+    assert session.gate is not None
+    assert session.gate.history == []
+    step = session.steps[0]
+    assert step.action.payload["gate_verdict"] == "block"
+    assert step.metadata["automatic_verdict"] == "allow"
+    assert step.metadata["mode"] == "escalate"
+    assert step.metadata["resolution_source"] == "standing"
+    assert step.metadata["overridden"] is False
+    assert not str(step.action.payload["gate_reason"]).startswith("manual override")
+    bases = {tag["basis"] for tag in step.metadata["bossyk_sandbox_controls"]}
+    assert "verdict:blocked" in bases
+    assert "verdict:overridden" not in bases
+
+
+def test_a_structured_allow_resume_executes_and_records_its_mode() -> None:
+    toolkit = _CountingToolkit()
+    session = _single_lookup_session(toolkit, "t-structured-allow")
+
+    _result, _payloads = _run_to_completion(
+        session,
+        thread_id="structured-allow",
+        resume_values={"call-1": {"verdict": "allow", "mode": "defer", "source": "standing"}},
+    )
+
+    assert toolkit.call_count("get_reservation_details", reservation_id="R1") == 1
+    step = session.steps[0]
+    assert step.action.payload["gate_verdict"] == "allow"
+    assert step.metadata["mode"] == "defer"
+    assert step.metadata["resolution_source"] == "standing"
+    assert step.metadata["overridden"] is False
 
 
 def test_a_tool_that_raises_never_enters_history() -> None:

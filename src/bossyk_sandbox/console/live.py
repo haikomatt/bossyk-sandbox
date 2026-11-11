@@ -3,10 +3,10 @@ mode per proposed tool call.
 
 `run_live_session` is the pure, deterministic core (the analogue of
 `replay.drive_replay`): it drives the real agent graph's interrupt chain,
-resumes each held call with the gate's OWN verdict (enforcing the gate -- no
-human override, so a blocked write never executes), derives the resolution mode
-from that verdict + the tool's consequence, and accumulates the hard-cell HITL
-queue.
+derives the resolution mode from the gate's OWN verdict + the tool's
+consequence + standing authority, resumes each held call with the final verdict
+from `resolve_held` (no human override: a blocked write never executes, and an
+`escalate` resolves to BLOCK), and accumulates the hard-cell HITL queue.
 
 It is billable ONLY when the injected agent session was built with a real LLM
 client; built with a fake LLM + fake tau2 env it runs entirely offline (see
@@ -164,9 +164,41 @@ def sort_hitl_queue(queue: list[dict[str, str]]) -> list[dict[str, str]]:
     return sorted(queue, key=lambda item: SEVERITY_RANK.get(item["severity"], 99))
 
 
-def resume_after(payload: dict[str, object]) -> Command[Any]:
-    """Resume the graph enforcing the gate's own verdict (no human override)."""
-    return Command(resume=payload["auto_verdict"])
+@dataclass(frozen=True)
+class HeldResolution:
+    """How one held call resolves in a live loop: the FINAL verdict (what the
+    toolkit, standing history and the signed step all see) and the graph
+    resume that enforces it."""
+
+    final: Verdict
+    resume: Command[Any]
+
+
+def resolve_held(
+    payload: dict[str, object], gate_verdict: Verdict, decision: ModeDecision
+) -> HeldResolution:
+    """The single place both live loops (`run_live_session` and the console's
+    async `_run_live_session`) turn a gate verdict + derived mode into the
+    final verdict, so they cannot drift.
+
+    Every effect needs an affirmative ALLOW. An `escalate` has no approver in
+    the live loop, so it resolves to BLOCK (decision D1), resumed as a
+    structured `{verdict, mode, source}` so the signed step records the mode
+    and that standing (not a human) decided it. Anything else resumes with
+    the gate's own verdict (no human override); `defer` therefore executes.
+
+    The source names who decided the block: `"gate"` when the gate itself
+    blocked an irreversible write, `"standing"` only when the gate ALLOWed and
+    standing authority turned it into an escalation."""
+    if decision.mode == "escalate":
+        source = "gate" if gate_verdict is Verdict.BLOCK else "standing"
+        return HeldResolution(
+            final=Verdict.BLOCK,
+            resume=Command(
+                resume={"verdict": Verdict.BLOCK.value, "mode": "escalate", "source": source}
+            ),
+        )
+    return HeldResolution(final=gate_verdict, resume=Command(resume=payload["auto_verdict"]))
 
 
 def run_live_session(
@@ -217,9 +249,10 @@ def run_live_session(
         modes.append(decision.mode)
         if decision.mode == "escalate" and decision.hitl is not None:
             hitl_queue.append(hitl_item(payload, decision))
-        if verdict is Verdict.ALLOW:
+        resolution = resolve_held(payload, verdict, decision)
+        if resolution.final is Verdict.ALLOW:
             history.append(TimedAction(proposed, now, amount=amount))
-        inp = resume_after(payload)
+        inp = resolution.resume
 
     return LiveResult(
         verdicts=verdicts,

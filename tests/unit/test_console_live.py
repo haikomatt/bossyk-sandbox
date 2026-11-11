@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -155,3 +156,163 @@ def test_start_live_session_reports_no_api_key_when_enabled_but_keyless(
     result = asyncio.run(_drive())
     assert result == {"status": "no_api_key"}
     assert not console_app._sessions  # nothing scheduled
+
+
+# --- Phase A: escalation is enforced in the async live loop too ---------------
+# Same contract as `test_live_session.py`'s Phase A block, for the console's
+# own loop (`console_app._run_live_session`): an `escalate` with no approver
+# resolves to BLOCK (decision D1), so the action never executes, its signed
+# step and its step event say `block` with mode `escalate`, and it does not
+# consume standing authority. `defer` still executes.
+
+
+class _RecordingToolkit:
+    """Records every executed call; optionally carries `.db.orders` (as the
+    real `RetailTools` does) so `order_reader_from_toolkit` can price refunds."""
+
+    def __init__(self, orders: dict[str, Any] | None = None) -> None:
+        self.db = SimpleNamespace(orders=orders or {})
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    def use_tool(self, name: str, **args: Any) -> str:
+        self.calls.append((name, args))
+        return f"ok:{name}"
+
+    def get_tools(self) -> dict[str, Any]:
+        return {}
+
+
+class _RecordingEnv:
+    policy = "You are a retail support agent."
+
+    def __init__(self, orders: dict[str, Any] | None = None) -> None:
+        self.tools = _RecordingToolkit(orders)
+
+
+def _priced_order(item_id: str, price: float) -> Any:
+    return SimpleNamespace(
+        items=[SimpleNamespace(item_id=item_id, price=price)], payment_history=[]
+    )
+
+
+def _looked_up_calls(tool: str, order_ids: list[str]) -> list[dict[str, Any]]:
+    calls: list[dict[str, Any]] = []
+    for n, order_id in enumerate(order_ids, start=1):
+        args: dict[str, Any] = {"order_id": order_id}
+        if tool == "return_delivered_order_items":
+            args |= {"item_ids": [f"item-{n}"], "payment_method_id": "gift_card_1"}
+        calls.append({"name": "get_order_details", "args": {"order_id": order_id}, "id": f"l{n}"})
+        calls.append({"name": tool, "args": args, "id": f"w{n}"})
+    return calls
+
+
+def _drive_live(
+    monkeypatch: pytest.MonkeyPatch,
+    calls: list[dict[str, Any]],
+    env: _RecordingEnv,
+    *,
+    reader: Any = None,
+) -> tuple[list[dict[str, Any]], list[Step]]:
+    events = _patch_broadcast(monkeypatch)
+    llm = _FakeLLM([AIMessage(content="", tool_calls=calls), AIMessage(content="done")])
+    agent_session = build_retail_agent_session(llm=llm, environment=env)
+
+    async def _drive() -> None:
+        session = console_app.ConsoleSession(session_id="live-test")
+        console_app._sessions["live-test"] = session
+        await console_app._run_live_session(session, agent_session, reader=reader, pacing_s=0.0)
+
+    asyncio.run(_drive())
+    return events, list(agent_session.steps)
+
+
+def _executed(env: _RecordingEnv, tool: str) -> list[str]:
+    return [str(args["order_id"]) for name, args in env.tools.calls if name == tool]
+
+
+def test_live_console_never_executes_an_escalated_refund(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # retail_standing_grants(): refund max_count=1 -> the 2nd refund is over
+    # standing and irreversible -> escalate.
+    env = _RecordingEnv()
+    events, _steps = _drive_live(
+        monkeypatch, _looked_up_calls("return_delivered_order_items", ["#R1", "#R2"]), env
+    )
+
+    steps = [e for e in events if e["type"] == "step"]
+    assert [s["mode"] for s in steps] == ["allow", "allow", "allow", "escalate"]
+    assert _executed(env, "return_delivered_order_items") == ["#R1"]
+
+
+def test_live_console_signs_an_escalated_refund_as_a_standing_block(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    env = _RecordingEnv()
+    events, steps = _drive_live(
+        monkeypatch, _looked_up_calls("return_delivered_order_items", ["#R1", "#R2"]), env
+    )
+
+    escalated = steps[-1]
+    assert escalated.action.payload["gate_verdict"] == "block"
+    assert escalated.metadata["automatic_verdict"] == "allow"
+    assert escalated.metadata["mode"] == "escalate"
+    assert escalated.metadata["resolution_source"] == "standing"
+    assert escalated.metadata["overridden"] is False
+
+    # The held event still shows what the gate itself said; the step event
+    # (what the control room renders as the outcome) shows the final verdict.
+    held = [e for e in events if e["type"] == "held"]
+    step_events = [e for e in events if e["type"] == "step"]
+    assert held[-1]["auto_verdict"] == "allow"
+    assert step_events[-1]["verdict"] == "block"
+    assert step_events[-1]["mode"] == "escalate"
+    assert step_events[-1]["overridden"] is False
+
+
+def test_live_console_escalated_refund_does_not_consume_standing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Amount-gated grant: 60 ok, +60 = 120 > 100 escalates (blocked), then 30
+    # must see 60 + 30 = 90, not 150.
+    from bossyk_sandbox.console.live import order_reader_from_toolkit
+    from bossyk_sandbox.standing import StandingGrant
+
+    monkeypatch.setattr(
+        console_app,
+        "retail_standing_grants",
+        lambda: {"refund": StandingGrant(boundary="refund", max_count=10, max_amount=100.0)},
+    )
+    orders = {
+        "#R1": _priced_order("item-1", 60.0),
+        "#R2": _priced_order("item-2", 60.0),
+        "#R3": _priced_order("item-3", 30.0),
+    }
+    env = _RecordingEnv(orders)
+    events, _steps = _drive_live(
+        monkeypatch,
+        _looked_up_calls("return_delivered_order_items", ["#R1", "#R2", "#R3"]),
+        env,
+        reader=order_reader_from_toolkit(env.tools),
+    )
+
+    steps = [e for e in events if e["type"] == "step"]
+    assert [s["mode"] for s in steps] == ["allow", "allow", "allow", "escalate", "allow", "allow"]
+    assert _executed(env, "return_delivered_order_items") == ["#R1", "#R3"]
+
+
+def test_live_console_still_executes_a_deferred_cancel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # retail_standing_grants(): cancellation max_count=2 -> the 3rd cancel is
+    # over standing but reversible -> defer (accept + async-approve).
+    env = _RecordingEnv()
+    events, steps = _drive_live(
+        monkeypatch, _looked_up_calls("cancel_pending_order", ["#A", "#B", "#C"]), env
+    )
+
+    step_events = [e for e in events if e["type"] == "step"]
+    assert step_events[-1]["mode"] == "defer"
+    assert step_events[-1]["verdict"] == "allow"
+    assert _executed(env, "cancel_pending_order") == ["#A", "#B", "#C"]
+    assert steps[-1].action.payload["gate_verdict"] == "allow"

@@ -264,3 +264,162 @@ def test_run_live_session_without_a_reader_never_resolves_amounts() -> None:
     session = build_retail_agent_session(llm=_scripted_llm(), environment=_FakeEnv())
     result = run_live_session(session)  # grants=None, reader=None
     assert result.modes == ["allow", "redirect", "escalate", "step-up", "escalate"]
+
+
+# --- Phase A: escalation is enforced, not advisory -----------------------------
+# `derive_mode` says `escalate` means "a human must decide". With no approver
+# in the live loop, that must resolve to BLOCK (decision D1): the action never
+# reaches the toolkit, its signed step says `block` with the mode and the
+# source of that final verdict, and it does not consume standing authority.
+# `defer` (over authority but reversible) is accept + async-approve by design,
+# so it must still execute -- the fix cannot over-block.
+
+
+class _RecordingPricedToolkit(_PricedToolkit):
+    """`_PricedToolkit` that also records every executed call, so a test can
+    assert which effects actually happened rather than which modes were
+    derived."""
+
+    def __init__(self, orders: dict[str, Any]) -> None:
+        super().__init__(orders)
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    def use_tool(self, name: str, **args: Any) -> str:
+        self.calls.append((name, args))
+        return super().use_tool(name, **args)
+
+
+class _RecordingPricedEnv:
+    policy = "You are a retail support agent."
+
+    def __init__(self, orders: dict[str, Any]) -> None:
+        self.tools = _RecordingPricedToolkit(orders)
+
+
+def _looked_up_refunds_llm(order_ids: list[str]) -> _FakeLLM:
+    """One lookup + one refund per order (each refund gate-ALLOWed); order
+    `#Rn` returns `item-n`."""
+    calls: list[dict[str, Any]] = []
+    for n, order_id in enumerate(order_ids, start=1):
+        calls.append({"name": "get_order_details", "args": {"order_id": order_id}, "id": f"l{n}"})
+        calls.append(
+            {
+                "name": "return_delivered_order_items",
+                "args": {
+                    "order_id": order_id,
+                    "item_ids": [f"item-{n}"],
+                    "payment_method_id": "gift_card_1",
+                },
+                "id": f"r{n}",
+            }
+        )
+    return _FakeLLM([AIMessage(content="", tool_calls=calls), AIMessage(content="done")])
+
+
+def _executed_refunds(toolkit: _RecordingPricedToolkit) -> list[str]:
+    return [
+        str(args["order_id"])
+        for name, args in toolkit.calls
+        if name == "return_delivered_order_items"
+    ]
+
+
+def _refund_budget_run(prices: list[float]) -> tuple[LiveResult, _RecordingPricedToolkit]:
+    order_ids = [f"#R{n}" for n in range(1, len(prices) + 1)]
+    orders = {
+        order_id: _priced_order(f"item-{n}", price)
+        for n, (order_id, price) in enumerate(zip(order_ids, prices, strict=True), start=1)
+    }
+    env = _RecordingPricedEnv(orders)
+    session = build_retail_agent_session(llm=_looked_up_refunds_llm(order_ids), environment=env)
+    grants = {"refund": StandingGrant(boundary="refund", max_count=10, max_amount=100.0)}
+    result = run_live_session(session, grants=grants, reader=order_reader_from_toolkit(env.tools))
+    return result, env.tools
+
+
+def test_an_escalated_refund_never_reaches_the_toolkit() -> None:
+    result, toolkit = _refund_budget_run([60.0, 60.0])
+
+    assert result.modes == ["allow", "allow", "allow", "escalate"]
+    assert _executed_refunds(toolkit) == ["#R1"]
+
+
+def test_an_escalated_refund_is_signed_as_a_standing_block_not_a_manual_override() -> None:
+    result, _toolkit = _refund_budget_run([60.0, 60.0])
+
+    escalated = result.steps[-1]
+    assert escalated.action.payload["tool_name"] == "return_delivered_order_items"
+    assert escalated.action.payload["gate_verdict"] == "block"
+    assert escalated.metadata["gate_verdict"] == "block"
+    assert escalated.metadata["automatic_verdict"] == "allow"
+    assert escalated.metadata["mode"] == "escalate"
+    assert escalated.metadata["resolution_source"] == "standing"
+    # Standing decided this, not a human: no override claimed anywhere.
+    assert escalated.metadata["overridden"] is False
+    assert not str(escalated.action.payload["gate_reason"]).startswith("manual override")
+    bases = {tag["basis"] for tag in escalated.metadata["bossyk_sandbox_controls"]}
+    assert "verdict:blocked" in bases
+    assert "verdict:overridden" not in bases
+
+
+def test_an_escalated_refund_does_not_consume_standing_authority() -> None:
+    # 60 is within the 100 budget; the second 60 would make 120 -> escalated
+    # (blocked). If that blocked refund still counted, the third refund (30)
+    # would make 150 and escalate too; it must instead see 60 + 30 = 90.
+    result, toolkit = _refund_budget_run([60.0, 60.0, 30.0])
+
+    assert result.modes == ["allow", "allow", "allow", "escalate", "allow", "allow"]
+    assert _executed_refunds(toolkit) == ["#R1", "#R3"]
+
+
+class _RecordingToolkit(_FakeToolkit):
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    def use_tool(self, name: str, **args: Any) -> str:
+        self.calls.append((name, args))
+        return super().use_tool(name, **args)
+
+
+class _RecordingEnv:
+    policy = "You are a retail support agent."
+
+    def __init__(self) -> None:
+        self.tools = _RecordingToolkit()
+
+
+def test_a_deferred_cancel_still_executes() -> None:
+    # Over standing but reversible -> defer = accept + async-approve. The fix
+    # for escalate must not turn this into a block.
+    env = _RecordingEnv()
+    session = build_retail_agent_session(llm=_standing_scenario_llm(), environment=env)
+    grants = {"cancellation": StandingGrant("cancellation", max_count=2)}
+
+    result = run_live_session(session, grants=grants)
+
+    assert result.modes[-1] == "defer"
+    cancelled = [
+        args["order_id"] for name, args in env.tools.calls if name == "cancel_pending_order"
+    ]
+    assert cancelled == ["#A", "#B", "#C"]
+    assert result.steps[-1].action.payload["gate_verdict"] == "allow"
+
+
+def test_a_gate_blocked_escalation_is_not_attributed_to_standing() -> None:
+    # Regression (Phase A Issues & Fixes 9): a refund / payment change with no
+    # prior lookup is BLOCKed by the gate itself, then derives `escalate`
+    # because it is irreversible. Its signed step must not claim standing
+    # decided it -- no grants are even configured here.
+    session = build_retail_agent_session(llm=_scripted_llm(), environment=_FakeEnv())
+
+    result = run_live_session(session)  # grants=None
+
+    gate_blocked_escalations = [
+        step for step, mode in zip(result.steps, result.modes, strict=True) if mode == "escalate"
+    ]
+    assert len(gate_blocked_escalations) == 2
+    for step in gate_blocked_escalations:
+        assert step.action.payload["gate_verdict"] == "block"
+        assert step.metadata["automatic_verdict"] == "block"
+        assert step.metadata["mode"] == "escalate"
+        assert step.metadata["resolution_source"] == "gate"
