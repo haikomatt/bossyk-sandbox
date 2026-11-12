@@ -217,3 +217,199 @@ Run with the API keys exported empty and `RUN_SANDBOX_E2E=1`. ruff format:
 `tests/`: no issues in 315 files. pytest: 1897 passed, 4 skipped. pytest
 with `BOSSYK_ROOT` set to a missing path: 1891 passed, 10 skipped. Nothing
 under `frontend/` changed, so the frontend build isn't part of this gate.
+
+## Phase B: fail-closed defaults pinned
+
+### Red / pin
+
+The new `tests/unit/test_fail_closed.py` follows the standing-integrity
+pattern: each guard is a function that returns its violations. Every guard
+that pins behaviour which is already fail-closed has a `*_catches_*` test
+that runs it against a deliberately broken variant and expects a violation.
+
+What the file covers:
+
+- **Registry sweep (design rule 5).** Every fast rule a `domains.py` factory
+  builds, both with no scenario and for each shipped scenario. That is 13
+  distinct rules: 9 `RequireLookupBeforeCancel`, 2 `RequirePassedCheck` and
+  2 `MinimisationInstrument`.
+  - Each rule is tried with these hostile inputs: missing, null, int, bool,
+    list and dict key; and `arguments=None`.
+  - Each input runs twice: with an empty history, and with a history where
+    the prerequisite tool was called with the same hostile arguments.
+  - The rule must never ALLOW the tool it gates. A raise is not counted
+    here; it is pinned as "no effect" separately.
+  - A rule class with no declared surface fails
+    `test_every_registered_fast_rule_has_a_declared_hostile_input_surface`.
+    The guard is shown catching an undeclared class and two broken rules: one
+    that allows a missing key, and one that compares raw non-string values.
+- **S4.** `advice_fast_rules_observe_only` is a named, asserted exemption.
+  It has a stated reason, no registered domain uses it, and the test asserts
+  it really does fail open.
+- **`RequirePassedCheck`.** A raising predicate never ALLOWs, and neither do
+  12 malformed observed results. Broken variants: a rule that treats an error
+  as a pass, and a lenient predicate.
+- **An instrument that raises has no effect.**
+  - `Gate.score` and `TwoSpeedGate.process` raise, and the TwoSpeedGate
+    history stays empty.
+  - The LangGraph session stops before the toolkit is called.
+  - The gate proxy returns 500 and forwards no tool call.
+  - Broken variant: a `Gate.score` that swallows the exception and ALLOWs.
+    It is caught at all three layers.
+- **Slow instruments.** A raise and a timeout both become `error` labels, and
+  the gate decision is identical to the fast gate's alone (one BLOCK case,
+  one ALLOW case). Broken variant: a `TwoSpeedGate` whose `_gather` lets the
+  failure escape.
+- **Holds.**
+  - A hold on a policy the pack can't name BLOCKs (broken variant: a resolver
+    that ALLOWs).
+  - An unresolved hold event (no `resolved_verdict` key) counts as `block`
+    (broken variant: a reader that counts it as allow).
+  - D2 boundary, pinned so F3's fix stays narrow: with no approver
+    configured, `on_hold: allow` still means allow and log.
+- **Unparseable proxy arguments** take the "unparseable (fail closed)" path,
+  both at the parser and end to end. Broken variant: a parser that defaults
+  to `{}`.
+- **Agent graph.** It executes only on a final ALLOW: a resumed `hold` or
+  `block` never reaches the toolkit. Broken variant: an agent-module
+  `Verdict` that parses `hold` as ALLOW.
+
+Red on `main`, as intended:
+
+- **F4**: `test_no_registered_fast_rule_allows_its_gated_tool_on_hostile_input`
+  fails for both advice `MinimisationInstrument` instances. Six hostile cases
+  are ALLOWed: missing, null, int, bool, list and dict ref.
+- **F5**: `test_every_proxy_rule_refuses_a_present_non_string_governed_argument`
+  fails for all five compiler types. Examples: `command=["curl", …]` on
+  `no-network-egress`, and `path=123` on `workspace-write-boundary`.
+- **F3**: `test_an_approver_that_never_answers_resolves_to_block[allow]` fails
+  with `('hold_timed_out', ALLOW)`. The end-to-end
+  `test_the_proxy_forwards_nothing_when_the_approver_times_out_under_on_hold_allow`
+  fails because the proxy forwarded `['bash']`.
+- The existing
+  `gateproxy/test_proxy.py::TestHoldPath::test_approver_timeout_resolves_by_policy_default[allow-…]`
+  also fails. See item 11.
+
+Gate at Red (API keys exported empty, `RUN_SANDBOX_E2E=1`, `BOSSYK_ROOT` set
+to a missing path):
+
+- ruff format and check: clean.
+- mypy over `src/` and `tests/`: no issues in 316 files.
+- pytest: 10 failed (exactly the cases above), 1933 passed, 10 skipped.
+
+### Issues & Fixes (Phase B)
+
+10. **Already-fail-closed claim that does not hold, reported and not fixed
+    here.** `gateproxy/events.py::effective_verdict` returns `"block"` for a
+    hold event with no `resolved_verdict` key. For a hold carrying an
+    explicit `"resolved_verdict": null`, it returns the string `"None"`:
+    `event.get(key, "block")` only covers the missing key. The proxy itself
+    never writes such an event, because every HOLD it logs has a resolved
+    verdict. But a log from another writer, or one edited by hand, would
+    produce `"None"` in the scorecard and incident report, which is neither
+    blocked nor allowed. Following the scope's instruction, only the
+    missing-key case is pinned. The null case needs Matt's call: fix it in
+    Phase B Green, or log it as a follow-up.
+11. **Existing test changed in Red (documented, D2).**
+    `test_approver_timeout_resolves_by_policy_default` parametrised
+    `("allow", "allow")`: it encoded F3 itself. It is now `("allow", "block")`,
+    with a comment citing D2. Its name ("resolves by policy default") no
+    longer describes the timeout case. Renaming it is a Refactor item.
+12. **F5's contract applies to present arguments only.** The proxy rules are
+    deny-list predicates, so a *missing* governed argument still means "not
+    applicable" and is ALLOWed. A tool call with no `command` or `path` gives
+    the rule nothing to match. F5 covers only an argument that is present and
+    not a string, including JSON `null`. `CredentialReadRule` governs both
+    `path` and `command` on each of its tools.
+13. **F4's scope.** Following D3 ("matching the other rules"),
+    `MinimisationInstrument` is expected to BLOCK a missing ref as well as a
+    non-string one, as the precondition rules do. An empty-string ref is not
+    in the hostile set for any rule. The precondition rules already block it;
+    minimisation treats it as a string.
+14. **Audit-record note (from reading the code, not tested).** In the proxy,
+    each tool call's event is signed and appended inside the loop. If the
+    instrument for a *later* call in the same response raises, the request
+    returns 500 and nothing is forwarded. The earlier call's signed
+    `tool_call` event still says `allow`, so the log records an allow for an
+    action the client never received. This still fails closed. It is the
+    "record before effect" ordering seen from the other side. Noted for the
+    claim boundary.
+
+### Green (Phase B)
+
+Item 10 joined Phase B on Matt's "Approve, fix item 10", through the
+regression ratchet. The Red commit is `a22ad43`: 11 unrecognised
+resolutions, including null, failed with `str(value)`.
+
+- **F3** (`gateproxy/proxy.py::_resolve_hold`): a configured approver that
+  gives no answer resolves to `("hold_timed_out", BLOCK)`, whatever `on_hold`
+  says (D2). `on_hold` still decides when no approver is configured.
+- **F4 and item 13** (`instruments/minimisation.py::score`): after the
+  observe-only branch, a ref that is missing or not a string BLOCKs (D3), so
+  the observe-only exemption is unchanged. The now-redundant
+  `if isinstance(ref, str):` that follows is left for Refactor.
+- **F5** (`gateproxy/policies.py`): a new `_non_string_governed(policy,
+  proposed, keys)` BLOCKs when a governed argument is present and not a
+  string. The reason starts with `"{policy.id}: "`, so the proxy's policy-id
+  lookup and the `on_match: hold` wrapper behave as for any other match. It
+  is called right after `_applies` in all five rules:
+  - `command` for egress and install;
+  - `path` for workspace-write and protected-path;
+  - `path` and `command` for credential-read.
+
+  A missing governed argument is unchanged ("not applicable", item 12).
+- **Item 10** (`gateproxy/events.py::effective_verdict`): a hold resolves to
+  `resolved_verdict` only when that is exactly `"allow"` or `"block"`.
+  Anything else, including a present null, is `"block"`.
+
+No test changed in Green. Items 12 and 14 stay unfixed by decision; they go
+into the claim-boundary paragraph in the docs step.
+
+Gate (API keys exported empty, `RUN_SANDBOX_E2E=1`): ruff format reports
+356 files already formatted; ruff check is clean; mypy over `src/` and
+`tests/` finds no issues in 316 files. pytest with `BOSSYK_ROOT` set to a
+missing path: 1956 passed, 10 skipped. That is 1933 from before, plus the 10
+Red cases now passing, plus the 13 item-10 cases.
+
+### Refactor (Phase B)
+
+No behaviour change and no change in test results. The gate is identical to
+Green: 1956 passed, 10 skipped; ruff and mypy clean.
+
+- `instruments/minimisation.py::score`: removed the now-redundant
+  `if isinstance(ref, str):` and dedented the width rule. The empty-string
+  ref is unchanged, as Matt asked: it is still treated as a string.
+- `tests/unit/test_fail_closed.py`: registry ids are now stable and
+  readable, `domain:Class[gated_tool]`, and minimisation ids add the required
+  band (e.g. `advice:MinimisationInstrument[is_income_above,band=50270]`).
+  The old ids used discovery-order suffixes (`#8` / `#9`). The sweep test now
+  asserts that ids are unique. No assertion was weakened.
+- `tests/unit/gateproxy/test_proxy.py`: renamed
+  `test_approver_timeout_resolves_by_policy_default` to
+  `test_approver_timeout_blocks_whatever_the_policy_default`. Only the name
+  changed (item 11).
+- Brought wording in line with D2 wherever it still said a timeout falls back
+  to `on_hold`: the `policies.py` comment, the `hold.py` module docstring and
+  `Approver` comment, the proxy's `--approver-timeout` help text, the
+  `test_hold.py` module docstring, and `docs/gateproxy.md`.
+
+### Docs (Phase B)
+
+- `probes/attestation/tcb_claim_boundary.md` has a new section, "Fail-closed
+  defaults (what is pinned, what is fail-soft, and durability)". It covers:
+  - what is pinned, from Phase A and B;
+  - what is fail-soft by design: slow instruments, empty grants, the
+    observe-only advice rules, a missing proxy argument (item 12), and
+    `on_hold: allow` with no approver;
+  - item 14: a signed `allow` event for a call never forwarded, because a
+    later call's instrument raised;
+  - durability: the proxy writes and closes each event before it responds,
+    without `fsync`; the live-agent trace is signed only at session end.
+- `docs/threat-model.md`:
+  - The Expressiveness section gains ARTEX item 2's line: a raw-shell or
+    generic-HTTP tool is not class A at the tool-call layer, and enforcement
+    for one must move to the effect layer. The section explains why, and
+    says the packs' `class: A` label on a bash or HTTP predicate classifies
+    the predicate, not the policy (class C as built).
+  - The T7 residual now points at the pinned defaults and the claim-boundary
+    section.

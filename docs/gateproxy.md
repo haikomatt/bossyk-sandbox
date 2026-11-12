@@ -181,22 +181,25 @@ policies:
   - id: destructive-shell
     type: network-egress        # any predicate type can be held
     on_match: hold              # default: block
-    on_hold: block              # what a hold nobody answers resolves to; default: block
+    on_hold: block              # how a hold resolves with NO approver configured; default: block
     tools: [bash]
     commands: [rm]
 ```
 
 A `pi --print` batch run has no human at a console, so the decision comes
-from an **approver hook** configured on the gate, and a hold falls back to
-the policy's own `on_hold` default when no approver is configured or the
-approver does not answer in time:
+from an **approver hook** configured on the gate. With no approver
+configured, a hold resolves by the policy's own `on_hold` default (so
+`on_hold: allow` means "allow and log"). With an approver configured, an
+approver that does not answer in time, fails or gives an unrecognised
+answer resolves the hold to **block**, whatever `on_hold` says: the absence
+of an answer is never a go-ahead.
 
 ```bash
 python -m bossyk_sandbox.gateproxy ... \
   --approver-cmd "./approve.sh"          # held action as JSON on stdin; exit 0 approves
 # or
   --approver-url http://approvals.internal/hold   # JSON POST; reply {"decision": "allow"|"block"}
-  --approver-timeout 30                  # seconds; then on_hold applies
+  --approver-timeout 30                  # seconds; no answer in time blocks
 ```
 
 The approver sees only what the signed event already records about the

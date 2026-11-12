@@ -5,9 +5,9 @@ non-interactive batch run there is no human at a console, so the approver
 is either an external command (JSON on stdin; exit 0 approves, any other
 exit denies) or a URL (JSON POST; the body's ``decision`` is ``allow`` or
 ``block``). Either hook has a timeout; on timeout or failure the approver
-answers ``None`` and the proxy falls back to the policy's ``on_hold``
-default. The approver never sees anything the signed event does not
-already carry.
+answers ``None`` and the proxy resolves the hold to BLOCK (decision D2:
+``on_hold`` only decides when no approver is configured). The approver
+never sees anything the signed event does not already carry.
 """
 
 from __future__ import annotations

@@ -30,8 +30,9 @@ from bossyk_sandbox.instruments.base import (
 _SUPPORTED_PACK_VERSION = 1
 
 # `on_match` is what a matching policy line asks the gate for; `on_hold`
-# is how a HOLD resolves when no approver answers. Both default to block:
-# a pack must opt in to holding, and a hold nobody answers fails closed.
+# is how a HOLD resolves when NO approver is configured. Both default to
+# block: a pack must opt in to holding. A configured approver that does not
+# answer is always a block, whatever `on_hold` says (decision D2).
 _ON_MATCH_VALUES = frozenset({"block", "hold"})
 _ON_HOLD_VALUES = frozenset({"block", "allow"})
 _POLICY_META_KEYS = frozenset({"id", "type", "class", "trap", "on_match", "on_hold"})
@@ -162,6 +163,20 @@ def _applies(policy: GatePolicy, proposed: ProposedAction) -> bool:
     return proposed.tool_name in tools
 
 
+def _non_string_governed(
+    policy: GatePolicy, proposed: ProposedAction, keys: tuple[str, ...]
+) -> Decision | None:
+    """BLOCK when a governed argument is present but not a string: a value
+    the predicate cannot read must not be read as "no match"."""
+    for key in keys:
+        if key in proposed.arguments and not isinstance(proposed.arguments[key], str):
+            return Decision(
+                Verdict.BLOCK,
+                f"{policy.id}: governed argument {key!r} is not a string (fail closed)",
+            )
+    return None
+
+
 def _path_argument(proposed: ProposedAction) -> str | None:
     value = proposed.arguments.get("path")
     return str(value) if value is not None else None
@@ -181,6 +196,8 @@ class NetworkEgressRule:
     ) -> Decision:
         if not _applies(self.policy, proposed):
             return _ALLOW
+        if refused := _non_string_governed(self.policy, proposed, ("command",)):
+            return refused
         command = str(proposed.arguments.get("command", ""))
         commands = set(self.policy.config.get("commands") or [])
         hit = next((t for t in _command_tokens(command) if t in commands), None)
@@ -203,6 +220,8 @@ class PackageInstallRule:
     ) -> Decision:
         if not _applies(self.policy, proposed):
             return _ALLOW
+        if refused := _non_string_governed(self.policy, proposed, ("command",)):
+            return refused
         tokens = _command_tokens(str(proposed.arguments.get("command", "")))
         allowed = set(self.policy.config.get("allowed_packages") or [])
         for start in range(len(tokens)):
@@ -237,6 +256,8 @@ class WorkspaceWriteBoundaryRule:
     ) -> Decision:
         if not _applies(self.policy, proposed):
             return _ALLOW
+        if refused := _non_string_governed(self.policy, proposed, ("path",)):
+            return refused
         raw = _path_argument(proposed)
         if raw is None:
             return _ALLOW
@@ -263,6 +284,8 @@ class CredentialReadRule:
     ) -> Decision:
         if not _applies(self.policy, proposed):
             return _ALLOW
+        if refused := _non_string_governed(self.policy, proposed, ("path", "command")):
+            return refused
         haystack = str(proposed.arguments.get("path") or proposed.arguments.get("command") or "")
         patterns = self.policy.config.get("patterns") or []
         hit = next((p for p in patterns if p in haystack), None)
@@ -285,6 +308,8 @@ class ProtectedPathEditRule:
     ) -> Decision:
         if not _applies(self.policy, proposed):
             return _ALLOW
+        if refused := _non_string_governed(self.policy, proposed, ("path",)):
+            return refused
         raw = _path_argument(proposed)
         if raw is None:
             return _ALLOW

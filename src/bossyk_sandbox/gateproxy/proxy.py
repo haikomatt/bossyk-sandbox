@@ -132,12 +132,12 @@ def _resolve_hold(
 ) -> tuple[str, Verdict]:
     """(resolution, verdict) for a held action. With no approver configured
     the policy's `on_hold` default decides outright; with one, its answer
-    decides, and no answer (timeout/failure) falls back to that default.
-    A hold on a policy the pack cannot name fails closed."""
+    decides, and no answer (timeout/failure) is a BLOCK whatever `on_hold`
+    says (decision D2). A hold on a policy the pack cannot name fails closed."""
     default = Verdict(policy.on_hold) if policy is not None else Verdict.BLOCK
     answer = approver(request) if approver is not None else None
     if approver is not None and answer is None:
-        return "hold_timed_out", default
+        return "hold_timed_out", Verdict.BLOCK
     resolved = default if answer is None else (Verdict.ALLOW if answer else Verdict.BLOCK)
     return ("held_then_allowed" if resolved is Verdict.ALLOW else "held_then_blocked"), resolved
 
@@ -445,7 +445,7 @@ def build_config(argv: list[str]) -> GateProxyConfig:
         "--approver-timeout",
         type=float,
         default=30.0,
-        help="Seconds to wait for the approver before the policy's on_hold default applies.",
+        help="Seconds to wait for the approver; no answer in time blocks the held action.",
     )
     import os
     import shlex
