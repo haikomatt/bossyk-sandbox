@@ -632,3 +632,60 @@ The work is in two commits, Green and then the test sweep, as the scope's
 Risks section asks. The tree between them is not gated: the Green commit
 alone fails the 47 swept sites with `TypeError`. The gate above ran on the
 combined tree.
+
+### Refactor (Phase C)
+
+No behaviour change. Every source string is byte-identical, and no test
+changed: the Red pins, the scorecard golden and the D4 sweep are untouched.
+
+- **One table.** `gateproxy/policies.py`'s `_COMPILERS` now maps each
+  policy type to the rule class it compiles to. `_RULE_CLASSES` is gone.
+  Compilation is `_COMPILERS[policy.type].compile(policy, root)`. Tests use
+  only the table's keys, which did not change.
+- **One source formatter.** The five proxy rules now derive from a new
+  frozen-dataclass base, `_PolicyRule`, which holds:
+  - the `policy` field;
+  - the single `source` property;
+  - a `compile` classmethod;
+  - an abstract `score`.
+
+  `WorkspaceWriteBoundaryRule` and `ProtectedPathEditRule` derive from
+  `_WorkspaceRule`, which adds `workspace_root` and its `compile`. The
+  `"<RuleClass>:<policy.id>"` string is spelled once, in `_rule_source`,
+  which both the rule's `source` and `policy_source(policy)` use.
+- **Small tidy.**
+  - `_non_string_governed` now takes the rule, which supplies both its
+    policy id and its source, instead of both separately.
+  - The `HoldOnMatch` docstring no longer says the policy-id reason prefix
+    is what attributes a hold; it is the source now.
+- Left alone: `RequireLookupBeforeCancel` and `RequirePassedCheck` still each
+  have their own one-line `source` property. They share no base class, and
+  adding one is beyond Phase C.
+
+### Docs (Phase C)
+
+- `probes/attestation/tcb_claim_boundary.md` has a new section, "Decision
+  provenance (who decided, in the signed record)". It covers:
+  - the source of every decision kind;
+  - `decision_source` (the automatic decision, never overwritten) versus
+    `override_source: "human"` and `resolution_source`;
+  - the proxy's `policy_id` now coming from source, and the item-18 gap;
+  - the limit: a source is a label the gate's own code writes, inside the
+    TCB.
+- `docs/gateproxy.md`, "How the evidence fits together", has a new paragraph,
+  "Which policy decided".
+
+### Issues & Fixes (Phase C, continued)
+
+20. **The evidence sample's public key changed.** The export script mints a
+    fresh signing key on every run and commits only the public half. So
+    regenerating `docs/bench_output/evidence_pack_sample.*` (item 17)
+    replaced `evidence_pack_sample.pub`. The committed pack and trace verify
+    against the new key (`test_committed_sample_trace_verifies_offline`).
+    Anything outside this repo that pinned the old key, or a signature made
+    with it, will no longer match. Nothing inside the repo cites the old key.
+21. **Squash-merge the Phase C PR.** The Green commit (e803bb9) does not pass
+    the suite on its own. It makes `Decision.source` required, so the 47
+    existing test sites raise `TypeError` until the sweep commit (a190121)
+    lands. The gate passes only on the pair (and after Refactor). Merging
+    commit by commit would leave a red commit on `main`.

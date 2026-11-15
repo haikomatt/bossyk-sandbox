@@ -61,6 +61,20 @@ two different components, that have to agree. A gate log that claims
 blocks the trace doesn't show is surfaced as **NOT corroborated**, in
 red, on the scorecard.
 
+**Which policy decided.** Every decision a policy rule makes carries a
+structured `source`, `"<RuleClass>:<policy.id>"` (for example
+`NetworkEgressRule:no-network-egress`). A `hold` keeps the source of the rule
+it wraps. The `policy_id` on each signed event, and so on the scorecard, is
+the policy whose source the decision carries. It is never parsed out of the
+reason text, which stays human-readable only. A decision no policy made has
+`policy_id: null`: unparseable arguments are
+`gateproxy:unparseable-arguments`, and a call nothing blocked is
+`gate:default`. The agent-side signed trace goes further. Each step records
+`decision_source` (who made the automatic decision), plus
+`override_source: "human"` when a person overrode it, or `resolution_source`
+when a component such as standing authority resolved it. See
+`probes/attestation/tcb_claim_boundary.md`, "Decision provenance".
+
 ## Which layer owns which risk
 
 | Trap | What it is | Policy | Layer |

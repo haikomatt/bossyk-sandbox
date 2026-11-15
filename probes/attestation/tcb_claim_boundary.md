@@ -241,6 +241,46 @@ for a fail-closed default:
     claim is "the signed record of a *completed* session", not "a signed
     record of every executed action".
 
+## Decision provenance (who decided, in the signed record)
+
+Every gate decision carries a structured, required `source`. Nothing reads
+provenance back out of the human-readable `reason`. `tests/unit/test_decision_source.py`
+pins this, including an AST guard over `src/` that fails on any
+`.reason.startswith(...)`, `.reason.split(...)`, slice or `in` test.
+
+- **Sources.**
+
+  | What decided | `source` |
+  |---|---|
+  | A fast rule | `"<RuleClass>:<id>"`, e.g. `RequireLookupBeforeCancel:cancel_pending_order` or `MinimisationInstrument:is_income_above,band=50270`. The id is distinct within a gate. |
+  | A gate-proxy rule | `"<RuleClass>:<policy.id>"`; a `hold` keeps it |
+  | The utterance rule | `ProhibitedPhraseRule:prohibited-financial-promotion` |
+  | No instrument blocked or held | `gate:default`, so it is distinguishable from a rule's own ALLOW |
+  | The proxy's unparseable-arguments block | `gateproxy:unparseable-arguments` |
+- **Signed steps.**
+  - `decision_source` in step metadata is the source of the *automatic*
+    decision. It is never overwritten.
+  - `override_source: "human"` records that a human override changed the
+    final verdict.
+  - `resolution_source` (`gate` or `standing`, with `mode`) records that a
+    component, not a human, resolved it, as in a Phase A escalation.
+  - The final verdict's source is therefore `override_source`, else
+    `resolution_source`, else `decision_source`. All three sit inside the
+    signed step, and editing any of them breaks the trace signature.
+- **Gate proxy.** The `policy_id` on each signed event is the policy whose
+  rule source the decision carries. It used to be matched against a prefix of
+  the reason, which a reason beginning with another policy's id would
+  misattribute. The events do not carry `decision_source` itself (a logged
+  follow-up), so an unparseable-arguments block and a `gate:default` allow
+  both appear as `policy_id: null`.
+- **Limit.** A source is a label the gate's own code writes. It says which
+  component the record attributes the decision to, not that the component
+  was correct or unmodified. A compromised runtime (see the TCB above) can
+  write any source. The policy manifest binds *which policy* ran; the
+  source names *which rule in it* decided. The committed evidence sample's
+  two hand-written decisions say `sample:hand-authored` rather than name a
+  rule that never ran.
+
 ## Recommendation
 
 - **Publish the claim boundary now.** It is already slotted into the CISO
