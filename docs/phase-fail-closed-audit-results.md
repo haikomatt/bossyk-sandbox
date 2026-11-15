@@ -413,3 +413,279 @@ Green: 1956 passed, 10 skipped; ruff and mypy clean.
     the predicate, not the policy (class C as built).
   - The T7 residual now points at the pinned defaults and the claim-boundary
     section.
+
+## Phase C: decision source in signed steps
+
+Branch `feature/decision-source`, cut from origin/main 0795006 (Phase B merge).
+
+### Red
+
+New file `tests/unit/test_decision_source.py`. 41 tests: 36 fail on `main`,
+5 pass by design. Golden fixture: `tests/fixtures/gateproxy/scorecard-example-pack.html`.
+
+| Area | Test(s) | Pins | Red failure on `main` |
+|---|---|---|---|
+| D4 | `test_decision_declares_a_required_source_field`, `test_a_decision_without_a_source_is_refused` | `Decision.source` exists with no default; omitting it is a `TypeError` | "Decision has no source field"; "DID NOT RAISE TypeError" |
+| Fast rules | `test_every_registered_fast_rule_names_itself_as_the_source` (13, from the registry), `test_observe_only_advice_rules_name_themselves_too` | every decision a rule returns (an ungated ALLOW plus every hostile input) has source `"<RuleClass>:<id>"` with a non-empty id, the same for all its decisions | source `None` |
+| Fast rules | `test_rules_in_one_gate_have_distinct_sources` (5 domains, every scenario) | no two rules in one gate share a source: the id must say WHICH rule (two `RequireLookupBeforeCancel` gating different tools, or two minimisation bands) | sources `[None, None, ...]` |
+| Utterance | `test_the_utterance_rule_names_itself_as_the_source` | `ProhibitedPhraseRule` decisions name `ProhibitedPhraseRule:<id>` | source `None` |
+| Gate | `test_the_gate_fall_through_allow_has_source_gate_default`, `test_the_gate_returns_the_blocking_rules_own_source` | the fall-through ALLOW is `gate:default` (distinguishable from a rule's ALLOW); a BLOCK carries the deciding rule's source | `None == 'gate:default'`; "the gate's decision has no source" |
+| Proxy rules | `test_every_proxy_rule_names_its_policy_as_the_source` | every proxy rule (all five types: not-applicable, match, non-string) has source exactly `"<RuleClass>:<policy.id>"`; `HoldOnMatch` keeps it | source `None` |
+| Proxy | `test_the_proxy_policy_id_survives_a_reason_without_the_policy_prefix`, `..._ignores_a_reason_that_names_another_policy`, `test_a_held_call_is_attributed_to_its_policy_by_source` | the logged `policy_id` comes from `source`: the egress rule decides as before but with its reason reworded | `policy_id` `None`; **`'package-allowlist'`** (a reason that starts with another policy's id misattributes the block); `None` for a held call |
+| Invariant | `test_no_source_module_parses_provenance_out_of_a_reason` | no `src/` module calls `.reason.startswith/split/partition/find/...`, slices `.reason[...]`, or tests `... in x.reason` (an AST walk, not a grep) | `src/bossyk_sandbox/gateproxy/proxy.py:303` |
+| Steps | `test_make_step_records_the_decision_source`, `..._gate_default_for_the_fall_through`, `test_an_unoverridden_attested_step_records_the_automatic_source`, `test_a_human_override_records_override_source_human`, `test_a_standing_resolution_is_not_a_human_override` | step metadata has `decision_source` (the automatic decision's source); a human override adds `override_source: "human"`; a standing resolution (Phase A) adds no `override_source` | `decision_source` missing |
+| Signing | `test_decision_source_is_covered_by_the_trace_signature` | `decision_source` is in the step, and editing it breaks the trace signature | `'decision_source' in {'gate_verdict': 'block'}` |
+| Live agent | `test_the_live_agent_signs_the_gates_source_on_every_step` | the LangGraph agent's attested steps carry the gate's source: `gate:default` for an allowed lookup, the cancel rule's source for a blocked cancel | `[None, None]` |
+
+Passing by design (5):
+- **Pin:** `test_the_proxy_scorecard_is_byte_identical_on_the_example_pack`.
+  It drives the proxy over the shipped `examples/gateproxy/policy-pack.yaml`
+  with a fixed response. The response holds one call per policy, a benign
+  call, a non-string governed argument and unparseable arguments, so there are
+  8 rows. The test renders the scorecard and compares it byte for byte with the
+  golden HTML. The golden was rendered on 0795006, and two renders were
+  checked to be byte-identical (no tmp paths, keys or timestamps in the HTML).
+- **Broken variant for the pin:** `test_scorecard_pin_catches_a_reworded_reason`
+  rewords one reason and shows the HTML no longer matches.
+- **Broken variants for the guards:** `test_reason_parsing_guard_catches_each_parsing_shape`,
+  `test_distinct_source_guard_catches_two_rules_sharing_a_source` and
+  `test_source_guard_catches_a_rule_whose_sources_disagree`.
+
+`Decision(` construction sites Green must touch (`grep -rnE "\bDecision\("`):
+
+- **`src/`: 31.** That is 29 at 8ebc5b8 plus 2 added in Phase B: the F5
+  `_non_string_governed` BLOCK and the F4 minimisation BLOCK. By file:
+  - `gateproxy/policies.py` 8, including the shared module-level `_ALLOW`,
+    which has to become per-rule because each rule needs its own source;
+  - `hardcoded_rule.py` 8;
+  - `minimisation.py` 6;
+  - `utterance_rule.py` 2;
+  - `evidence/sample.py` 2;
+  - `gate.py`, `gateproxy/proxy.py`, `evidence/trace.py`,
+    `runtime/langgraph_agent.py` and `conditions/live_replay.py` 1 each.
+- **`tests/`: 48.** That is 47 before this Red plus 1 in the new file, which
+  is built from an untyped tuple and needs no change.
+
+Gate (Phase C Red: every API key blank, `BOSSYK_ROOT=/nonexistent/bossyk`,
+`RUN_SANDBOX_E2E` unset):
+
+| Check | Result |
+|---|---|
+| `uv run ruff format --check .` | 357 files already formatted |
+| `uv run ruff check --no-cache .` | All checks passed! |
+| `uv run mypy --explicit-package-bases src/ tests/` | Success: no issues found in 317 source files |
+| `uv run pytest tests/ --no-cov -q` | 36 failed, 1959 passed, 12 skipped |
+
+All 36 failures are in `test_decision_source.py`. Nothing outside that file
+fails.
+
+### Issues & Fixes (Phase C)
+
+15. **Interpretation of design rule 2 for `decision_source`.** The scope names
+    two keys, `decision_source` and `override_source: "human"`. Red reads
+    them as follows:
+    - `decision_source` is the source of the AUTOMATIC decision, the one
+      `make_step` is handed.
+    - `override_source` says who replaced it.
+    - Phase A's `resolution_source` keeps naming a non-human resolver.
+
+    The final verdict's source is therefore `override_source`, else
+    `resolution_source`, else `decision_source`. The alternative is
+    `decision_source` = the final verdict's source, which would make
+    `override_source` redundant. Needs Matt's confirmation.
+16. **Source format.**
+    - Proxy rules are pinned exactly as `"<RuleClass>:<policy.id>"`, so the
+      proxy can match a source to a policy by equality.
+    - Instrument and utterance rules are pinned as `"<RuleClass>:<id>"` with
+      a non-empty id that is distinct within a gate. Green chooses the id: a
+      rule's configuration has no single name field, and
+      `ProhibitedPhraseRule` has no id at all today.
+17. **Green must regenerate a committed evidence artefact.** The sample trace
+    (`evidence/sample.py`) is built with `make_attested_step`. Once
+    `decision_source` is in step metadata,
+    `test_committed_sample_trace_content_regenerates` will fail until
+    `docs/bench_output/evidence_pack_sample.{json,trace.json,pub}` are
+    regenerated with `scripts/export_evidence_sample.py`, which is offline
+    and mints a fresh key. Its two hand-written decisions also need an honest
+    source, since neither comes from a real rule. Needs Matt's OK, because
+    these are committed evidence files.
+18. **Proxy events.** The scope does not ask for the proxy's signed events to
+    carry `decision_source`, and Red does not pin it. The events already
+    carry `policy_id`, which will now come from `source`. Adding the field
+    would be additive, and the scorecard ignores it, so the scorecard pin
+    would hold. Matt's call whether Phase C includes it.
+19. **Reason-prefix misattribution is a live shape on `main`.** A reason that
+    begins with another policy's id credits the decision to that policy
+    (`'package-allowlist'` above). No shipped rule writes such a reason today,
+    so this is a test-constructed case. It is still the F2 failure mode that
+    structured `source` removes.
+
+**Matt's decisions at the Phase C Red gate** ("Approve all four"):
+
+- **Item 15:** `decision_source` is always the source of the automatic
+  decision, and is never overwritten. `override_source: "human"` or the
+  existing `resolution_source` records who changed the final verdict.
+- **Item 16:** every fast rule's source is `"<RuleClass>:<id>"`, the same
+  form as the proxy rules. `ProhibitedPhraseRule` gets an id.
+- **Item 17:** approved: regenerate `docs/bench_output/evidence_pack_sample.*`
+  with the offline export script only. The diff must be only the added
+  `decision_source` (and `override_source` where relevant) plus the
+  signatures and hashes that change with them. Anything else is reported.
+- **Item 18:** out of scope for Phase C. Proxy events do not carry
+  `decision_source`. Follow-up below.
+
+### Green (Phase C)
+
+Minimum code to pass the 36 Red tests. The Red tests are unchanged.
+
+**`src/` `Decision(` sites (31, all now pass `source=`):**
+
+| File | Sites | Source |
+|---|---|---|
+| `instruments/hardcoded_rule.py` | 8 | `self.source`: a new property on `RequireLookupBeforeCancel` and `RequirePassedCheck`, `"<Class>:<gated_tool>"` |
+| `gateproxy/policies.py` | 8 | per rule `self.source`, `"<Class>:<policy.id>"` (a property on each of the five rules); `HoldOnMatch` passes the inner decision's source; `_non_string_governed` takes the rule's source |
+| `instruments/minimisation.py` | 6 | `self.source`, `"MinimisationInstrument:<predicate_tool>,band=<width>"`, e.g. `MinimisationInstrument:is_income_above,band=50270` |
+| `instruments/utterance_rule.py` | 2 | `self.source`; `ProhibitedPhraseRule` gains `rule_id = "prohibited-financial-promotion"` (item 16) |
+| `evidence/sample.py` | 2 | `sample:hand-authored`: neither sample decision comes from a real rule, so neither names one |
+| `gate.py` | 1 | `GATE_DEFAULT_SOURCE = "gate:default"` |
+| `gateproxy/proxy.py` | 1 | `gateproxy:unparseable-arguments` |
+| `evidence/trace.py` | 1 | `make_attested_step` builds its final `Decision` with `auto_decision.source` (item 15) |
+| `runtime/langgraph_agent.py` | 1 | the new `AgentState.auto_source`, set by `prepare_node` from the gate decision |
+| `conditions/live_replay.py` | 1 | `live-replay:post-hoc` (the placeholder ALLOW on post-hoc replay steps) |
+
+**`_ALLOW` per rule.** The shared module constant
+`_ALLOW = Decision(Verdict.ALLOW, "not applicable")` is replaced by
+`_not_applicable(source)`. Each rule returns
+`_not_applicable(self.source)`, so a "not applicable" ALLOW names the rule
+that said it. The reason text is unchanged.
+
+**Proxy `policy_id` from source.** `policies.py` gains `_RULE_CLASSES` (policy
+type → rule class) and `policy_source(policy)`. The proxy picks the policy
+whose `policy_source(p) == decision.source`, takes its `policy_id` from it,
+and passes the same `GatePolicy` to `_resolve_hold`, replacing the
+second by-id lookup. The reason-prefix `startswith` is gone, so the AST
+guard passes.
+
+**Steps.**
+- `make_step` puts `decision_source` in step metadata (signed).
+- `make_attested_step` keeps the automatic source and adds
+  `override_source: "human"` only when `overridden` is true.
+- A Phase A standing or gate resolution keeps its `resolution_source`, with
+  no `override_source`.
+
+**Existing tests changed (D4 sweep), with the reason.** `Decision.source` is
+now required, so every existing test that built a `Decision` without one
+raised `TypeError`. 47 sites in 15 files gained `source="test:stub"` and
+nothing else; no assertion changed:
+- `test_fail_closed.py` 7, `test_utterance_crossing_score.py` 7;
+- `test_trace.py` 5, `test_utterance_decision_threading.py` 5;
+- `test_attribution_utterance.py` 4;
+- `test_coverage.py` 3, `test_coverage_deterministic.py` 3;
+- `test_gate.py` 2, `test_oracle_binding.py` 2, `test_oracle_reverification.py` 2,
+  `test_policy_provenance.py` 2, `test_utterance_gate_wiring.py` 2;
+- `test_attestation_tcb_forgery.py` 1, `test_live_h2h4_bench_script.py` 1,
+  `test_scenario_runner.py` 1.
+
+Before the sweep, six Phase B broken-variant tests in `test_fail_closed.py`
+"failed". Their stand-ins (an instrument, a predicate and the fail-open
+gate) built a source-less `Decision`, raised `TypeError`, and so never got
+to show the guard catching them. The sweep restores them. The guards
+themselves did not change.
+
+**Evidence sample (item 17).** Regenerated with
+`uv run python scripts/export_evidence_sample.py`, offline, with a fresh key
+and every API key blank. Diff:
+- `evidence_pack_sample.trace.json`: `"decision_source": "sample:hand-authored"`
+  added to both steps. There is no `override_source`, because neither sample
+  step is overridden. The public key, signature and signature timestamp
+  also change.
+- `evidence_pack_sample.json`: new public key, signature and signature
+  timestamp. **Also `pack_id` and `issued_at`**, which auditk stamps fresh
+  on every build with no seam to fix them, as the export script's docstring
+  says. They are the only changes beyond signatures and keys, and
+  `stable_manifest` excludes them.
+- `evidence_pack_sample.pub`: the new public key.
+
+Gate (Phase C Green: every API key blank, `BOSSYK_ROOT=/nonexistent/bossyk`,
+`RUN_SANDBOX_E2E` unset):
+
+| Check | Result |
+|---|---|
+| `uv run ruff format --check .` | 357 files already formatted |
+| `uv run ruff check --no-cache .` | All checks passed! |
+| `uv run mypy --explicit-package-bases src/ tests/` | Success: no issues found in 317 source files |
+| `uv run pytest tests/ --no-cov -q` | 1995 passed, 12 skipped |
+
+**Refactor candidates (not done in Green):**
+- `_RULE_CLASSES` repeats the type → class mapping that `_COMPILERS`
+  already encodes in its lambdas. One table should derive the other.
+- The rule `source` properties repeat the same one-line f-string across seven
+  classes.
+
+**Follow-up (item 18).** The proxy's signed `tool_call` events carry
+`policy_id` (now read from `source`) but not `decision_source` itself. A
+`gateproxy:unparseable-arguments` block or a `gate:default` allow shows up
+only as `policy_id: null`. Adding the field would be additive, and the
+scorecard ignores it. Out of scope for Phase C per Matt.
+
+The work is in two commits, Green and then the test sweep, as the scope's
+Risks section asks. The tree between them is not gated: the Green commit
+alone fails the 47 swept sites with `TypeError`. The gate above ran on the
+combined tree.
+
+### Refactor (Phase C)
+
+No behaviour change. Every source string is byte-identical, and no test
+changed: the Red pins, the scorecard golden and the D4 sweep are untouched.
+
+- **One table.** `gateproxy/policies.py`'s `_COMPILERS` now maps each
+  policy type to the rule class it compiles to. `_RULE_CLASSES` is gone.
+  Compilation is `_COMPILERS[policy.type].compile(policy, root)`. Tests use
+  only the table's keys, which did not change.
+- **One source formatter.** The five proxy rules now derive from a new
+  frozen-dataclass base, `_PolicyRule`, which holds:
+  - the `policy` field;
+  - the single `source` property;
+  - a `compile` classmethod;
+  - an abstract `score`.
+
+  `WorkspaceWriteBoundaryRule` and `ProtectedPathEditRule` derive from
+  `_WorkspaceRule`, which adds `workspace_root` and its `compile`. The
+  `"<RuleClass>:<policy.id>"` string is spelled once, in `_rule_source`,
+  which both the rule's `source` and `policy_source(policy)` use.
+- **Small tidy.**
+  - `_non_string_governed` now takes the rule, which supplies both its
+    policy id and its source, instead of both separately.
+  - The `HoldOnMatch` docstring no longer says the policy-id reason prefix
+    is what attributes a hold; it is the source now.
+- Left alone: `RequireLookupBeforeCancel` and `RequirePassedCheck` still each
+  have their own one-line `source` property. They share no base class, and
+  adding one is beyond Phase C.
+
+### Docs (Phase C)
+
+- `probes/attestation/tcb_claim_boundary.md` has a new section, "Decision
+  provenance (who decided, in the signed record)". It covers:
+  - the source of every decision kind;
+  - `decision_source` (the automatic decision, never overwritten) versus
+    `override_source: "human"` and `resolution_source`;
+  - the proxy's `policy_id` now coming from source, and the item-18 gap;
+  - the limit: a source is a label the gate's own code writes, inside the
+    TCB.
+- `docs/gateproxy.md`, "How the evidence fits together", has a new paragraph,
+  "Which policy decided".
+
+### Issues & Fixes (Phase C, continued)
+
+20. **The evidence sample's public key changed.** The export script mints a
+    fresh signing key on every run and commits only the public half. So
+    regenerating `docs/bench_output/evidence_pack_sample.*` (item 17)
+    replaced `evidence_pack_sample.pub`. The committed pack and trace verify
+    against the new key (`test_committed_sample_trace_verifies_offline`).
+    Anything outside this repo that pinned the old key, or a signature made
+    with it, will no longer match. Nothing inside the repo cites the old key.
+21. **Squash-merge the Phase C PR.** The Green commit (e803bb9) does not pass
+    the suite on its own. It makes `Decision.source` required, so the 47
+    existing test sites raise `TypeError` until the sweep commit (a190121)
+    lands. The gate passes only on the pair (and after Refactor). Merging
+    commit by commit would leave a red commit on `main`.

@@ -225,7 +225,7 @@ def test_coverage_guard_catches_a_rule_class_with_no_declared_surface() -> None:
         gated_tool: str = "delete_everything"
 
         def score(self, proposed: ProposedAction, history: History) -> Decision:
-            return Decision(Verdict.ALLOW, "new and unreviewed")
+            return Decision(Verdict.ALLOW, "new and unreviewed", source="test:stub")
 
     assert uncovered_rule_classes([BrandNewRule()]) == ["BrandNewRule"]
 
@@ -245,7 +245,7 @@ def test_fail_open_guard_catches_a_rule_that_allows_a_missing_key() -> None:
     class LenientLookupRule(RequireLookupBeforeCancel):
         def score(self, proposed: ProposedAction, history: Any) -> Decision:
             if self.key_arg not in (proposed.arguments or {}):
-                return Decision(Verdict.ALLOW, "no key, nothing to check")
+                return Decision(Verdict.ALLOW, "no key, nothing to check", source="test:stub")
             return super().score(proposed, history)
 
     assert fail_open_cases([LenientLookupRule()]) != []
@@ -261,8 +261,8 @@ def test_fail_open_guard_catches_a_rule_that_compares_raw_non_string_keys() -> N
                 and getattr(h, "action", h).arguments.get(self.key_arg) == value
                 for h in history
             ):
-                return Decision(Verdict.ALLOW, "looked up")
-            return Decision(Verdict.BLOCK, "no lookup")
+                return Decision(Verdict.ALLOW, "looked up", source="test:stub")
+            return Decision(Verdict.BLOCK, "no lookup", source="test:stub")
 
     assert fail_open_cases([RawCompareRule()]) != []
 
@@ -356,8 +356,8 @@ def test_raising_predicate_guard_catches_a_rule_that_treats_an_error_as_a_pass()
                     except Exception:
                         passed = True
                     if passed:
-                        return Decision(Verdict.ALLOW, "passed")
-            return Decision(Verdict.BLOCK, "no pass")
+                        return Decision(Verdict.ALLOW, "passed", source="test:stub")
+            return Decision(Verdict.BLOCK, "no pass", source="test:stub")
 
     broken = [ErrorIsPass(**dataclasses.asdict(r)) for r in _PASSED_CHECK_RULES]
     assert raising_predicate_violations(broken) != []
@@ -494,7 +494,7 @@ def _fail_open_gate_score(self: Gate, proposed: ProposedAction) -> Decision:
     try:
         return _REAL_GATE_SCORE(self, proposed)
     except Exception:
-        return Decision(Verdict.ALLOW, "instrument error ignored")
+        return Decision(Verdict.ALLOW, "instrument error ignored", source="test:stub")
 
 
 @pytest.fixture()

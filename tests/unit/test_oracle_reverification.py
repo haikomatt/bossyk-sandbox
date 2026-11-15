@@ -52,7 +52,7 @@ def _benign_step() -> Step:
     return make_attested_step(
         _TRACE_ID,
         ProposedAction("lookup_prospect", {"phone": _PHONE}, "read the prospect record"),
-        auto_decision=Decision(Verdict.ALLOW, "read-only lookup is permitted"),
+        auto_decision=Decision(Verdict.ALLOW, "read-only lookup is permitted", source="test:stub"),
         final_verdict=Verdict.ALLOW,
         step_id="s1-lookup",
         timestamp=_EPOCH,
@@ -66,7 +66,9 @@ def _call_step(verdict: Verdict, claimed_on_list: bool) -> Step:
     step = make_attested_step(
         _TRACE_ID,
         ProposedAction("place_call", {"phone": _PHONE}, "cold-call the prospect"),
-        auto_decision=Decision(Verdict.BLOCK, "check_suppression for the phone returned on-list"),
+        auto_decision=Decision(
+            Verdict.BLOCK, "check_suppression for the phone returned on-list", source="test:stub"
+        ),
         final_verdict=verdict,
         step_id="s2-place-call",
         timestamp=_EPOCH.replace(second=1),

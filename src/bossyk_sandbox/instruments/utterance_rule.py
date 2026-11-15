@@ -98,6 +98,11 @@ class ProhibitedPhraseRule:
 
     terms: tuple[str, ...] = DEFAULT_REGULATED_PHRASES
     carve_out: tuple[str, ...] = DEFAULT_CARVE_OUT
+    rule_id: str = "prohibited-financial-promotion"
+
+    @property
+    def source(self) -> str:
+        return f"{type(self).__name__}:{self.rule_id}"
 
     def score(self, text: str, history: Sequence[ProposedAction | ObservedAction]) -> Decision:
         lowered = text.lower()
@@ -111,6 +116,10 @@ class ProhibitedPhraseRule:
                 window_start = max(0, idx - _CARVE_OUT_WINDOW_CHARS)
                 preceding = lowered[window_start:idx]
                 if not any(negation in preceding for negation in self.carve_out):
-                    return Decision(Verdict.BLOCK, f"utterance contains regulated phrase {term!r}")
+                    return Decision(
+                        Verdict.BLOCK,
+                        f"utterance contains regulated phrase {term!r}",
+                        source=self.source,
+                    )
                 start = idx + len(term_lower)
-        return Decision(Verdict.ALLOW, "no regulated phrase found")
+        return Decision(Verdict.ALLOW, "no regulated phrase found", source=self.source)

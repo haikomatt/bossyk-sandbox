@@ -41,7 +41,7 @@ from bossyk_sandbox.gateproxy.identity import (
     resolve_identity,
 )
 from bossyk_sandbox.gateproxy.identity_packs import IdentityPacks, load_identity_packs
-from bossyk_sandbox.gateproxy.policies import GatePolicy
+from bossyk_sandbox.gateproxy.policies import GatePolicy, policy_source
 from bossyk_sandbox.gateproxy.sensitive import Marker, detect
 from bossyk_sandbox.gateproxy.telemetry import Telemetry, TelemetryConfig
 from bossyk_sandbox.instruments.base import Decision, ProposedAction, Verdict
@@ -285,6 +285,7 @@ def create_app(
                     decision = Decision(
                         Verdict.BLOCK,
                         f"unparseable arguments for tool {name!r} (fail closed)",
+                        source="gateproxy:unparseable-arguments",
                     )
                     logged_arguments: Any = {"_raw": (call.get("function") or {}).get("arguments")}
                 else:
@@ -296,18 +297,17 @@ def create_app(
                     decision = gate.score(proposed)
                     gate.record(proposed)
                     logged_arguments = arguments
-                # Every rule prefixes its reason with its own policy id;
-                # matching against the loaded pack recovers it as a
-                # structured field for the scorecard.
-                policy_id = next(
-                    (p.id for p in pack.policies if decision.reason.startswith(f"{p.id}:")),
-                    None,
+                # The deciding policy is the one whose rule source the
+                # decision carries (structured, never parsed from `reason`).
+                policy = next(
+                    (p for p in pack.policies if policy_source(p) == decision.source), None
                 )
+                policy_id = policy.id if policy is not None else None
                 resolution: str | None = None
                 resolved: Verdict | None = None
                 if decision.verdict is Verdict.HOLD:
                     resolution, resolved = _resolve_hold(
-                        next((p for p in pack.policies if p.id == policy_id), None),
+                        policy,
                         HoldRequest(
                             tool_name=name,
                             arguments=logged_arguments,

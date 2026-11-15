@@ -12,10 +12,11 @@ it could.
 from __future__ import annotations
 
 import shlex
+from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
 import yaml
 
@@ -42,7 +43,10 @@ _POLICY_META_KEYS = frozenset({"id", "type", "class", "trap", "on_match", "on_ho
 # command-position token without a real parser.
 _SHELL_CONNECTORS = frozenset({"&&", "||", ";", "|", "&"})
 
-_ALLOW = Decision(Verdict.ALLOW, "not applicable")
+
+def _not_applicable(source: str) -> Decision:
+    return Decision(Verdict.ALLOW, "not applicable", source=source)
+
 
 # Bare "<runner> install ..." spellings plus the `python -m pip install`
 # form; the token after each matched prefix begins the package list.
@@ -121,7 +125,8 @@ def compile_instruments(pack: PolicyPack, *, workspace_root: Path) -> list[Instr
     `Gate.score`, so pack order is precedence order)."""
     root = workspace_root.resolve()
     return [
-        _with_on_match(policy, _COMPILERS[policy.type](policy, root)) for policy in pack.policies
+        _with_on_match(policy, _COMPILERS[policy.type].compile(policy, root))
+        for policy in pack.policies
     ]
 
 
@@ -131,9 +136,10 @@ def _with_on_match(policy: GatePolicy, rule: Instrument) -> Instrument:
 
 @dataclass(frozen=True)
 class HoldOnMatch:
-    """Wraps any predicate so its BLOCK becomes a HOLD (same reason, so the
-    policy id prefix survives for the event log). The predicate itself
-    stays unchanged; only what a match asks the gate for differs."""
+    """Wraps any predicate so its BLOCK becomes a HOLD with the same reason
+    and source (so the proxy still attributes it to its policy). The
+    predicate itself stays unchanged; only what a match asks the gate for
+    differs."""
 
     inner: Instrument
 
@@ -142,8 +148,49 @@ class HoldOnMatch:
     ) -> Decision:
         decision = self.inner.score(proposed, history)
         if decision.verdict is Verdict.BLOCK:
-            return Decision(Verdict.HOLD, decision.reason)
+            return Decision(Verdict.HOLD, decision.reason, source=decision.source)
         return decision
+
+
+# --- the rule bases --------------------------------------------------------
+
+
+def _rule_source(rule_class: type, policy: GatePolicy) -> str:
+    """`"<RuleClass>:<policy.id>"`: the one place a policy rule's source is
+    spelled, used by the rule itself and by `policy_source`."""
+    return f"{rule_class.__name__}:{policy.id}"
+
+
+@dataclass(frozen=True)
+class _PolicyRule(ABC):
+    """One compiled policy line. Every decision it returns carries
+    `source`, which names this rule class and its policy."""
+
+    policy: GatePolicy
+
+    @property
+    def source(self) -> str:
+        return _rule_source(type(self), self.policy)
+
+    @classmethod
+    def compile(cls, policy: GatePolicy, workspace_root: Path) -> Self:
+        return cls(policy)
+
+    @abstractmethod
+    def score(
+        self, proposed: ProposedAction, history: Sequence[ProposedAction | ObservedAction]
+    ) -> Decision: ...
+
+
+@dataclass(frozen=True)
+class _WorkspaceRule(_PolicyRule):
+    """A policy rule that resolves paths against the workspace root."""
+
+    workspace_root: Path
+
+    @classmethod
+    def compile(cls, policy: GatePolicy, workspace_root: Path) -> Self:
+        return cls(policy, workspace_root)
 
 
 # --- shared helpers --------------------------------------------------------
@@ -164,7 +211,7 @@ def _applies(policy: GatePolicy, proposed: ProposedAction) -> bool:
 
 
 def _non_string_governed(
-    policy: GatePolicy, proposed: ProposedAction, keys: tuple[str, ...]
+    rule: _PolicyRule, proposed: ProposedAction, keys: tuple[str, ...]
 ) -> Decision | None:
     """BLOCK when a governed argument is present but not a string: a value
     the predicate cannot read must not be read as "no match"."""
@@ -172,7 +219,8 @@ def _non_string_governed(
         if key in proposed.arguments and not isinstance(proposed.arguments[key], str):
             return Decision(
                 Verdict.BLOCK,
-                f"{policy.id}: governed argument {key!r} is not a string (fail closed)",
+                f"{rule.policy.id}: governed argument {key!r} is not a string (fail closed)",
+                source=rule.source,
             )
     return None
 
@@ -186,41 +234,39 @@ def _path_argument(proposed: ProposedAction) -> str | None:
 
 
 @dataclass(frozen=True)
-class NetworkEgressRule:
+class NetworkEgressRule(_PolicyRule):
     """T3: any configured egress command appearing as a token blocks."""
-
-    policy: GatePolicy
 
     def score(
         self, proposed: ProposedAction, history: Sequence[ProposedAction | ObservedAction]
     ) -> Decision:
         if not _applies(self.policy, proposed):
-            return _ALLOW
-        if refused := _non_string_governed(self.policy, proposed, ("command",)):
+            return _not_applicable(self.source)
+        if refused := _non_string_governed(self, proposed, ("command",)):
             return refused
         command = str(proposed.arguments.get("command", ""))
         commands = set(self.policy.config.get("commands") or [])
         hit = next((t for t in _command_tokens(command) if t in commands), None)
         if hit is None:
-            return _ALLOW
+            return _not_applicable(self.source)
         return Decision(
-            Verdict.BLOCK, f"{self.policy.id}: network egress via {hit!r} is not permitted"
+            Verdict.BLOCK,
+            f"{self.policy.id}: network egress via {hit!r} is not permitted",
+            source=self.source,
         )
 
 
 @dataclass(frozen=True)
-class PackageInstallRule:
+class PackageInstallRule(_PolicyRule):
     """T6: package installs outside the allowlist block; the allowlist is
     exact package names, flags are ignored."""
-
-    policy: GatePolicy
 
     def score(
         self, proposed: ProposedAction, history: Sequence[ProposedAction | ObservedAction]
     ) -> Decision:
         if not _applies(self.policy, proposed):
-            return _ALLOW
-        if refused := _non_string_governed(self.policy, proposed, ("command",)):
+            return _not_applicable(self.source)
+        if refused := _non_string_governed(self, proposed, ("command",)):
             return refused
         tokens = _command_tokens(str(proposed.arguments.get("command", "")))
         allowed = set(self.policy.config.get("allowed_packages") or [])
@@ -238,95 +284,101 @@ class PackageInstallRule:
                             Verdict.BLOCK,
                             f"{self.policy.id}: install of non-allowlisted package(s) "
                             f"{', '.join(disallowed)}",
+                            source=self.source,
                         )
-        return _ALLOW
+        return _not_applicable(self.source)
 
 
 @dataclass(frozen=True)
-class WorkspaceWriteBoundaryRule:
+class WorkspaceWriteBoundaryRule(_WorkspaceRule):
     """T4: a write/edit whose resolved path leaves the workspace blocks.
     Resolution (expanduser + resolve against the workspace root), not
     string prefixing, decides -- `sub/../../..` escapes are caught."""
 
-    policy: GatePolicy
-    workspace_root: Path
-
     def score(
         self, proposed: ProposedAction, history: Sequence[ProposedAction | ObservedAction]
     ) -> Decision:
         if not _applies(self.policy, proposed):
-            return _ALLOW
-        if refused := _non_string_governed(self.policy, proposed, ("path",)):
+            return _not_applicable(self.source)
+        if refused := _non_string_governed(self, proposed, ("path",)):
             return refused
         raw = _path_argument(proposed)
         if raw is None:
-            return _ALLOW
+            return _not_applicable(self.source)
         resolved = (self.workspace_root / Path(raw).expanduser()).resolve()
         if resolved.is_relative_to(self.workspace_root):
-            return _ALLOW
+            return _not_applicable(self.source)
         return Decision(
             Verdict.BLOCK,
             f"{self.policy.id}: {proposed.tool_name} outside the workspace "
             f"({raw!r} resolves to {resolved})",
+            source=self.source,
         )
 
 
 @dataclass(frozen=True)
-class CredentialReadRule:
+class CredentialReadRule(_PolicyRule):
     """T5: reads (or bash commands) touching credential-shaped paths block.
     Substring match on the configured patterns -- deliberately coarse and
     conservative for a class-A predicate."""
-
-    policy: GatePolicy
 
     def score(
         self, proposed: ProposedAction, history: Sequence[ProposedAction | ObservedAction]
     ) -> Decision:
         if not _applies(self.policy, proposed):
-            return _ALLOW
-        if refused := _non_string_governed(self.policy, proposed, ("path", "command")):
+            return _not_applicable(self.source)
+        if refused := _non_string_governed(self, proposed, ("path", "command")):
             return refused
         haystack = str(proposed.arguments.get("path") or proposed.arguments.get("command") or "")
         patterns = self.policy.config.get("patterns") or []
         hit = next((p for p in patterns if p in haystack), None)
         if hit is None:
-            return _ALLOW
+            return _not_applicable(self.source)
         return Decision(
-            Verdict.BLOCK, f"{self.policy.id}: access to credential path matching {hit!r}"
+            Verdict.BLOCK,
+            f"{self.policy.id}: access to credential path matching {hit!r}",
+            source=self.source,
         )
 
 
 @dataclass(frozen=True)
-class ProtectedPathEditRule:
+class ProtectedPathEditRule(_WorkspaceRule):
     """T2: writes/edits to protected paths (workspace-relative) block."""
-
-    policy: GatePolicy
-    workspace_root: Path
 
     def score(
         self, proposed: ProposedAction, history: Sequence[ProposedAction | ObservedAction]
     ) -> Decision:
         if not _applies(self.policy, proposed):
-            return _ALLOW
-        if refused := _non_string_governed(self.policy, proposed, ("path",)):
+            return _not_applicable(self.source)
+        if refused := _non_string_governed(self, proposed, ("path",)):
             return refused
         raw = _path_argument(proposed)
         if raw is None:
-            return _ALLOW
+            return _not_applicable(self.source)
         resolved = (self.workspace_root / Path(raw).expanduser()).resolve()
         try:
             relative = resolved.relative_to(self.workspace_root).as_posix()
         except ValueError:
             relative = raw
         if relative in set(self.policy.config.get("paths") or []):
-            return Decision(Verdict.BLOCK, f"{self.policy.id}: {relative!r} is a protected path")
-        return _ALLOW
+            return Decision(
+                Verdict.BLOCK,
+                f"{self.policy.id}: {relative!r} is a protected path",
+                source=self.source,
+            )
+        return _not_applicable(self.source)
 
 
-_COMPILERS: dict[str, Any] = {
-    "network-egress": lambda p, _root: NetworkEgressRule(p),
-    "package-install": lambda p, _root: PackageInstallRule(p),
-    "write-outside-workspace": lambda p, root: WorkspaceWriteBoundaryRule(p, root),
-    "credential-read": lambda p, _root: CredentialReadRule(p),
-    "protected-path-edit": lambda p, root: ProtectedPathEditRule(p, root),
+# The one table: each policy type and the rule class it compiles to.
+_COMPILERS: dict[str, type[_PolicyRule]] = {
+    "network-egress": NetworkEgressRule,
+    "package-install": PackageInstallRule,
+    "write-outside-workspace": WorkspaceWriteBoundaryRule,
+    "credential-read": CredentialReadRule,
+    "protected-path-edit": ProtectedPathEditRule,
 }
+
+
+def policy_source(policy: GatePolicy) -> str:
+    """The `Decision.source` every decision of this policy's rule carries."""
+    return _rule_source(_COMPILERS[policy.type], policy)

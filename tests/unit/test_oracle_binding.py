@@ -73,7 +73,9 @@ def _bound_call_step() -> tuple[object, list[OracleObservation]]:
     step = make_attested_step(
         "outreach-oracle-binding",
         gated,
-        auto_decision=Decision(Verdict.ALLOW, "prior check_suppression for the phone passed"),
+        auto_decision=Decision(
+            Verdict.ALLOW, "prior check_suppression for the phone passed", source="test:stub"
+        ),
         final_verdict=Verdict.ALLOW,
         step_id="s1-place-call",
         timestamp=_EPOCH,
@@ -160,7 +162,7 @@ def test_binding_an_empty_list_is_a_noop() -> None:
     step = make_attested_step(
         "outreach-oracle-binding",
         _gated_call(),
-        auto_decision=Decision(Verdict.ALLOW, "allowed"),
+        auto_decision=Decision(Verdict.ALLOW, "allowed", source="test:stub"),
         final_verdict=Verdict.ALLOW,
         step_id="s1",
         timestamp=_EPOCH,

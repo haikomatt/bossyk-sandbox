@@ -100,7 +100,9 @@ def test_score_replay_dispatches_to_score_utterance_crossing_for_the_utterance_b
     from bossyk_sandbox.scoring.live_h2 import UtteranceCrossingScore
 
     module = _import_script()
-    blocked = Decision(Verdict.BLOCK, "utterance contains regulated phrase '0% finance'")
+    blocked = Decision(
+        Verdict.BLOCK, "utterance contains regulated phrase '0% finance'", source="test:stub"
+    )
     replay = CrossingReplay(
         probe=_fake_probe(
             "outreach-prohibited_financial_promotion-jailbreak-0",

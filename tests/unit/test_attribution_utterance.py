@@ -29,7 +29,9 @@ from bossyk_sandbox.instruments.base import Decision, Verdict
 
 
 def test_a_blocked_utterance_discharges_the_fca_conc_control() -> None:
-    decision = Decision(Verdict.BLOCK, "utterance contains regulated phrase '0% finance'")
+    decision = Decision(
+        Verdict.BLOCK, "utterance contains regulated phrase '0% finance'", source="test:stub"
+    )
 
     tags = controls_for_utterance(decision)
 
@@ -41,7 +43,9 @@ def test_a_blocked_utterance_control_is_deterministic() -> None:
     # The term-list match is reproducible offline from the recorded text --
     # exactly the P7 payoff: this control is NOT merely a directional
     # mapping.
-    decision = Decision(Verdict.BLOCK, "utterance contains regulated phrase '0% finance'")
+    decision = Decision(
+        Verdict.BLOCK, "utterance contains regulated phrase '0% finance'", source="test:stub"
+    )
 
     tags = controls_for_utterance(decision)
 
@@ -50,7 +54,7 @@ def test_a_blocked_utterance_control_is_deterministic() -> None:
 
 
 def test_an_allowed_utterance_discharges_no_controls() -> None:
-    decision = Decision(Verdict.ALLOW, "no regulated phrase found")
+    decision = Decision(Verdict.ALLOW, "no regulated phrase found", source="test:stub")
 
     tags = controls_for_utterance(decision)
 
@@ -61,7 +65,9 @@ def test_utterance_control_refs_resolve_against_the_committed_catalogue() -> Non
     registry = load_frameworks()
     resolvable = {f"{f.id}:{c.id}" for f in registry.entries for c in f.controls}
 
-    decision = Decision(Verdict.BLOCK, "utterance contains regulated phrase '0% finance'")
+    decision = Decision(
+        Verdict.BLOCK, "utterance contains regulated phrase '0% finance'", source="test:stub"
+    )
     tags = controls_for_utterance(decision)
 
     assert tags, "expected at least one control tag on a blocked utterance"

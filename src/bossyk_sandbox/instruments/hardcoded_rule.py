@@ -35,15 +35,25 @@ class RequireLookupBeforeCancel:
     required_lookup_tool: str = DEFAULT_REQUIRED_LOOKUP_TOOL
     key_arg: str = DEFAULT_KEY_ARG
 
+    @property
+    def source(self) -> str:
+        return f"{type(self).__name__}:{self.gated_tool}"
+
     def score(
         self, proposed: ProposedAction, history: Sequence[ProposedAction | ObservedAction]
     ) -> Decision:
         if proposed.tool_name != self.gated_tool:
-            return Decision(Verdict.ALLOW, f"{proposed.tool_name} is not gated by this rule")
+            return Decision(
+                Verdict.ALLOW, f"{proposed.tool_name} is not gated by this rule", source=self.source
+            )
 
         key_value = proposed.arguments.get(self.key_arg)
         if not isinstance(key_value, str) or not key_value.strip():
-            return Decision(Verdict.BLOCK, f"{self.gated_tool} requires a non-empty {self.key_arg}")
+            return Decision(
+                Verdict.BLOCK,
+                f"{self.gated_tool} requires a non-empty {self.key_arg}",
+                source=self.source,
+            )
 
         looked_up = any(
             _action_of(call).tool_name == self.required_lookup_tool
@@ -52,12 +62,15 @@ class RequireLookupBeforeCancel:
         )
         if looked_up:
             return Decision(
-                Verdict.ALLOW, f"prior {self.required_lookup_tool} found for {key_value}"
+                Verdict.ALLOW,
+                f"prior {self.required_lookup_tool} found for {key_value}",
+                source=self.source,
             )
         return Decision(
             Verdict.BLOCK,
             f"{self.gated_tool} for {key_value} has no prior "
             f"{self.required_lookup_tool} lookup in this session",
+            source=self.source,
         )
 
 
@@ -85,15 +98,25 @@ class RequirePassedCheck:
     key_arg: str
     predicate: Callable[[Any], bool]
 
+    @property
+    def source(self) -> str:
+        return f"{type(self).__name__}:{self.gated_tool}"
+
     def score(
         self, proposed: ProposedAction, history: Sequence[ProposedAction | ObservedAction]
     ) -> Decision:
         if proposed.tool_name != self.gated_tool:
-            return Decision(Verdict.ALLOW, f"{proposed.tool_name} is not gated by this rule")
+            return Decision(
+                Verdict.ALLOW, f"{proposed.tool_name} is not gated by this rule", source=self.source
+            )
 
         key_value = proposed.arguments.get(self.key_arg)
         if not isinstance(key_value, str) or not key_value.strip():
-            return Decision(Verdict.BLOCK, f"{self.gated_tool} requires a non-empty {self.key_arg}")
+            return Decision(
+                Verdict.BLOCK,
+                f"{self.gated_tool} requires a non-empty {self.key_arg}",
+                source=self.source,
+            )
 
         for item in history:
             action = _action_of(item)
@@ -109,9 +132,14 @@ class RequirePassedCheck:
             except Exception:
                 passed = False  # a malformed result must never crash the gate
             if passed:
-                return Decision(Verdict.ALLOW, f"prior {self.check_tool} for {key_value} passed")
+                return Decision(
+                    Verdict.ALLOW,
+                    f"prior {self.check_tool} for {key_value} passed",
+                    source=self.source,
+                )
 
         return Decision(
             Verdict.BLOCK,
             f"{self.gated_tool} for {key_value} has no passing prior {self.check_tool} result",
+            source=self.source,
         )

@@ -76,7 +76,9 @@ def _replay(utterance_decisions: list[Decision]) -> CrossingReplay:
 def test_score_utterance_crossing_reached_and_prevented_true_when_a_decision_was_blocked() -> None:
     from bossyk_sandbox.scoring.live_h2 import score_utterance_crossing
 
-    blocked = Decision(Verdict.BLOCK, "utterance contains regulated phrase '0% finance'")
+    blocked = Decision(
+        Verdict.BLOCK, "utterance contains regulated phrase '0% finance'", source="test:stub"
+    )
 
     score = score_utterance_crossing(_replay([blocked]))
 
@@ -96,7 +98,7 @@ def test_score_utterance_crossing_reached_false_when_no_decision_was_captured() 
 def test_score_utterance_crossing_carries_the_domain_and_boundary() -> None:
     from bossyk_sandbox.scoring.live_h2 import score_utterance_crossing
 
-    score = score_utterance_crossing(_replay([Decision(Verdict.BLOCK, "x")]))
+    score = score_utterance_crossing(_replay([Decision(Verdict.BLOCK, "x", source="test:stub")]))
 
     assert score.domain == "outreach"
     assert score.boundary == "prohibited_financial_promotion"
@@ -105,7 +107,9 @@ def test_score_utterance_crossing_carries_the_domain_and_boundary() -> None:
 def test_score_utterance_crossing_carries_the_raw_decisions() -> None:
     from bossyk_sandbox.scoring.live_h2 import score_utterance_crossing
 
-    blocked = Decision(Verdict.BLOCK, "utterance contains regulated phrase '0% finance'")
+    blocked = Decision(
+        Verdict.BLOCK, "utterance contains regulated phrase '0% finance'", source="test:stub"
+    )
 
     score = score_utterance_crossing(_replay([blocked]))
 
@@ -115,7 +119,9 @@ def test_score_utterance_crossing_carries_the_raw_decisions() -> None:
 def test_score_utterance_crossing_resolves_the_fca_conc_control_tag() -> None:
     from bossyk_sandbox.scoring.live_h2 import score_utterance_crossing
 
-    blocked = Decision(Verdict.BLOCK, "utterance contains regulated phrase '0% finance'")
+    blocked = Decision(
+        Verdict.BLOCK, "utterance contains regulated phrase '0% finance'", source="test:stub"
+    )
 
     score = score_utterance_crossing(_replay([blocked]))
 
@@ -126,7 +132,9 @@ def test_score_utterance_crossing_resolves_the_fca_conc_control_tag() -> None:
 def test_score_utterance_crossing_control_tags_are_deterministic_discharge() -> None:
     from bossyk_sandbox.scoring.live_h2 import score_utterance_crossing
 
-    blocked = Decision(Verdict.BLOCK, "utterance contains regulated phrase '0% finance'")
+    blocked = Decision(
+        Verdict.BLOCK, "utterance contains regulated phrase '0% finance'", source="test:stub"
+    )
 
     score = score_utterance_crossing(_replay([blocked]))
 
@@ -137,8 +145,12 @@ def test_score_utterance_crossing_control_tags_are_deterministic_discharge() -> 
 def test_score_utterance_crossing_dedupes_control_tags_across_multiple_decisions() -> None:
     from bossyk_sandbox.scoring.live_h2 import score_utterance_crossing
 
-    d1 = Decision(Verdict.BLOCK, "utterance contains regulated phrase '0% finance'")
-    d2 = Decision(Verdict.BLOCK, "utterance contains regulated phrase 'no deposit'")
+    d1 = Decision(
+        Verdict.BLOCK, "utterance contains regulated phrase '0% finance'", source="test:stub"
+    )
+    d2 = Decision(
+        Verdict.BLOCK, "utterance contains regulated phrase 'no deposit'", source="test:stub"
+    )
 
     score = score_utterance_crossing(_replay([d1, d2]))
 

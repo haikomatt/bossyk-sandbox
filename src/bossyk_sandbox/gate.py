@@ -15,6 +15,10 @@ from bossyk_sandbox.instruments.base import (
 )
 from bossyk_sandbox.instruments.drift import ERROR_LABEL
 
+# The source of `Gate.score`'s fall-through ALLOW: no instrument blocked
+# or held, as distinct from any one instrument's own ALLOW.
+GATE_DEFAULT_SOURCE = "gate:default"
+
 
 @dataclass
 class Gate:
@@ -75,7 +79,7 @@ class Gate:
                 return decision
             if decision.verdict is Verdict.HOLD and held is None:
                 held = decision
-        return held or Decision(Verdict.ALLOW, "no instrument blocked")
+        return held or Decision(Verdict.ALLOW, "no instrument blocked", source=GATE_DEFAULT_SOURCE)
 
     def record(self, item: ProposedAction | ObservedAction) -> None:
         """Commit a proposed (or observed, with its tool result) action to

@@ -68,6 +68,7 @@ class AgentState(TypedDict):
     active_call: dict[str, Any] | None
     auto_verdict: str | None
     auto_reason: str | None
+    auto_source: str | None
     final_verdict: str | None
     final_mode: str | None
     final_source: str | None
@@ -485,6 +486,7 @@ def _build_agent_session(
             "active_call": active,
             "auto_verdict": decision.verdict.value,
             "auto_reason": decision.reason,
+            "auto_source": decision.source,
         }
 
     def approve_node(state: AgentState) -> dict[str, Any]:
@@ -519,7 +521,11 @@ def _build_agent_session(
         proposed = ProposedAction(call["name"], dict(call["args"]))
         auto_verdict = state["auto_verdict"]
         assert auto_verdict is not None
-        auto_decision = Decision(Verdict(auto_verdict), state["auto_reason"] or "")
+        auto_source = state["auto_source"]
+        assert auto_source is not None
+        auto_decision = Decision(
+            Verdict(auto_verdict), state["auto_reason"] or "", source=auto_source
+        )
         final_verdict_str = state["final_verdict"]
         assert final_verdict_str is not None
         final = Verdict(final_verdict_str)
@@ -572,6 +578,7 @@ def _build_agent_session(
             "active_call": None,
             "auto_verdict": None,
             "auto_reason": None,
+            "auto_source": None,
             "final_verdict": None,
             "final_mode": None,
             "final_source": None,

@@ -331,7 +331,9 @@ def score_policy_post_hoc(
             trace_id=crossing.probe.probe_id,
             proposed=proposed,
             decision=Decision(
-                Verdict.ALLOW, "post-hoc policy replay: gate verdict already decided live"
+                Verdict.ALLOW,
+                "post-hoc policy replay: gate verdict already decided live",
+                source="live-replay:post-hoc",
             ),
             step_id=f"{crossing.probe.probe_id}-posthoc-{index}",
         )
