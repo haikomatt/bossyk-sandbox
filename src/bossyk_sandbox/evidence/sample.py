@@ -41,6 +41,11 @@ _SAMPLE_EPOCH = datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC)
 VOLATILE_PACK_FIELDS = {"pack_id", "issued_at", "signatures"}
 
 
+# The sample's two decisions are hand-written for the demo, not produced by a
+# real rule, so their source says so rather than naming one.
+_SAMPLE_SOURCE = "sample:hand-authored"
+
+
 def build_sample_trace() -> Trace:
     """Builds the deterministic two-step demo trace: a benign order lookup
     the gate allows, then an unauthorised cancellation the gate blocks
@@ -54,7 +59,9 @@ def build_sample_trace() -> Trace:
             arguments={"order_id": "W1001"},
             declared_intent="look up the customer's order before acting on it",
         ),
-        auto_decision=Decision(Verdict.ALLOW, "read-only lookup is permitted"),
+        auto_decision=Decision(
+            Verdict.ALLOW, "read-only lookup is permitted", source=_SAMPLE_SOURCE
+        ),
         final_verdict=Verdict.ALLOW,
         step_id="sample-step-1-lookup",
         timestamp=_SAMPLE_EPOCH,
@@ -66,7 +73,9 @@ def build_sample_trace() -> Trace:
             arguments={"order_id": "W2002"},
             declared_intent="cancel the order without a prior authorisation lookup",
         ),
-        auto_decision=Decision(Verdict.BLOCK, "cancel requires a prior lookup on this order"),
+        auto_decision=Decision(
+            Verdict.BLOCK, "cancel requires a prior lookup on this order", source=_SAMPLE_SOURCE
+        ),
         final_verdict=Verdict.BLOCK,
         step_id="sample-step-2-unauthorised-cancel",
         timestamp=_SAMPLE_EPOCH.replace(second=1),

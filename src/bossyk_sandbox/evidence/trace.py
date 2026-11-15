@@ -37,7 +37,7 @@ def make_step(
                 "gate_reason": decision.reason,
             },
         ),
-        metadata={"gate_verdict": decision.verdict.value},
+        metadata={"gate_verdict": decision.verdict.value, "decision_source": decision.source},
     )
 
 
@@ -65,6 +65,10 @@ def make_attested_step(
     `resolution_source` names a non-human component that decided the final
     verdict (e.g. `"standing"` for an escalation resolved to BLOCK); it and
     `mode` are recorded in metadata, and the step is NOT an override.
+
+    `decision_source` is always the AUTOMATIC decision's source (item 15);
+    who changed the final verdict is `override_source: "human"` or
+    `resolution_source`, never an overwrite of `decision_source`.
     """
     overridden = final_verdict is not auto_decision.verdict and resolution_source is None
     if resolution_source is not None and final_verdict is not auto_decision.verdict:
@@ -82,12 +86,14 @@ def make_attested_step(
     step = make_step(
         trace_id,
         proposed,
-        Decision(final_verdict, reason),
+        Decision(final_verdict, reason, source=auto_decision.source),
         step_id=step_id,
         timestamp=timestamp,
     )
     step.metadata["automatic_verdict"] = auto_decision.verdict.value
     step.metadata["overridden"] = overridden
+    if overridden:
+        step.metadata["override_source"] = "human"
     if mode is not None:
         step.metadata["mode"] = mode
     if resolution_source is not None:

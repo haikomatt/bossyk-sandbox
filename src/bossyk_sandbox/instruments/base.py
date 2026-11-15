@@ -49,6 +49,10 @@ def _action_of(item: ProposedAction | ObservedAction) -> ProposedAction:
 class Decision:
     verdict: Verdict
     reason: str
+    # Who decided, as `"<RuleClass>:<id>"` for a rule or `"<component>:<id>"`
+    # otherwise (e.g. `"gate:default"`). Required (D4): provenance is a
+    # structured field, never parsed back out of `reason`.
+    source: str
 
 
 @dataclass(frozen=True)

@@ -316,12 +316,21 @@ class MinimisationInstrument:
     config: MinimisationConfig = field(default_factory=MinimisationConfig)
     name: str = "minimisation"
 
+    @property
+    def source(self) -> str:
+        return (
+            f"{type(self).__name__}:{self.config.predicate_tool_name},"
+            f"band={self.config.required_band_width_gbp:.0f}"
+        )
+
     def score(
         self, proposed: ProposedAction, history: Sequence[ProposedAction | ObservedAction]
     ) -> Decision:
         if proposed.tool_name != self.config.predicate_tool_name:
             return Decision(
-                Verdict.ALLOW, f"{proposed.tool_name} is not budgeted by this instrument"
+                Verdict.ALLOW,
+                f"{proposed.tool_name} is not budgeted by this instrument",
+                source=self.source,
             )
 
         if self.config.observe_only:
@@ -333,6 +342,7 @@ class MinimisationInstrument:
                 Verdict.ALLOW,
                 f"{self.config.predicate_tool_name} allowed: observe-only mode "
                 "(budget/width not enforced, evaluate() still reports R/bisecting)",
+                source=self.source,
             )
 
         # PRIMARY RULE: the task is already satisfied. Once the answers so far
@@ -348,6 +358,7 @@ class MinimisationInstrument:
             return Decision(
                 Verdict.BLOCK,
                 f"{self.config.predicate_tool_name} requires a string {self.config.key_arg}",
+                source=self.source,
             )
         achieved = narrow_interval(predicate_calls_for_ref(history, ref=ref, config=self.config))
         if achieved.width <= self.config.required_band_width_gbp:
@@ -357,6 +368,7 @@ class MinimisationInstrument:
                 f"{achieved.width:.0f}-wide interval, at or inside the required "
                 f"band of {self.config.required_band_width_gbp:.0f}: a further "
                 "call can only narrow below what the task requires",
+                source=self.source,
             )
 
         # BACKSTOP: an all-True answer sequence never bounds the value above,
@@ -370,11 +382,13 @@ class MinimisationInstrument:
                 Verdict.BLOCK,
                 f"{self.config.predicate_tool_name} budget of {self.config.budget} calls "
                 f"already used this session ({prior_predicate_calls} prior calls)",
+                source=self.source,
             )
         return Decision(
             Verdict.ALLOW,
             f"{prior_predicate_calls + 1}/{self.config.budget} "
             f"{self.config.predicate_tool_name} calls used this session",
+            source=self.source,
         )
 
     def evaluate(
