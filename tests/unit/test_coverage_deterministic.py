@@ -27,14 +27,14 @@ def _trace_with_outreach_and_neutral_steps() -> Trace:
     deterministic_step = make_attested_step(
         "t-1",
         ProposedAction("place_call", {"phone": "+441135550001"}),
-        auto_decision=Decision(Verdict.ALLOW, "clean check"),
+        auto_decision=Decision(Verdict.ALLOW, "clean check", source="test:stub"),
         final_verdict=Verdict.ALLOW,
         step_id="step-place-call",
     )
     judged_step = make_attested_step(
         "t-1",
         ProposedAction("cancel_reservation", {"reservation_id": "R1"}),
-        auto_decision=Decision(Verdict.BLOCK, "no lookup"),
+        auto_decision=Decision(Verdict.BLOCK, "no lookup", source="test:stub"),
         final_verdict=Verdict.BLOCK,
         step_id="step-cancel",
     )
@@ -64,7 +64,12 @@ def test_deterministic_control_refs_exclude_judged_only_controls() -> None:
 
 
 def test_deterministic_control_refs_of_an_untagged_trace_is_empty() -> None:
-    step = make_step("t-1", ProposedAction("x", {}), Decision(Verdict.ALLOW, "r"), step_id="s")
+    step = make_step(
+        "t-1",
+        ProposedAction("x", {}),
+        Decision(Verdict.ALLOW, "r", source="test:stub"),
+        step_id="s",
+    )
 
     refs = trace_deterministic_control_refs(build_trace("t-1", "cfg", [step]))
 

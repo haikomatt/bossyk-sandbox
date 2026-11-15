@@ -50,7 +50,7 @@ from tests.unit._bossyk import SYNTHETIC_POLICY, FakeBossyk, requires_bossyk_che
 
 def _trace() -> Trace:
     call = ProposedAction("get_order_details", {"order_id": "#W1"})
-    step = make_step("t1", call, Decision(Verdict.ALLOW, "ok"), step_id="s1")
+    step = make_step("t1", call, Decision(Verdict.ALLOW, "ok", source="test:stub"), step_id="s1")
     return build_trace("t1", "retail-test@0.1", [step])
 
 
@@ -232,7 +232,7 @@ class _OpaqueRule:
         self.handle = object()
 
     def score(self, proposed: ProposedAction, history: object) -> Decision:
-        return Decision(Verdict.ALLOW, "x")
+        return Decision(Verdict.ALLOW, "x", source="test:stub")
 
 
 def test_unserialisable_rule_state_is_refused() -> None:

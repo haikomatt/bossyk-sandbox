@@ -18,14 +18,14 @@ def _sample_trace() -> Trace:
     allow = make_attested_step(
         "t-1",
         ProposedAction("get_order", {"order_id": "W1"}),
-        auto_decision=Decision(Verdict.ALLOW, "lookup ok"),
+        auto_decision=Decision(Verdict.ALLOW, "lookup ok", source="test:stub"),
         final_verdict=Verdict.ALLOW,
         step_id="step-allow",
     )
     blocked_override = make_attested_step(
         "t-1",
         ProposedAction("cancel_order", {"order_id": "W2"}),
-        auto_decision=Decision(Verdict.ALLOW, "auto allowed"),
+        auto_decision=Decision(Verdict.ALLOW, "auto allowed", source="test:stub"),
         final_verdict=Verdict.BLOCK,  # human blocked -> blocked AND overridden
         step_id="step-block",
     )
@@ -59,7 +59,12 @@ def test_coverage_keys_are_only_controls_some_step_discharges() -> None:
 def test_coverage_of_an_untagged_trace_is_empty() -> None:
     from bossyk_sandbox.evidence.trace import make_step
 
-    step = make_step("t-1", ProposedAction("x", {}), Decision(Verdict.ALLOW, "r"), step_id="s")
+    step = make_step(
+        "t-1",
+        ProposedAction("x", {}),
+        Decision(Verdict.ALLOW, "r", source="test:stub"),
+        step_id="s",
+    )
     coverage = trace_control_coverage(build_trace("t-1", "cfg", [step]))
 
     assert coverage == {}

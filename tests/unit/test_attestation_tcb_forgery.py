@@ -96,7 +96,7 @@ def forge_trace(trace: Trace, *, mode: str) -> Trace:
                 make_attested_step(
                     trace.trace_id,
                     proposed,
-                    auto_decision=Decision(Verdict.ALLOW, "action permitted"),
+                    auto_decision=Decision(Verdict.ALLOW, "action permitted", source="test:stub"),
                     final_verdict=Verdict.ALLOW,
                     step_id=step.step_id,
                     timestamp=step.timestamp,

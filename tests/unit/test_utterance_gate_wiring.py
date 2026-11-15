@@ -74,13 +74,13 @@ class _AlwaysBlockUtterance:
     reason: str = "test: always blocks"
 
     def score(self, text: str, history: Any) -> Decision:
-        return Decision(Verdict.BLOCK, self.reason)
+        return Decision(Verdict.BLOCK, self.reason, source="test:stub")
 
 
 @dataclass
 class _AlwaysAllowUtterance:
     def score(self, text: str, history: Any) -> Decision:
-        return Decision(Verdict.ALLOW, "test: always allows")
+        return Decision(Verdict.ALLOW, "test: always allows", source="test:stub")
 
 
 def _no_env() -> Any:

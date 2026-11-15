@@ -73,7 +73,7 @@ class _Fixed:
     """An instrument that returns one fixed verdict for every action."""
 
     def __init__(self, verdict: Verdict) -> None:
-        self._decision = Decision(verdict, f"fixed: {verdict.value}")
+        self._decision = Decision(verdict, f"fixed: {verdict.value}", source="test:stub")
 
     def score(
         self, proposed: ProposedAction, history: Sequence[ProposedAction | ObservedAction]
@@ -100,7 +100,7 @@ def test_block_beats_hold_regardless_of_instrument_order() -> None:
 
 def test_first_hold_wins_among_holds() -> None:
     first = _Fixed(Verdict.HOLD)
-    first._decision = Decision(Verdict.HOLD, "first")
+    first._decision = Decision(Verdict.HOLD, "first", source="test:stub")
     gate = Gate(instruments=[first, _Fixed(Verdict.HOLD)])
 
     assert gate.score(ProposedAction("bash", {})).reason == "first"

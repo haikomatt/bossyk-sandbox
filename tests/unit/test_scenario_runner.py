@@ -243,7 +243,7 @@ def test_to_membership_error_drift_verdict_yields_none_not_false() -> None:
 
 def _scored_step(step_index: int, verdicts: list[InstrumentVerdict]) -> ScoredStep:
     proposed = ProposedAction("get_reservation_details", {"reservation_id": "R1"})
-    decision = Decision(Verdict.ALLOW, "ok")
+    decision = Decision(Verdict.ALLOW, "ok", source="test:stub")
     step = make_step(
         trace_id="availability-scenario",
         proposed=proposed,

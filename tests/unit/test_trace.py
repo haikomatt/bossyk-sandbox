@@ -68,7 +68,7 @@ def test_make_step_declared_intent_defaults_to_none() -> None:
 
 def test_make_attested_step_with_no_override_reflects_the_automatic_allow() -> None:
     proposed = ProposedAction("get_reservation_details", {"reservation_id": "R1"})
-    auto_decision = Decision(Verdict.ALLOW, "no instrument blocked")
+    auto_decision = Decision(Verdict.ALLOW, "no instrument blocked", source="test:stub")
 
     step = make_attested_step(
         trace_id="t-1",
@@ -87,7 +87,9 @@ def test_make_attested_step_with_no_override_reflects_the_automatic_allow() -> N
 def test_make_attested_step_manual_allow_over_automatic_block_attests_the_allow() -> None:
     proposed = ProposedAction("cancel_reservation", {"reservation_id": "R9"})
     auto_decision = Decision(
-        Verdict.BLOCK, "cancel_reservation for R9 has no prior lookup in this session"
+        Verdict.BLOCK,
+        "cancel_reservation for R9 has no prior lookup in this session",
+        source="test:stub",
     )
 
     step = make_attested_step(
@@ -107,7 +109,7 @@ def test_make_attested_step_manual_allow_over_automatic_block_attests_the_allow(
 
 def test_make_attested_step_manual_block_over_automatic_allow_attests_the_block() -> None:
     proposed = ProposedAction("get_reservation_details", {"reservation_id": "R1"})
-    auto_decision = Decision(Verdict.ALLOW, "no instrument blocked")
+    auto_decision = Decision(Verdict.ALLOW, "no instrument blocked", source="test:stub")
 
     step = make_attested_step(
         trace_id="t-1",
@@ -128,7 +130,7 @@ def test_attested_step_carries_compliance_control_tags_in_metadata() -> None:
     from bossyk_sandbox.compliance.attribution import CONTROLS_METADATA_KEY
 
     proposed = ProposedAction("get_reservation_details", {"reservation_id": "R1"})
-    auto_decision = Decision(Verdict.ALLOW, "no instrument blocked")
+    auto_decision = Decision(Verdict.ALLOW, "no instrument blocked", source="test:stub")
 
     step = make_attested_step(
         trace_id="t-1",
@@ -151,7 +153,7 @@ def test_attested_step_control_tags_reflect_a_blocked_override() -> None:
     from bossyk_sandbox.compliance.attribution import CONTROLS_METADATA_KEY
 
     proposed = ProposedAction("cancel_reservation", {"reservation_id": "R9"})
-    auto_decision = Decision(Verdict.ALLOW, "no instrument blocked")
+    auto_decision = Decision(Verdict.ALLOW, "no instrument blocked", source="test:stub")
 
     step = make_attested_step(
         trace_id="t-1",

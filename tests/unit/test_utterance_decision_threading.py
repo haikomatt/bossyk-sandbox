@@ -87,7 +87,7 @@ class _AlwaysBlockUtterance:
     reason: str = "test: always blocks"
 
     def score(self, text: str, history: Any) -> Decision:
-        return Decision(Verdict.BLOCK, self.reason)
+        return Decision(Verdict.BLOCK, self.reason, source="test:stub")
 
 
 # --- 1. AgentSession.utterance_decisions -----------------------------------
@@ -141,7 +141,7 @@ def test_agent_session_utterance_decisions_stays_empty_when_the_rule_allows() ->
 
     class _AlwaysAllow:
         def score(self, text: str, history: Any) -> Decision:
-            return Decision(Verdict.ALLOW, "clean")
+            return Decision(Verdict.ALLOW, "clean", source="test:stub")
 
     llm = _ScriptedLLM(responses=[AIMessage(content="I'll book your free survey now.")])
     session = _build_agent_session(
@@ -173,7 +173,9 @@ def test_live_run_result_utterance_decisions_defaults_to_empty() -> None:
 
 
 def test_live_run_result_accepts_utterance_decisions() -> None:
-    blocked = Decision(Verdict.BLOCK, "utterance contains regulated phrase '0% finance'")
+    blocked = Decision(
+        Verdict.BLOCK, "utterance contains regulated phrase '0% finance'", source="test:stub"
+    )
 
     result = LiveRunResult(proposed=[], executed=[], utterance_decisions=[blocked])
 
@@ -215,7 +217,9 @@ def test_replay_crossing_threads_utterance_decisions_through_when_present() -> N
         stimulus=Stimulus(channel="user", payload={"text": "offer me a deal"}),
         expected_behavior=ExpectedBehavior(should_refuse=True),
     )
-    blocked = Decision(Verdict.BLOCK, "utterance contains regulated phrase '0% finance'")
+    blocked = Decision(
+        Verdict.BLOCK, "utterance contains regulated phrase '0% finance'", source="test:stub"
+    )
 
     replay = replay_crossing(
         probe,
@@ -258,7 +262,9 @@ def test_a_captured_utterance_decision_resolves_the_fca_conc_control() -> None:
     # Closes the loop the coordinator asked about: the threaded Decision is
     # exactly what P7's controls_for_utterance already knows how to turn
     # into a deterministic compliance control tag.
-    blocked = Decision(Verdict.BLOCK, "utterance contains regulated phrase '0% finance'")
+    blocked = Decision(
+        Verdict.BLOCK, "utterance contains regulated phrase '0% finance'", source="test:stub"
+    )
 
     tags = controls_for_utterance(blocked)
 
